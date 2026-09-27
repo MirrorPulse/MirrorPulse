@@ -6,7 +6,7 @@ namespace MirrorPulse.Core.Tests;
 [TestClass]
 public sealed class WorkerLauncherTests
 {
-    private static readonly string[] VersionArguments = ["--version"];
+    private static readonly string[] ExitArguments = ["/c", "exit 0"];
 
     [TestMethod]
     public async Task LauncherStartsProcessWithInstanceMetadata()
@@ -14,9 +14,9 @@ public sealed class WorkerLauncherTests
         var request = new WorkerLaunchRequest(
             InstanceId.New(),
             WorkerSessionId.New(),
-            Environment.ProcessPath!,
+            Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
             AppContext.BaseDirectory,
-            VersionArguments,
+            ExitArguments,
             new Dictionary<string, string> { ["MIRRORPULSE_TEST"] = "enabled" });
         using var worker = WorkerProcessLauncher.Start(request);
 
