@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="MirrorPulse.App.AdapterInstallPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="16" Padding="32" MaxWidth="760">
+            <TextBlock Text="Install an Adapter" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="Choose a .mpadapter package to install for the current user." TextWrapping="Wrap" />
+            <TextBox x:Name="PackagePathTextBox" Header="Adapter package" PlaceholderText="C:\Path\to\Adapter.mpadapter" />
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button x:Name="BrowseButton" Content="Browse" Click="BrowseButton_Click" />
+                <Button x:Name="InstallButton" Content="Install" Click="InstallButton_Click" />
+            </StackPanel>
+            <InfoBar x:Name="InstallStatusBar" IsOpen="False" Severity="Informational" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>
