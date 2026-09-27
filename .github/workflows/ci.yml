@@ -23,7 +23,7 @@ jobs:
           dotnet-version-file: global.json
 
       - name: Restore
-        run: dotnet restore MirrorPulse.sln
+        run: dotnet restore MirrorPulse.sln --locked-mode
 
       - name: Build
         run: dotnet build MirrorPulse.sln --configuration Release --no-restore
