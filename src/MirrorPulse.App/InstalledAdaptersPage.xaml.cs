@@ -11,4 +11,11 @@ public sealed partial class InstalledAdaptersPage : Page
     {
         InitializeComponent();
     }
+
+    private void AdapterEnableToggle_Toggled(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        EmptyStateText.Text = AdapterEnableToggle.IsOn
+            ? "The selected Adapter will start with MirrorPulse."
+            : "The selected Adapter is offline until enabled.";
+    }
 }
