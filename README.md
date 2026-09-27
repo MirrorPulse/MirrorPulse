@@ -4,11 +4,11 @@ MirrorPulse is a Windows Cloud Files application that presents local and remote 
 
 ## Repository scope
 
-This repository contains the MirrorPulse application and its runtime code. Planning notes and collaboration records live in the ignored `draft/` directory.
+This repository contains the MirrorPulse application and its runtime code.
 
 ## Development status
 
-The repository is being built from the project contracts in `draft/需求文档.md` and `draft/项目书.md`. The current branch establishes the English codebase baseline before runtime features are added.
+The current branch establishes the English codebase baseline before runtime features are added.
 
 ## Requirements
 
