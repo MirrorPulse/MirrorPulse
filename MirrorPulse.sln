@@ -7,6 +7,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MirrorPulse.Core", "src\MirrorPulse.Core\MirrorPulse.Core.csproj", "{D7489B10-F6A1-4442-B17B-3D147F599E7C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MirrorPulse.Host", "src\MirrorPulse.Host\MirrorPulse.Host.csproj", "{C228F7D3-C88F-40DC-AFB9-795C12FA7020}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -29,11 +31,24 @@ Global
 		{D7489B10-F6A1-4442-B17B-3D147F599E7C}.Release|x64.Build.0 = Release|Any CPU
 		{D7489B10-F6A1-4442-B17B-3D147F599E7C}.Release|x86.ActiveCfg = Release|Any CPU
 		{D7489B10-F6A1-4442-B17B-3D147F599E7C}.Release|x86.Build.0 = Release|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Debug|x64.Build.0 = Debug|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Debug|x86.Build.0 = Debug|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Release|x64.ActiveCfg = Release|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Release|x64.Build.0 = Release|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Release|x86.ActiveCfg = Release|Any CPU
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D7489B10-F6A1-4442-B17B-3D147F599E7C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{C228F7D3-C88F-40DC-AFB9-795C12FA7020} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
