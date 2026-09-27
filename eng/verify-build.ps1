@@ -15,6 +15,6 @@ function Invoke-Dotnet {
     }
 }
 
-Invoke-Dotnet @("restore", $solution)
+Invoke-Dotnet @("restore", $solution, "--locked-mode")
 Invoke-Dotnet @("build", $solution, "--configuration", $Configuration, "--no-restore")
 Invoke-Dotnet @("test", $solution, "--configuration", $Configuration, "--no-build")
