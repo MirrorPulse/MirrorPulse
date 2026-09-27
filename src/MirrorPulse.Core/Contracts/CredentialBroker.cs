@@ -42,6 +42,13 @@ public sealed class CredentialLease : IDisposable
         _value = value.ToCharArray();
     }
 
+    public CredentialLease(CredentialReference reference, ReadOnlySpan<char> value)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        Reference = reference;
+        _value = value.ToArray();
+    }
+
     public CredentialReference Reference { get; }
 
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
