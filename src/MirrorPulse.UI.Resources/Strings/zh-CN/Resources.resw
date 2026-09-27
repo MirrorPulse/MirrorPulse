@@ -24,4 +24,19 @@
   <data name="Privacy.LocalOnly" xml:space="preserve">
     <value>数据保留在此设备上</value>
   </data>
+  <data name="Accessibility.AppShell.Name" xml:space="preserve">
+    <value>MirrorPulse 应用</value>
+  </data>
+  <data name="Accessibility.Navigation.Name" xml:space="preserve">
+    <value>主导航</value>
+  </data>
+  <data name="Accessibility.AdapterList.Name" xml:space="preserve">
+    <value>已安装的适配器</value>
+  </data>
+  <data name="Accessibility.InstallButton.Name" xml:space="preserve">
+    <value>安装适配器按钮</value>
+  </data>
+  <data name="Accessibility.SyncStatus.Name" xml:space="preserve">
+    <value>同步状态</value>
+  </data>
 </root>

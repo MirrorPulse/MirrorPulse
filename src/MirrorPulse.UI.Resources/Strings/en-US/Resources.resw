@@ -24,4 +24,19 @@
   <data name="Privacy.LocalOnly" xml:space="preserve">
     <value>Data stays on this device</value>
   </data>
+  <data name="Accessibility.AppShell.Name" xml:space="preserve">
+    <value>MirrorPulse application</value>
+  </data>
+  <data name="Accessibility.Navigation.Name" xml:space="preserve">
+    <value>Primary navigation</value>
+  </data>
+  <data name="Accessibility.AdapterList.Name" xml:space="preserve">
+    <value>Installed Adapters</value>
+  </data>
+  <data name="Accessibility.InstallButton.Name" xml:space="preserve">
+    <value>Install Adapter button</value>
+  </data>
+  <data name="Accessibility.SyncStatus.Name" xml:space="preserve">
+    <value>Synchronization status</value>
+  </data>
 </root>
