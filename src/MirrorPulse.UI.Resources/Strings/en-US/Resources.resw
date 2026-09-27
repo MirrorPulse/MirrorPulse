@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="App.DisplayName" xml:space="preserve">
+    <value>MirrorPulse</value>
+  </data>
+  <data name="App.Description" xml:space="preserve">
+    <value>Cloud Files for your storage adapters</value>
+  </data>
+  <data name="Settings.Title" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Adapter.Install" xml:space="preserve">
+    <value>Install Adapter</value>
+  </data>
+  <data name="Adapter.Enable" xml:space="preserve">
+    <value>Enable Adapter</value>
+  </data>
+  <data name="Auth.SignIn" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="Sync.Conflict" xml:space="preserve">
+    <value>Sync conflict</value>
+  </data>
+  <data name="Privacy.LocalOnly" xml:space="preserve">
+    <value>Data stays on this device</value>
+  </data>
+</root>
