@@ -1,0 +1,12 @@
+[Bb]in/
+[Oo]bj/
+.vs/
+TestResults/
+*.user
+*.suo
+*.pfx
+*.p12
+*.snk
+*.key
+*.pem
+*.mpadapter
