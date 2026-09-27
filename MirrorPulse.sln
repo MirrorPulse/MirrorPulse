@@ -23,6 +23,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{7A842A56-0CD
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MirrorPulse.Adapter.Sdk", "Adapters\src\MirrorPulse.Adapter.Sdk\MirrorPulse.Adapter.Sdk.csproj", "{37D5830E-C084-46BC-AFCC-71EC6D24FBAE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MirrorPulse.UI.Resources", "src\MirrorPulse.UI.Resources\MirrorPulse.UI.Resources.csproj", "{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -93,6 +95,18 @@ Global
 		{37D5830E-C084-46BC-AFCC-71EC6D24FBAE}.Release|x64.Build.0 = Release|Any CPU
 		{37D5830E-C084-46BC-AFCC-71EC6D24FBAE}.Release|x86.ActiveCfg = Release|Any CPU
 		{37D5830E-C084-46BC-AFCC-71EC6D24FBAE}.Release|x86.Build.0 = Release|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Debug|x64.Build.0 = Debug|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Debug|x86.Build.0 = Debug|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Release|x64.ActiveCfg = Release|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Release|x64.Build.0 = Release|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Release|x86.ActiveCfg = Release|Any CPU
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -105,5 +119,6 @@ Global
 		{4BE5787C-452F-4AD2-BE4C-268900A1B4DA} = {8FCE4EAD-D34E-5B8D-06DB-80DA6C0C3AE9}
 		{7A842A56-0CD6-D337-5F12-F8CE3DBA1A59} = {09DF2EE5-5FE7-3EC7-59CB-CAD7E0928979}
 		{37D5830E-C084-46BC-AFCC-71EC6D24FBAE} = {7A842A56-0CD6-D337-5F12-F8CE3DBA1A59}
+		{1DBA9D08-07DB-43AA-A39D-B37526CE37AA} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
