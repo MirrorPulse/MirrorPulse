@@ -1,0 +1,68 @@
+name: Release Adapter
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version to package when running manually
+        required: true
+        default: 0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out template
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and stage package
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $env:GITHUB_REF_NAME.TrimStart('v')
+          } else {
+            '${{ inputs.version }}'
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'A semantic version is required.'
+          }
+
+          $staging = Join-Path $env:GITHUB_WORKSPACE 'staging'
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          foreach ($rid in @('win-x64', 'win-arm64')) {
+            $workerOutput = Join-Path $staging "worker/$rid"
+            dotnet publish samples/MirrorPulse.Adapter.SampleWorker/MirrorPulse.Adapter.SampleWorker.csproj `
+              --configuration Release --runtime $rid --self-contained true `
+              -p:PublishSingleFile=true --output $workerOutput
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            $builtWorker = Join-Path $workerOutput 'MirrorPulse.Adapter.SampleWorker.exe'
+            $declaredWorker = Join-Path $workerOutput 'MirrorPulse.Adapter.Worker.exe'
+            Move-Item -LiteralPath $builtWorker -Destination $declaredWorker -Force
+          }
+
+          $manifest = Get-Content template/package/manifest.json -Raw | ConvertFrom-Json
+          $manifest.version = $version
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $staging 'manifest.json')
+          Copy-Item template/package/locales -Destination (Join-Path $staging 'locales') -Recurse -Force
+          $package = Join-Path $env:GITHUB_WORKSPACE "MirrorPulse.Adapter.SampleWorker.v$version.mpadapter"
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $package -CompressionLevel Optimal
+          "RELEASE_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PACKAGE_PATH=$package" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:RELEASE_TAG $env:PACKAGE_PATH --title "MirrorPulse Adapter $env:RELEASE_TAG" --generate-notes
