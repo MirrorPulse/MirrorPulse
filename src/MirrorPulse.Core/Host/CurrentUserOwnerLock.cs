@@ -5,7 +5,16 @@ namespace MirrorPulse.Core.Host;
 /// <summary>
 /// Cross-process owner lock scoped to the current Windows user's SID.
 /// </summary>
-public sealed class CurrentUserOwnerLock : IDisposable
+public interface ICurrentUserOwnerLock
+{
+    bool IsHeld { get; }
+
+    bool TryAcquire(TimeSpan timeout);
+
+    void Release();
+}
+
+public sealed class CurrentUserOwnerLock : IDisposable, ICurrentUserOwnerLock
 {
     private FileStream? _lockFile;
 
