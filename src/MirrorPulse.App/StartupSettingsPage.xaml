@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="MirrorPulse.App.StartupSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <StackPanel Spacing="16" Padding="32" MaxWidth="760">
+        <TextBlock Text="MirrorPulse startup" Style="{StaticResource TitleTextBlockStyle}" />
+        <TextBlock Text="Choose whether MirrorPulse starts when you sign in to Windows." TextWrapping="Wrap" />
+        <ToggleSwitch x:Name="StartWithWindowsToggle" Header="Start MirrorPulse with Windows" Toggled="StartWithWindowsToggle_Toggled" />
+        <TextBlock Text="Cloud Files root" FontWeight="SemiBold" />
+        <TextBlock x:Name="SyncRootNameText" Text="MirrorPulse" />
+        <InfoBar x:Name="StartupStatusBar" IsOpen="False" Severity="Informational" />
+    </StackPanel>
+</Page>
