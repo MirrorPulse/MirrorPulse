@@ -18,6 +18,14 @@
     "maximumInstances": null,
     "maximumRootDefinitions": null
   },
+  "rootDefinitions": [
+    {
+      "key": "documents",
+      "label": "Documents",
+      "directoryName": "Documents",
+      "customEntry": false
+    }
+  ],
   "capabilities": {
     "network": true,
     "sourceDirectory": true,

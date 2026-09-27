@@ -63,7 +63,8 @@ public sealed record AdapterManifest
         AdapterInstancePolicy instancePolicy,
         AdapterCapabilities capabilities,
         IReadOnlyList<string> locales,
-        string minimumMirrorPulseVersion)
+        string minimumMirrorPulseVersion,
+        IReadOnlyList<AdapterRootDefinition>? rootDefinitions = null)
     {
         SchemaVersion = schemaVersion;
         AdapterId = adapterId;
@@ -77,6 +78,7 @@ public sealed record AdapterManifest
         Capabilities = capabilities;
         Locales = locales.ToArray();
         MinimumMirrorPulseVersion = minimumMirrorPulseVersion;
+        RootDefinitions = (rootDefinitions ?? []).ToArray();
     }
 
     public int SchemaVersion { get; }
@@ -100,4 +102,9 @@ public sealed record AdapterManifest
     public IReadOnlyList<string> Locales { get; }
 
     public string MinimumMirrorPulseVersion { get; }
+
+    /// <summary>
+    /// First-level directory definitions declared by the Adapter.
+    /// </summary>
+    public IReadOnlyList<AdapterRootDefinition> RootDefinitions { get; }
 }

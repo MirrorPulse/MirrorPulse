@@ -46,6 +46,7 @@ public static class AdapterManifestValidator
         ValidateEntrypoints(manifest.Entrypoints, diagnostics);
         ValidateInstallPolicy(manifest.InstallPolicy, diagnostics);
         ValidateInstancePolicy(manifest.InstancePolicy, diagnostics);
+        ValidateRootDefinitions(manifest.RootDefinitions, manifest.InstancePolicy, diagnostics);
 
         if (manifest.Capabilities is null)
         {
@@ -117,6 +118,28 @@ public static class AdapterManifestValidator
         if (locales.Any(string.IsNullOrWhiteSpace) || locales.Distinct(StringComparer.OrdinalIgnoreCase).Count() != locales.Count)
         {
             diagnostics.Add(Error("manifest.locales.duplicate", "Manifest locales must be non-empty and unique."));
+        }
+    }
+
+    private static void ValidateRootDefinitions(
+        IReadOnlyList<AdapterRootDefinition>? definitions,
+        AdapterInstancePolicy? policy,
+        List<Diagnostic> diagnostics)
+    {
+        if (definitions is null)
+        {
+            diagnostics.Add(Error("manifest.rootDefinitions.missing", "The Adapter root definitions collection is required."));
+            return;
+        }
+
+        if (policy?.MaximumRootDefinitions is int maximum && definitions.Count > maximum)
+        {
+            diagnostics.Add(Error("manifest.rootDefinitions.limitExceeded", "The Adapter declares more roots than its instance policy permits."));
+        }
+
+        if (definitions.GroupBy(definition => definition.Key, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+        {
+            diagnostics.Add(Error("manifest.rootDefinitions.duplicate", "Adapter root definition keys must be unique."));
         }
     }
 
