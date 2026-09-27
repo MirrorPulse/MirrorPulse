@@ -15,8 +15,10 @@ public sealed class CurrentUserPipeSecurityTests
         var user = identity.User ?? throw new InvalidOperationException("The test process has no Windows user SID.");
         var security = CurrentUserPipeSecurity.Create();
         var descriptor = security.GetSecurityDescriptorSddlForm(AccessControlSections.Owner | AccessControlSections.Access);
+        var owner = security.GetOwner(typeof(SecurityIdentifier));
 
-        Assert.IsTrue(descriptor.Contains(user.Value, StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(descriptor.StartsWith("O:", StringComparison.Ordinal));
+        Assert.AreEqual(user, owner);
         Assert.IsTrue(security.GetAccessRules(true, false, typeof(SecurityIdentifier)).Cast<PipeAccessRule>().Any(rule => rule.IdentityReference == user));
     }
 
