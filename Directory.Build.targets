@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <RepositoryName>MirrorPulse</RepositoryName>
+    <RepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))</RepositoryRoot>
+  </PropertyGroup>
+
+  <Target Name="ValidateMirrorPulseTargetFramework" BeforeTargets="BeforeBuild">
+    <Error Condition="'$(TargetFrameworkIdentifier)' != '.NETCoreApp'" Text="MirrorPulse projects must target .NET." />
+  </Target>
+</Project>
