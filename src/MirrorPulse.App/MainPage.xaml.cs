@@ -15,7 +15,12 @@ public sealed partial class MainPage : Page
     {
         InitializeComponent();
 
-        // TODO: Add your initialization logic here.
+    }
+
+    private void GetStartedButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        GetStartedButton.IsEnabled = false;
+        StartupStatusText.Text = "You are ready to add an Adapter.";
     }
 }
 
