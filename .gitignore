@@ -1,0 +1,28 @@
+# Project planning and collaboration notes
+/draft/
+
+# .NET build output
+[Bb]in/
+[Oo]bj/
+.vs/
+TestResults/
+
+# IDE and user-specific files
+.idea/
+*.user
+*.suo
+*.userosscache
+*.userprefs
+
+# Local secrets and signing material
+*.pfx
+*.p12
+*.snk
+*.key
+*.pem
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
