@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="App.DisplayName" xml:space="preserve">
+    <value>MirrorPulse</value>
+  </data>
+  <data name="App.Description" xml:space="preserve">
+    <value>适用于存储适配器的 Cloud Files</value>
+  </data>
+  <data name="Settings.Title" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="Adapter.Install" xml:space="preserve">
+    <value>安装适配器</value>
+  </data>
+  <data name="Adapter.Enable" xml:space="preserve">
+    <value>启用适配器</value>
+  </data>
+  <data name="Auth.SignIn" xml:space="preserve">
+    <value>登录</value>
+  </data>
+  <data name="Sync.Conflict" xml:space="preserve">
+    <value>同步冲突</value>
+  </data>
+  <data name="Privacy.LocalOnly" xml:space="preserve">
+    <value>数据保留在此设备上</value>
+  </data>
+</root>
