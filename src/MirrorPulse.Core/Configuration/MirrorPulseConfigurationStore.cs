@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using MirrorPulse.Core.Contracts;
 
@@ -9,6 +10,10 @@ namespace MirrorPulse.Core.Configuration;
 /// </summary>
 public sealed class MirrorPulseConfigurationStore
 {
+    private static readonly ConfigurationSchemaMigrator SchemaMigrator = new(
+        MirrorPulseConfiguration.CurrentSchemaVersion,
+        [new ConfigurationV0ToV1Migration()]);
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.General)
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -64,8 +69,11 @@ public sealed class MirrorPulseConfigurationStore
 
         try
         {
-            await using var stream = File.OpenRead(_filePath);
-            var document = await JsonSerializer.DeserializeAsync<ConfigurationDocument>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false)
+            var json = await File.ReadAllTextAsync(_filePath, cancellationToken).ConfigureAwait(false);
+            var source = JsonNode.Parse(json)?.AsObject()
+                ?? throw new InvalidDataException("The configuration document is empty.");
+            var migrated = SchemaMigrator.Migrate(source).Document;
+            var document = JsonSerializer.Deserialize<ConfigurationDocument>(migrated.ToJsonString(), SerializerOptions)
                 ?? throw new InvalidDataException("The configuration document is empty.");
             if (document.SchemaVersion != MirrorPulseConfiguration.CurrentSchemaVersion)
             {
@@ -88,6 +96,10 @@ public sealed class MirrorPulseConfigurationStore
         catch (ArgumentException exception)
         {
             throw new InvalidDataException("The configuration document contains invalid values.", exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new InvalidDataException("The configuration document must be a JSON object.", exception);
         }
     }
 
