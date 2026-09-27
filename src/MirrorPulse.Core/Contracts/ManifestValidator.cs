@@ -47,6 +47,7 @@ public static class AdapterManifestValidator
         ValidateInstallPolicy(manifest.InstallPolicy, diagnostics);
         ValidateInstancePolicy(manifest.InstancePolicy, diagnostics);
         ValidateRootDefinitions(manifest.RootDefinitions, manifest.InstancePolicy, diagnostics);
+        ValidateLocaleMetadata(manifest.Locales, manifest.LocaleMetadata, diagnostics);
 
         if (manifest.Capabilities is null)
         {
@@ -140,6 +141,27 @@ public static class AdapterManifestValidator
         if (definitions.GroupBy(definition => definition.Key, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
         {
             diagnostics.Add(Error("manifest.rootDefinitions.duplicate", "Adapter root definition keys must be unique."));
+        }
+    }
+
+    private static void ValidateLocaleMetadata(
+        IReadOnlyList<string> locales,
+        IReadOnlyDictionary<string, AdapterLocaleMetadata>? metadata,
+        List<Diagnostic> diagnostics)
+    {
+        if (metadata is null || metadata.Count == 0)
+        {
+            return;
+        }
+
+        if (metadata.Keys.Any(locale => !locales.Contains(locale, StringComparer.OrdinalIgnoreCase)))
+        {
+            diagnostics.Add(Error("manifest.localeMetadata.undeclared", "Locale metadata must reference a declared locale."));
+        }
+
+        if (!metadata.Keys.Contains("en-US", StringComparer.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(Error("manifest.localeMetadata.missingFallback", "Locale metadata must include en-US when metadata is declared."));
         }
     }
 

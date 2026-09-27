@@ -64,7 +64,8 @@ public sealed record AdapterManifest
         AdapterCapabilities capabilities,
         IReadOnlyList<string> locales,
         string minimumMirrorPulseVersion,
-        IReadOnlyList<AdapterRootDefinition>? rootDefinitions = null)
+        IReadOnlyList<AdapterRootDefinition>? rootDefinitions = null,
+        IReadOnlyList<AdapterLocaleMetadata>? localeMetadata = null)
     {
         SchemaVersion = schemaVersion;
         AdapterId = adapterId;
@@ -79,6 +80,8 @@ public sealed record AdapterManifest
         Locales = locales.ToArray();
         MinimumMirrorPulseVersion = minimumMirrorPulseVersion;
         RootDefinitions = (rootDefinitions ?? []).ToArray();
+        LocaleMetadata = new ReadOnlyDictionary<string, AdapterLocaleMetadata>(
+            (localeMetadata ?? []).ToDictionary(item => item.Locale, StringComparer.OrdinalIgnoreCase));
     }
 
     public int SchemaVersion { get; }
@@ -107,4 +110,9 @@ public sealed record AdapterManifest
     /// First-level directory definitions declared by the Adapter.
     /// </summary>
     public IReadOnlyList<AdapterRootDefinition> RootDefinitions { get; }
+
+    /// <summary>
+    /// Optional display and resource metadata keyed by locale.
+    /// </summary>
+    public IReadOnlyDictionary<string, AdapterLocaleMetadata> LocaleMetadata { get; }
 }

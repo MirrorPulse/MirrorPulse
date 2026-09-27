@@ -35,5 +35,11 @@
   "locales": [
     "en-US"
   ],
+  "localeMetadata": {
+    "en-US": {
+      "displayName": "English (United States)",
+      "resourcePath": "locales/en-US.json"
+    }
+  },
   "minimumMirrorPulseVersion": "1.0.0"
 }
