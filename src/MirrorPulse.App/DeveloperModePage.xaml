@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="MirrorPulse.App.DeveloperModePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <StackPanel Spacing="16" Padding="32" MaxWidth="760">
+        <TextBlock Text="Developer mode" Style="{StaticResource TitleTextBlockStyle}" />
+        <TextBlock Text="Allow development packages to be installed for the current user." TextWrapping="Wrap" />
+        <ToggleSwitch x:Name="DeveloperModeToggle" Header="Enable developer mode" Toggled="DeveloperModeToggle_Toggled" />
+        <InfoBar x:Name="UnsignedPackageWarning" IsOpen="True" Severity="Warning" Title="Unsigned Adapters" Message="Unsigned .mpadapter packages are accepted only while developer mode is enabled." />
+        <TextBlock x:Name="DeveloperModeStatusText" TextWrapping="Wrap" />
+    </StackPanel>
+</Page>
