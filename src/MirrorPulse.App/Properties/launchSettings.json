@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MirrorPulse.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MirrorPulse.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
