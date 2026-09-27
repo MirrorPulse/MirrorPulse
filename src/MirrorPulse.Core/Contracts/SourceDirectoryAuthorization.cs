@@ -19,17 +19,12 @@ public sealed record SourceDirectoryGrant
     public SourceDirectoryGrant(string path, SourceDirectoryAccess access)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        if (!System.IO.Path.IsPathRooted(path))
-        {
-            throw new ArgumentException("An authorized source directory must be an absolute path.", nameof(path));
-        }
-
         if (access == SourceDirectoryAccess.None)
         {
             throw new ArgumentException("A source directory grant must include at least one access right.", nameof(access));
         }
 
-        Path = System.IO.Path.GetFullPath(path);
+        Path = SourceDirectoryPathNormalizer.Normalize(path);
         Access = access;
     }
 
@@ -63,7 +58,7 @@ public sealed record SourceDirectoryAuthorizationList
     public bool Allows(string path, SourceDirectoryAccess access)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        var normalized = System.IO.Path.GetFullPath(path);
-        return Grants.Any(grant => string.Equals(grant.Path, normalized, StringComparison.OrdinalIgnoreCase) && (grant.Access & access) == access);
+        var normalized = SourceDirectoryPathNormalizer.Normalize(path);
+        return Grants.Any(grant => SourceDirectoryPathNormalizer.IsWithin(grant.Path, normalized) && (grant.Access & access) == access);
     }
 }
