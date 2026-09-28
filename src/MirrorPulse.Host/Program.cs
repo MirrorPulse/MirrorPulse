@@ -2,6 +2,7 @@ using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Host;
+using MirrorPulse.Core.Security;
 using MirrorPulse.Core.State;
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
@@ -42,6 +43,9 @@ try
         await using var session = MirrorPulseCloudHostSession.CreateDefault(
             paths, topology.Instances, topology.Roots);
         await session.StartAsync(shutdown.Token);
+        await using var workers = new AdapterInstanceProcessSupervisor(catalog,
+            new WindowsCredentialManagerStore());
+        await workers.StartAsync(topology);
         Console.WriteLine($"{ProductInfo.Name} Cloud Files session started at {paths.SyncRootPath}.");
         if (args.Length == 0)
         {

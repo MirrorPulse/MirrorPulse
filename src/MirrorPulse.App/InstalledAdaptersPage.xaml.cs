@@ -140,7 +140,7 @@ public sealed partial class InstalledAdaptersPage : Page
         {
             await MirrorPulseAppStatusPipe.SelectInstallationAsync(instanceId,
                 _versions[versionIndex].InstallId);
-            ActionStatusText.Text = "The instance version selection was saved.";
+            ActionStatusText.Text = "The instance version selection was saved. Restart MirrorPulse to run this version.";
             await RefreshAsync(instanceId);
         }
         catch (Exception exception)
@@ -161,7 +161,7 @@ public sealed partial class InstalledAdaptersPage : Page
         try
         {
             await MirrorPulseAppStatusPipe.SetInstanceEnabledAsync(instanceId, AdapterEnableToggle.IsOn);
-            ActionStatusText.Text = "The startup selection was saved.";
+            ActionStatusText.Text = "The startup selection was saved. Restart MirrorPulse to apply it.";
             await RefreshAsync(instanceId);
         }
         catch (Exception exception)
