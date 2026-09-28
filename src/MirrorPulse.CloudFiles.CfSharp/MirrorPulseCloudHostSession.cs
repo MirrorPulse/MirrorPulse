@@ -3,6 +3,7 @@ using System.Text;
 using CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Contracts;
 
 namespace MirrorPulse.CloudFiles.CfSharp;
 
@@ -84,6 +85,19 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
         _profile = MirrorPulseShellSyncRootRegistrar.CreateProfile(_definition, currentUserSid, displayName);
     }
 
+    public MirrorPulseCloudHostSession(
+        MirrorPulseStoragePaths paths,
+        MirrorPulseSyncRootRegistrationCoordinator registration,
+        IMirrorPulseCloudRuntimeFactory runtimeFactory,
+        MirrorPulseSyncRootOwner owner,
+        string currentUserSid,
+        IEnumerable<AdapterInstance> instances,
+        IEnumerable<RootRegistration> registrations)
+        : this(paths, registration, runtimeFactory, owner, currentUserSid,
+            MirrorPulseSyncRootDisplayName.Resolve(instances, registrations))
+    {
+    }
+
     public MirrorPulseSyncRootDefinition Definition => _definition;
 
     public MirrorPulseShellRegistrationProfile ShellProfile => _profile;
@@ -100,6 +114,12 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
             sid,
             displayName);
     }
+
+    public static MirrorPulseCloudHostSession CreateDefault(
+        MirrorPulseStoragePaths paths,
+        IEnumerable<AdapterInstance> instances,
+        IEnumerable<RootRegistration> registrations) =>
+        CreateDefault(paths, MirrorPulseSyncRootDisplayName.Resolve(instances, registrations));
 
     public async ValueTask StartAsync(CancellationToken cancellationToken = default)
     {

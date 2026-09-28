@@ -3,6 +3,7 @@ using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Host;
 
 namespace MirrorPulse.CloudFiles.CfSharp.Tests;
@@ -11,6 +12,60 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 [TestClass]
 public sealed class MirrorPulseCloudHostSessionTests
 {
+    [TestMethod]
+    public async Task CustomInstanceNameSwitchesBackToUnifiedShellNameWhenAnotherInstanceAppears()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        var first = CreateInstance("Personal drive");
+        var second = CreateInstance("Backup");
+        AdapterId adapterId = first.AdapterId;
+        RootRegistration custom = AdapterRootRegistrationMapper.Map(adapterId, first.InstanceId,
+            new AdapterRootDefinition("files", "Files", "Files", true), RootRegistrationState.Active);
+        RootRegistration backup = AdapterRootRegistrationMapper.Map(adapterId, second.InstanceId,
+            new AdapterRootDefinition("backup", "Backup", "Backup", false), RootRegistrationState.Active);
+        var shell = new RecordingShellRegistry();
+        var coordinator = new MirrorPulseSyncRootRegistrationCoordinator(shell, new RecordingCloudRegistry());
+
+        try
+        {
+            foreach ((AdapterInstance[] instances, RootRegistration[] registrations) in new[]
+            {
+                (new[] { first }, new[] { custom }),
+                (new[] { first, second }, new[] { custom, backup }),
+            })
+            {
+                await using var session = new MirrorPulseCloudHostSession(paths, coordinator,
+                    new RecordingRuntimeFactory(), new MirrorPulseSyncRootOwner(new RecordingOwnerLock()),
+                    "S-1-5-21-123", instances, registrations);
+                await session.StartAsync();
+            }
+
+            Assert.HasCount(2, shell.Profiles);
+            Assert.AreEqual("Personal drive", shell.Profiles[0].DisplayName);
+            Assert.AreEqual("MirrorPulse", shell.Profiles[1].DisplayName);
+            Assert.AreEqual(shell.Profiles[0].RegistrationId, shell.Profiles[1].RegistrationId);
+            Assert.AreEqual(paths.SyncRootPath, shell.Profiles[1].SyncRootPath);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    private static AdapterInstance CreateInstance(string displayName)
+    {
+        var instance = InstanceId.New();
+        return new AdapterInstance(AdapterId.Parse("example.drive"), InstallId.New(), instance,
+            displayName, new Dictionary<string, string>(), [],
+            Path.Combine(Path.GetTempPath(), instance.ToString(), "files"),
+            Path.Combine(Path.GetTempPath(), instance.ToString(), "transfer"),
+            true, AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+    }
+
     [TestMethod]
     public async Task NativeSessionReopensOfficialSqliteDatabase()
     {
@@ -129,10 +184,15 @@ public sealed class MirrorPulseCloudHostSessionTests
 
     private sealed class RecordingShellRegistry : IMirrorPulseShellRootRegistry
     {
+        public List<MirrorPulseShellRegistrationProfile> Profiles { get; } = [];
+
         public int UnregisterCount { get; private set; }
 
-        public ValueTask<bool> RegisterAsync(MirrorPulseShellRegistrationProfile profile, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(false);
+        public ValueTask<bool> RegisterAsync(MirrorPulseShellRegistrationProfile profile, CancellationToken cancellationToken)
+        {
+            Profiles.Add(profile);
+            return ValueTask.FromResult(false);
+        }
 
         public void Unregister(MirrorPulseShellRegistrationProfile profile) => UnregisterCount++;
     }
