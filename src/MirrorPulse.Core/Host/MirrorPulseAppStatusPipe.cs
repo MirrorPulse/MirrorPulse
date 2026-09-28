@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text.Json;
+using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Transport;
 
 namespace MirrorPulse.Core.Host;
@@ -34,13 +35,19 @@ public sealed class MirrorPulseAppStatusPipe
     private const int MaximumFrameBytes = 1024 * 1024;
     private readonly Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> _readStatus;
     private readonly Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _snooze;
+    private readonly Func<InstanceId, bool, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _setEnabled;
+    private readonly Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _selectVersion;
 
     public MirrorPulseAppStatusPipe(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
-        Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? snooze = null)
+        Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? snooze = null,
+        Func<InstanceId, bool, CancellationToken, Task<MirrorPulseAppStatusResponse>>? setEnabled = null,
+        Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? selectVersion = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
+        _setEnabled = setEnabled;
+        _selectVersion = selectVersion;
     }
 
     public static string CurrentUserPipeName()
@@ -80,6 +87,31 @@ public sealed class MirrorPulseAppStatusPipe
                     try
                     {
                         response = await _snooze(conflictId, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        response = new(0, 0, [], [], exception.Message);
+                    }
+                }
+                else if (request.StartsWith("enable:", StringComparison.Ordinal) && _setEnabled is not null &&
+                    TryParseEnable(request, out InstanceId enableInstance, out bool enabled))
+                {
+                    try
+                    {
+                        response = await _setEnabled(enableInstance, enabled, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        response = new(0, 0, [], [], exception.Message);
+                    }
+                }
+                else if (request.StartsWith("version:", StringComparison.Ordinal) && _selectVersion is not null &&
+                    TryParseVersion(request, out InstanceId versionInstance, out InstallId installId))
+                {
+                    try
+                    {
+                        response = await _selectVersion(versionInstance, installId, cancellationToken)
+                            .ConfigureAwait(false);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
@@ -127,6 +159,41 @@ public sealed class MirrorPulseAppStatusPipe
         }
 
         return await SendRequestAsync($"snooze:{conflictId:D}", cancellationToken).ConfigureAwait(false);
+    }
+
+    public static Task<MirrorPulseAppStatusResponse> SetInstanceEnabledAsync(
+        InstanceId instanceId,
+        bool enabled,
+        CancellationToken cancellationToken = default) =>
+        SendRequestAsync($"enable:{instanceId}:{(enabled ? "1" : "0")}", cancellationToken);
+
+    public static Task<MirrorPulseAppStatusResponse> SelectInstallationAsync(
+        InstanceId instanceId,
+        InstallId installId,
+        CancellationToken cancellationToken = default) =>
+        SendRequestAsync($"version:{instanceId}:{installId}", cancellationToken);
+
+    private static bool TryParseEnable(string request, out InstanceId instanceId, out bool enabled)
+    {
+        string[] parts = request.Split(':');
+        instanceId = default;
+        enabled = parts.Length == 3 && parts[2] == "1";
+        return parts.Length == 3 && (parts[2] is "0" or "1") &&
+            InstanceId.TryParse(parts[1], out instanceId);
+    }
+
+    private static bool TryParseVersion(string request, out InstanceId instanceId, out InstallId installId)
+    {
+        string[] parts = request.Split(':');
+        if (parts.Length == 3 && InstanceId.TryParse(parts[1], out instanceId) &&
+            InstallId.TryParse(parts[2], out installId))
+        {
+            return true;
+        }
+
+        instanceId = default;
+        installId = default;
+        return false;
     }
 
     private static async Task<MirrorPulseAppStatusResponse> SendRequestAsync(

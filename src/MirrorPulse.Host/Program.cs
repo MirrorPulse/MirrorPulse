@@ -86,6 +86,16 @@ try
 
                     await catalog.SetRemoteConflictSnoozedAsync(conflictId, true, cancellationToken);
                     return await ReadStatusAsync(cancellationToken);
+                },
+                async (instanceId, enabled, cancellationToken) =>
+                {
+                    await catalog.SetInstanceEnabledAsync(instanceId, enabled, cancellationToken);
+                    return await ReadStatusAsync(cancellationToken);
+                },
+                async (instanceId, installId, cancellationToken) =>
+                {
+                    await catalog.SelectInstanceInstallationAsync(instanceId, installId, cancellationToken);
+                    return await ReadStatusAsync(cancellationToken);
                 });
             await statusPipe.ServeAsync(shutdown.Token);
         }

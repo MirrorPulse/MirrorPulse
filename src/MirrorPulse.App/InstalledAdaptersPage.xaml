@@ -13,6 +13,11 @@
             <TextBlock Text="Manage the adapters that provide your MirrorPulse locations." TextWrapping="Wrap" />
             <Button Content="Sync status" Click="SyncStatusButton_Click" HorizontalAlignment="Left" />
             <ListView x:Name="InstalledAdaptersList" SelectionMode="None" />
+            <ComboBox x:Name="InstanceSelector" Header="Adapter instance" MinWidth="320" HorizontalAlignment="Left" SelectionChanged="InstanceSelector_SelectionChanged" />
+            <ComboBox x:Name="VersionSelector" Header="Installed version for this instance" MinWidth="320" HorizontalAlignment="Left" SelectionChanged="VersionSelector_SelectionChanged" />
+            <Button x:Name="UseVersionButton" Content="Use selected version" IsEnabled="False" HorizontalAlignment="Left" Click="UseVersionButton_Click" />
+            <ToggleSwitch x:Name="AdapterEnableToggle" Header="Start this instance with MirrorPulse" Toggled="AdapterEnableToggle_Toggled" />
+            <TextBlock x:Name="ActionStatusText" TextWrapping="Wrap" />
             <TextBlock x:Name="EmptyStateText" Text="No Adapters are installed yet." Opacity="0.75" />
         </StackPanel>
     </ScrollViewer>

@@ -2,6 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MirrorPulse.Core;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Host;
 using MirrorPulse.Core.State;
 
 namespace MirrorPulse.App;
@@ -11,13 +13,20 @@ namespace MirrorPulse.App;
 /// </summary>
 public sealed partial class InstalledAdaptersPage : Page
 {
+    private MirrorPulseAdapterTopology _topology = new([], [], []);
+    private AdapterInstance[] _instances = [];
+    private InstalledAdapter[] _versions = [];
+    private bool _loading;
+
     public InstalledAdaptersPage()
     {
         InitializeComponent();
         Loaded += InstalledAdaptersPage_Loaded;
     }
 
-    private async void InstalledAdaptersPage_Loaded(object sender, RoutedEventArgs e)
+    private async void InstalledAdaptersPage_Loaded(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async Task RefreshAsync(InstanceId? selectedInstanceId = null)
     {
         try
         {
@@ -28,6 +37,9 @@ public sealed partial class InstalledAdaptersPage : Page
             var paths = new MirrorPulseStoragePaths(syncRoot, dataRoot);
             MirrorPulseAdapterTopology topology = await MirrorPulseProductCatalog
                 .ReadAdapterTopologySnapshotAsync(paths);
+            _loading = true;
+            _topology = topology;
+            _instances = topology.Instances.ToArray();
             InstalledAdaptersList.ItemsSource = topology.Installations.Select(installation =>
             {
                 string instances = string.Join(", ", topology.Instances
@@ -38,11 +50,126 @@ public sealed partial class InstalledAdaptersPage : Page
             }).ToArray();
             EmptyStateText.Visibility = topology.Installations.Count == 0
                 ? Visibility.Visible : Visibility.Collapsed;
+            InstanceSelector.ItemsSource = _instances.Select(instance =>
+                $"{instance.DisplayName}  ·  {instance.InstanceId}").ToArray();
+            int index = selectedInstanceId is null ? 0 :
+                Array.FindIndex(_instances, instance => instance.InstanceId == selectedInstanceId.Value);
+            InstanceSelector.SelectedIndex = _instances.Length == 0 ? -1 : Math.Max(0, index);
+            UpdateInstanceSelection();
+            _loading = false;
         }
         catch (Exception exception)
         {
+            _loading = false;
             EmptyStateText.Text = $"Could not read installed Adapters: {exception.Message}";
             EmptyStateText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void InstanceSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_loading)
+        {
+            UpdateInstanceSelection();
+        }
+    }
+
+    private void UpdateInstanceSelection()
+    {
+        bool wasLoading = _loading;
+        _loading = true;
+        try
+        {
+            ApplyInstanceSelection();
+        }
+        finally
+        {
+            _loading = wasLoading;
+        }
+    }
+
+    private void ApplyInstanceSelection()
+    {
+        int index = InstanceSelector.SelectedIndex;
+        if (index < 0 || index >= _instances.Length)
+        {
+            _versions = [];
+            VersionSelector.ItemsSource = Array.Empty<string>();
+            UseVersionButton.IsEnabled = false;
+            AdapterEnableToggle.IsEnabled = false;
+            return;
+        }
+
+        AdapterInstance instance = _instances[index];
+        _versions = _topology.Installations.Where(installation => installation.AdapterId == instance.AdapterId)
+            .OrderBy(installation => installation.Version, StringComparer.Ordinal)
+            .ToArray();
+        VersionSelector.ItemsSource = _versions.Select(installation =>
+            $"{installation.Version}  ·  {installation.InstallId}").ToArray();
+        VersionSelector.SelectedIndex = Array.FindIndex(_versions, installation =>
+            installation.InstallId == instance.InstallId);
+        AdapterEnableToggle.IsEnabled = true;
+        AdapterEnableToggle.IsOn = instance.Enabled;
+        UpdateVersionButton();
+    }
+
+    private void VersionSelector_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        UpdateVersionButton();
+
+    private void UpdateVersionButton()
+    {
+        int instanceIndex = InstanceSelector.SelectedIndex;
+        int versionIndex = VersionSelector.SelectedIndex;
+        UseVersionButton.IsEnabled = instanceIndex >= 0 && instanceIndex < _instances.Length &&
+            versionIndex >= 0 && versionIndex < _versions.Length &&
+            _versions[versionIndex].InstallId != _instances[instanceIndex].InstallId;
+    }
+
+    private async void UseVersionButton_Click(object sender, RoutedEventArgs e)
+    {
+        int instanceIndex = InstanceSelector.SelectedIndex;
+        int versionIndex = VersionSelector.SelectedIndex;
+        if (instanceIndex < 0 || instanceIndex >= _instances.Length ||
+            versionIndex < 0 || versionIndex >= _versions.Length)
+        {
+            return;
+        }
+
+        InstanceId instanceId = _instances[instanceIndex].InstanceId;
+        try
+        {
+            await MirrorPulseAppStatusPipe.SelectInstallationAsync(instanceId,
+                _versions[versionIndex].InstallId);
+            ActionStatusText.Text = "The instance version selection was saved.";
+            await RefreshAsync(instanceId);
+        }
+        catch (Exception exception)
+        {
+            ActionStatusText.Text = $"Could not select the Adapter version: {exception.Message}";
+        }
+    }
+
+    private async void AdapterEnableToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        int index = InstanceSelector.SelectedIndex;
+        if (_loading || index < 0 || index >= _instances.Length)
+        {
+            return;
+        }
+
+        InstanceId instanceId = _instances[index].InstanceId;
+        try
+        {
+            await MirrorPulseAppStatusPipe.SetInstanceEnabledAsync(instanceId, AdapterEnableToggle.IsOn);
+            ActionStatusText.Text = "The startup selection was saved.";
+            await RefreshAsync(instanceId);
+        }
+        catch (Exception exception)
+        {
+            ActionStatusText.Text = $"Could not change the startup selection: {exception.Message}";
+            _loading = true;
+            AdapterEnableToggle.IsOn = _instances[index].Enabled;
+            _loading = false;
         }
     }
 
