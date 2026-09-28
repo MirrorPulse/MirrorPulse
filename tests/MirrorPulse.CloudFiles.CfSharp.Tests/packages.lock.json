@@ -195,6 +195,12 @@
       "mirrorpulse.adapter.sdk": {
         "type": "Project"
       },
+      "mirrorpulse.cfsharp.crashprobe": {
+        "type": "Project",
+        "dependencies": {
+          "MirrorPulse.CloudFiles.CfSharp": "[1.0.0, )"
+        }
+      },
       "mirrorpulse.cloudfiles.cfsharp": {
         "type": "Project",
         "dependencies": {
