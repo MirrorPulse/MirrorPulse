@@ -7,7 +7,7 @@ namespace MirrorPulse.CloudFiles.CfSharp;
 
 public sealed record MirrorPulseRoutedItem(InstanceId InstanceId, string RootKey, string RelativePath);
 
-/// <summary>Projects active Adapter roots into one Cloud Files sync root and validates callback routing.</summary>
+/// <summary>Projects active and offline Adapter roots into one Cloud Files sync root.</summary>
 [SupportedOSPlatform("windows10.0.16299")]
 public sealed class MirrorPulseRootRouter
 {
@@ -21,11 +21,12 @@ public sealed class MirrorPulseRootRouter
         _syncRootPath = Path.GetFullPath(syncRootPath);
         _roots = new Dictionary<string, RootRegistration>(StringComparer.OrdinalIgnoreCase);
         var labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (RootRegistration root in registrations.Where(root => root.State == RootRegistrationState.Active))
+        foreach (RootRegistration root in registrations.Where(root =>
+            root.State is RootRegistrationState.Active or RootRegistrationState.Disabled))
         {
             if (!string.Equals(root.Label, root.DirectoryName, StringComparison.Ordinal))
             {
-                throw new InvalidDataException("An active Adapter root's visible Label must equal its directory name.");
+                throw new InvalidDataException("A visible Adapter root's Label must equal its directory name.");
             }
 
             if (!labels.Add(root.Label) || !_roots.TryAdd(root.DirectoryName, root))
@@ -53,6 +54,11 @@ public sealed class MirrorPulseRootRouter
     public MirrorPulseRoutedItem Resolve(string callbackPath, ReadOnlySpan<byte> encodedIdentity)
     {
         (RootRegistration root, string innerPath) = FindRoot(callbackPath);
+        if (root.State == RootRegistrationState.Disabled)
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
 
         CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(encodedIdentity);
         Guid expected = MirrorPulsePlaceholderIdentity
@@ -90,7 +96,7 @@ public sealed class MirrorPulseRootRouter
         string first = separator < 0 ? relative : relative[..separator];
         if (!_roots.TryGetValue(first, out RootRegistration? root))
         {
-            throw new FileNotFoundException("The Adapter root is not active.");
+            throw new FileNotFoundException("The Adapter root is not registered.");
         }
 
         return (root, separator < 0 ? string.Empty : relative[(separator + 1)..]);

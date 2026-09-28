@@ -84,6 +84,32 @@ public sealed class MirrorPulseRootRouterTests
     }
 
     [TestMethod]
+    public async Task DisabledInstanceKeepsItsDirectoryButRejectsRemoteFetch()
+    {
+        string syncRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var instance = InstanceId.New();
+        RootRegistration disabled = AdapterRootRegistrationMapper.Map(
+            AdapterId.Parse("example.drive"), instance,
+            new AdapterRootDefinition("offline", "Offline", "Offline", false),
+            RootRegistrationState.Disabled);
+        var router = new MirrorPulseRootRouter(syncRoot, [disabled]);
+        var provider = new MirrorPulseDemandProvider(router, new RecordingRangeTransport(),
+            new RecordingDirectorySource());
+
+        CloudProviderDirectoryPage root = await provider.FetchChildrenAsync(
+            syncRoot, ReadOnlyMemory<byte>.Empty, null);
+        Assert.HasCount(1, root.Children);
+        Assert.AreEqual("Offline", root.Children[0].Name);
+        Assert.AreEqual(instance, router.ResolvePath(Path.Combine(syncRoot, "Offline", "queued.txt")).InstanceId);
+        await Assert.ThrowsExactlyAsync<IOException>(() => provider.FetchChildrenAsync(
+            Path.Combine(syncRoot, "Offline"), root.Children[0].Identity.Encode(), null).AsTask());
+
+        RootRegistration collision = CreateRoot(InstanceId.New(), "offline");
+        Assert.ThrowsExactly<InvalidDataException>(() => new MirrorPulseRootRouter(syncRoot,
+            [disabled, collision]));
+    }
+
+    [TestMethod]
     public void WrongInstanceIdentityCannotCrossFirstLevelDirectory()
     {
         var first = InstanceId.New();
