@@ -140,17 +140,24 @@ public static class SftpWorkerProgram
             await channel.SendAsync("Connected", helloId, false,
                 new { hostKeySha256 = acceptedFingerprint }, cancellationToken).ConfigureAwait(false);
 
+            var transfer = new SftpWorkerTransferProtocol(channel, client, configuration,
+                arguments.InstanceId, arguments.WorkerSessionId);
             while (true)
             {
                 AdapterControlFrame command = await channel.ReadAsync(cancellationToken).ConfigureAwait(false);
-                if (command.IsResponse || command.MessageType != "Stop")
+                if (command.IsResponse)
                 {
-                    throw new InvalidDataException("The SFTP Worker received an unsupported command.");
+                    throw new InvalidDataException("The Host sent an unexpected SFTP response.");
                 }
 
-                await channel.SendAsync("Stopped", command.RequestId, true, new { }, cancellationToken)
-                    .ConfigureAwait(false);
-                return 0;
+                if (command.MessageType == "Stop")
+                {
+                    await channel.SendAsync("Stopped", command.RequestId, true, new { }, cancellationToken)
+                        .ConfigureAwait(false);
+                    return 0;
+                }
+
+                await transfer.HandleAsync(command, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

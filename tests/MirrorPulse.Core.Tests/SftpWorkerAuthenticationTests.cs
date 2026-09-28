@@ -16,7 +16,7 @@ public sealed class SftpWorkerAuthenticationTests
     {
         await using SftpProtocolFixture fixture = await SftpProtocolFixture.StartAsync();
         ControlFrameEnvelope first = await ConnectAsync(fixture, trustedFingerprint: null, approveFirstKey: true);
-        Assert.AreEqual("Connected", first.MessageType);
+        Assert.AreEqual("Connected", first.MessageType, first.Payload.ToString());
         Assert.AreEqual(fixture.Fingerprint, first.Payload.GetProperty("hostKeySha256").GetString());
 
         ControlFrameEnvelope pinned = await ConnectAsync(fixture, fixture.Fingerprint, approveFirstKey: false);
@@ -127,21 +127,26 @@ internal sealed class SftpProtocolFixture : IAsyncDisposable
 {
     private readonly Process _process;
 
-    private SftpProtocolFixture(Process process, int port, string fingerprint)
+    private SftpProtocolFixture(Process process, int port, string fingerprint, string storageDirectory)
     {
         _process = process;
         Port = port;
         Fingerprint = fingerprint;
+        StorageDirectory = storageDirectory;
     }
 
     public int Port { get; }
 
     public string Fingerprint { get; }
 
+    public string StorageDirectory { get; }
+
     public static async Task<SftpProtocolFixture> StartAsync()
     {
         string repository = FindRepositoryRoot();
         string script = Path.Combine(repository, "eng", "sftp-fixture", "server.py");
+        string storage = Path.Combine(Path.GetTempPath(), $"mirrorpulse-sftp-fixture-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(storage);
         var start = new ProcessStartInfo
         {
             FileName = "python",
@@ -151,6 +156,7 @@ internal sealed class SftpProtocolFixture : IAsyncDisposable
             RedirectStandardError = true,
         };
         start.ArgumentList.Add(script);
+        start.ArgumentList.Add(storage);
         Process process = Process.Start(start) ?? throw new InvalidOperationException("The SFTP fixture did not start.");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         try
@@ -165,7 +171,7 @@ internal sealed class SftpProtocolFixture : IAsyncDisposable
             using JsonDocument ready = JsonDocument.Parse(line);
             return new SftpProtocolFixture(process,
                 ready.RootElement.GetProperty("port").GetInt32(),
-                ready.RootElement.GetProperty("sha256").GetString()!);
+                ready.RootElement.GetProperty("sha256").GetString()!, storage);
         }
         catch
         {
@@ -176,6 +182,7 @@ internal sealed class SftpProtocolFixture : IAsyncDisposable
             }
 
             process.Dispose();
+            Directory.Delete(storage, recursive: true);
             throw;
         }
     }
@@ -188,7 +195,14 @@ internal sealed class SftpProtocolFixture : IAsyncDisposable
             await _process.WaitForExitAsync();
         }
 
+        string errors = await _process.StandardError.ReadToEndAsync();
+        if (!string.IsNullOrWhiteSpace(errors))
+        {
+            Console.WriteLine(errors);
+        }
+
         _process.Dispose();
+        Directory.Delete(StorageDirectory, recursive: true);
     }
 
     private static string FindRepositoryRoot()

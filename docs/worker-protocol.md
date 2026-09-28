@@ -72,6 +72,26 @@ between the second check and rename, and some servers cannot overwrite on
 rename. The Adapter capability matrix must expose that limitation; MirrorPulse
 must retain conflicting content until the user resolves it.
 
+## Implemented SFTP Worker subset
+
+The official SFTP Worker is another independent EXE using the same current-user
+pipe, credential-reference exchange, bounded binary chunks, and transfer cache.
+On its first connection it sends a `HostKeyChallenge` containing the endpoint
+and SSH SHA-256 host-key fingerprint. The Host must explicitly return
+`HostKeyDecision` with the same fingerprint and an approval. The Host owns the
+persistent pin; subsequent `Ready` frames provide that pin, and a changed key
+is rejected before authentication with `HostKeyRejected`.
+
+`Stat`, `ReadRange`, and `Upload` use the FTP subset's control message shapes.
+SFTP ranges use a remote file handle and seek, then return one bounded chunk.
+Uploads stage locally and at a request-specific remote path, compare the
+destination's size and modification time before and after transfer, then use
+the server's POSIX rename extension when available, falling back to standard
+rename. A server that cannot replace the destination on rename reports a
+transfer failure. SFTP also has no atomic compare-and-swap in this protocol
+subset, so concurrent writes can still race after the second revision check.
+The Host retains both sides for explicit conflict resolution.
+
 ## Lifecycle messages
 
 - `Heartbeat` and `Health` provide liveness and a health status of healthy,
