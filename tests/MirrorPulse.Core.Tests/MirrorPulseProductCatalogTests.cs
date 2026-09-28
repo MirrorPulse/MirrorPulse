@@ -172,6 +172,10 @@ public sealed class MirrorPulseProductCatalogTests
                 Assert.IsFalse(await catalog.TryRecordWorkerRequestAsync(operationId, instance, fingerprint));
                 await catalog.SaveUserCommandAsync(new(commandId, "keep-both", "conflict-1", "pending"));
                 await catalog.SaveInstanceRuntimeStateAsync(runtime);
+                IReadOnlyList<MirrorPulseInstanceRuntimeState> liveRuntime = await MirrorPulseProductCatalog
+                    .ReadRuntimeSnapshotAsync(paths);
+                Assert.HasCount(1, liveRuntime);
+                Assert.AreEqual(runtime, liveRuntime[0]);
                 await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
                     catalog.TryRecordWorkerRequestAsync(
                         operationId,

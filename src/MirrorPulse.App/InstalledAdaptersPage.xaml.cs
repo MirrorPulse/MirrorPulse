@@ -45,4 +45,7 @@ public sealed partial class InstalledAdaptersPage : Page
             EmptyStateText.Visibility = Visibility.Visible;
         }
     }
+
+    private void SyncStatusButton_Click(object sender, RoutedEventArgs e) =>
+        Frame.Navigate(typeof(SyncStatusPage));
 }

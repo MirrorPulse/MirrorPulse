@@ -93,6 +93,8 @@ public sealed class MirrorPulseCloudHostSessionTests
                 await session.StartAsync();
                 Assert.AreEqual("MirrorPulse", CloudSyncRoot.Open(paths.SyncRootPath).GetInfo().ProviderName);
                 Assert.IsTrue(File.Exists(paths.CfSharpStateDatabasePath));
+                MirrorPulseCloudStatusSnapshot status = await session.ReadStatusAsync([]);
+                Assert.AreEqual(0, status.PendingUploadCount);
             }
         }
         finally

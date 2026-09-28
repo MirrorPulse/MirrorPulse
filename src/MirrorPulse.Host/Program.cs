@@ -1,6 +1,8 @@
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Host;
+using MirrorPulse.Core.State;
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
 {
@@ -24,9 +26,10 @@ var paths = new MirrorPulseStoragePaths(syncRoot, dataRoot);
 
 try
 {
-    var configuration = await new MirrorPulseConfigurationStore(
+    _ = await new MirrorPulseConfigurationStore(
         Path.Combine(paths.DataRootPath, "config.json")).LoadAsync();
-    string displayName = configuration?.SyncRootDisplayName ?? ProductInfo.Name;
+    await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
+    MirrorPulseAdapterTopology topology = await catalog.ReadAdapterTopologyAsync();
     using var shutdown = new CancellationTokenSource();
     ConsoleCancelEventHandler cancel = (_, eventArgs) =>
     {
@@ -36,12 +39,34 @@ try
     Console.CancelKeyPress += cancel;
     try
     {
-        await using var session = MirrorPulseCloudHostSession.CreateDefault(paths, displayName);
+        await using var session = MirrorPulseCloudHostSession.CreateDefault(
+            paths, topology.Instances, topology.Roots);
         await session.StartAsync(shutdown.Token);
         Console.WriteLine($"{ProductInfo.Name} Cloud Files session started at {paths.SyncRootPath}.");
         if (args.Length == 0)
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, shutdown.Token);
+            var statusPipe = new MirrorPulseAppStatusPipe(async cancellationToken =>
+            {
+                MirrorPulseAdapterTopology current = await catalog.ReadAdapterTopologyAsync(cancellationToken);
+                MirrorPulseCloudStatusSnapshot cloud = await session.ReadStatusAsync(
+                    current.Instances.Select(instance => instance.InstanceId), cancellationToken);
+                var entries = new List<MirrorPulseAppInstanceStatus>(current.Instances.Count);
+                foreach (var instance in current.Instances)
+                {
+                    MirrorPulseInstanceRuntimeState? runtime = await catalog.ReadInstanceRuntimeStateAsync(
+                        instance.InstanceId, cancellationToken);
+                    MirrorPulseInstanceCursorStatus? cursor = cloud.Cursors.SingleOrDefault(item =>
+                        item.InstanceId == instance.InstanceId);
+                    entries.Add(new MirrorPulseAppInstanceStatus(instance.InstanceId.ToString(),
+                        instance.DisplayName, instance.Enabled,
+                        instance.Enabled ? runtime?.Phase ?? "Not running" : "Offline",
+                        cursor?.CursorFingerprint, cursor?.UpdatedAt, runtime?.LastSuccessfulSync));
+                }
+
+                return new MirrorPulseAppStatusResponse(cloud.PendingUploadCount,
+                    cloud.PendingRemoteConflictCount, entries);
+            });
+            await statusPipe.ServeAsync(shutdown.Token);
         }
 
         return 0;

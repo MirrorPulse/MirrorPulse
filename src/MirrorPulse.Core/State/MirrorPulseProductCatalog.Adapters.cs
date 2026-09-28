@@ -118,6 +118,43 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         return payload is null ? new([], [], []) : DeserializeTopology(payload);
     }
 
+    public static async Task<IReadOnlyList<MirrorPulseInstanceRuntimeState>> ReadRuntimeSnapshotAsync(
+        Configuration.MirrorPulseStoragePaths paths,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        if (!File.Exists(paths.ProductCatalogDatabasePath))
+        {
+            return [];
+        }
+
+        var settings = new SqliteConnectionStringBuilder
+        {
+            DataSource = paths.ProductCatalogDatabasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Cache = SqliteCacheMode.Private,
+            Pooling = false,
+        };
+        await using var connection = new SqliteConnection(settings.ToString());
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteCommand query = connection.CreateCommand();
+        query.CommandText = """
+            SELECT instance_id, phase, requires_full_rescan, last_successful_sync_utc
+            FROM instance_runtime ORDER BY instance_id;
+            """;
+        await using SqliteDataReader reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var states = new List<MirrorPulseInstanceRuntimeState>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            states.Add(new MirrorPulseInstanceRuntimeState(
+                InstanceId.Parse(reader.GetString(0)), reader.GetString(1), reader.GetInt32(2) != 0,
+                reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3),
+                    System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        return states;
+    }
+
     public async ValueTask<InstalledAdapter?> FindAsync(
         InstallId installId,
         CancellationToken cancellationToken = default)

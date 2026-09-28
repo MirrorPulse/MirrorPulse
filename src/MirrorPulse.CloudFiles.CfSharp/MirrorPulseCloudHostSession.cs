@@ -10,6 +10,12 @@ namespace MirrorPulse.CloudFiles.CfSharp;
 public interface IMirrorPulseCloudRuntime : IAsyncDisposable
 {
     ValueTask StartAsync(CancellationToken cancellationToken);
+
+    ValueTask<MirrorPulseCloudStatusSnapshot> ReadStatusAsync(
+        IEnumerable<InstanceId> instanceIds,
+        CancellationToken cancellationToken) =>
+        ValueTask.FromException<MirrorPulseCloudStatusSnapshot>(
+            new NotSupportedException("This Cloud Files runtime does not expose status."));
 }
 
 public interface IMirrorPulseCloudRuntimeFactory
@@ -34,12 +40,19 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         return new CfSharpRuntime(new MirrorPulseCloudFileSystemBuilder(paths)
             .WithStateStore(state)
             .WithContentProvider(_provider ?? MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath))
-            .Build());
+            .Build(), state);
     }
 
-    private sealed class CfSharpRuntime(CloudFileSystem fileSystem) : IMirrorPulseCloudRuntime
+    private sealed class CfSharpRuntime(CloudFileSystem fileSystem, MirrorPulseCfSharpStateSession state)
+        : IMirrorPulseCloudRuntime
     {
         public ValueTask StartAsync(CancellationToken cancellationToken) => fileSystem.StartAsync(cancellationToken);
+
+        public async ValueTask<MirrorPulseCloudStatusSnapshot> ReadStatusAsync(
+            IEnumerable<InstanceId> instanceIds,
+            CancellationToken cancellationToken) =>
+            await MirrorPulseCloudStatusReader.ReadAsync(state.OpenStore, instanceIds, cancellationToken)
+                .ConfigureAwait(false);
 
         public ValueTask DisposeAsync() => fileSystem.DisposeAsync();
     }
@@ -165,6 +178,18 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
 
             throw;
         }
+    }
+
+    public ValueTask<MirrorPulseCloudStatusSnapshot> ReadStatusAsync(
+        IEnumerable<InstanceId> instanceIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_started || _runtime is null)
+        {
+            throw new InvalidOperationException("The Cloud Files Host session has not started.");
+        }
+
+        return _runtime.ReadStatusAsync(instanceIds, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

@@ -32,6 +32,11 @@
           "Microsoft.WindowsAppSDK.WinUI": "2.3.9"
         }
       },
+      "CfSharp.Native": {
+        "type": "Transitive",
+        "resolved": "0.1.0-preview.1",
+        "contentHash": "2PskOBSlah6aCjzxGV/xMxnCee79hmVxMRuepfHU29lX/cd5UOaGtrxaXF1iZHpo5OoitTaua0AV2JiPgrjuzw=="
+      },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
         "resolved": "8.0.31",
@@ -180,10 +185,41 @@
         "resolved": "9.0.0",
         "contentHash": "hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A=="
       },
+      "mirrorpulse.adapter.sdk": {
+        "type": "Project"
+      },
+      "mirrorpulse.cloudfiles.cfsharp": {
+        "type": "Project",
+        "dependencies": {
+          "CfSharp": "[0.1.0-preview.1, )",
+          "CfSharp.Storage.Sqlite": "[0.1.0-preview.1, )",
+          "MirrorPulse.Adapter.Sdk": "[1.0.0, )",
+          "MirrorPulse.Core": "[1.0.0, )"
+        }
+      },
       "mirrorpulse.core": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[8.0.31, )"
+        }
+      },
+      "CfSharp": {
+        "type": "CentralTransitive",
+        "requested": "[0.1.0-preview.1, )",
+        "resolved": "0.1.0-preview.1",
+        "contentHash": "e9Zpm7JNEhH69ZhbdcwW8Eu6ITBqHLgHaTuGc1/bOEYbsFzPjkVJekmqVRF8yG5Sj5K9j3yYCK51plfOjhzU+Q==",
+        "dependencies": {
+          "CfSharp.Native": "0.1.0-preview.1"
+        }
+      },
+      "CfSharp.Storage.Sqlite": {
+        "type": "CentralTransitive",
+        "requested": "[0.1.0-preview.1, )",
+        "resolved": "0.1.0-preview.1",
+        "contentHash": "LIAU/X97rMXBbvEEtLqpQKam9KPZ/cy/JDOrwhwZEDj8vSqtM9oHXSVFtEIsH04hvko/D5jw+PGW5GcC9Ck4mA==",
+        "dependencies": {
+          "CfSharp": "0.1.0-preview.1",
+          "Microsoft.Data.Sqlite": "8.0.31"
         }
       },
       "Microsoft.Data.Sqlite": {
