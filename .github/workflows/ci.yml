@@ -44,3 +44,20 @@ jobs:
       - name: Verify native Cloud Files integration
         if: github.event_name == 'workflow_dispatch'
         run: pwsh ./eng/verify-native.ps1
+
+  ftp-package-arm64:
+    runs-on: windows-11-arm
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore MirrorPulse.sln --locked-mode
+
+      - name: Verify signed FTP package and native ARM64 Worker
+        run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~FtpSignedPackageProcessTests
