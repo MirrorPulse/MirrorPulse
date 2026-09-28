@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="MirrorPulse.App.NotificationsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="16" Padding="32">
+            <TextBlock Text="Notifications" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="Pending file conflicts stay here until resolved. Snoozing hides the interruption while preserving the conflict." TextWrapping="Wrap" />
+            <ListView x:Name="NotificationsList" SelectionMode="Single" SelectionChanged="NotificationsList_SelectionChanged" />
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Content="Refresh" Click="RefreshButton_Click" />
+                <Button x:Name="SnoozeButton" Content="Snooze selected" IsEnabled="False" Click="SnoozeButton_Click" />
+            </StackPanel>
+            <TextBlock x:Name="NotificationsMessageText" TextWrapping="Wrap" Opacity="0.75" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

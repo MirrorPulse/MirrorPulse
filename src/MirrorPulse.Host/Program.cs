@@ -45,7 +45,7 @@ try
         Console.WriteLine($"{ProductInfo.Name} Cloud Files session started at {paths.SyncRootPath}.");
         if (args.Length == 0)
         {
-            var statusPipe = new MirrorPulseAppStatusPipe(async cancellationToken =>
+            async Task<MirrorPulseAppStatusResponse> ReadStatusAsync(CancellationToken cancellationToken)
             {
                 MirrorPulseAdapterTopology current = await catalog.ReadAdapterTopologyAsync(cancellationToken);
                 MirrorPulseCloudStatusSnapshot cloud = await session.ReadStatusAsync(
@@ -63,9 +63,30 @@ try
                         cursor?.CursorFingerprint, cursor?.UpdatedAt, runtime?.LastSuccessfulSync));
                 }
 
+                IReadOnlySet<Guid> snoozed = await catalog.ReadSnoozedRemoteConflictIdsAsync(cancellationToken);
+                var notifications = (await catalog.ReadRemoteConflictProjectionsAsync(cancellationToken))
+                    .Where(conflict => cloud.PendingRemoteConflictIds.Contains(conflict.ConflictId))
+                    .Select(conflict => new MirrorPulseAppNotification(
+                        conflict.ConflictId.ToString("D"), conflict.RelativePath,
+                        conflict.DetectedAt, snoozed.Contains(conflict.ConflictId)))
+                    .OrderByDescending(item => item.DetectedAt)
+                    .ToArray();
                 return new MirrorPulseAppStatusResponse(cloud.PendingUploadCount,
-                    cloud.PendingRemoteConflictCount, entries);
-            });
+                    cloud.PendingRemoteConflictCount, entries, notifications);
+            }
+
+            var statusPipe = new MirrorPulseAppStatusPipe(ReadStatusAsync,
+                async (conflictId, cancellationToken) =>
+                {
+                    MirrorPulseAppStatusResponse current = await ReadStatusAsync(cancellationToken);
+                    if (!current.Notifications.Any(item => item.ConflictId == conflictId.ToString("D")))
+                    {
+                        throw new FileNotFoundException("The pending conflict notification was not found.");
+                    }
+
+                    await catalog.SetRemoteConflictSnoozedAsync(conflictId, true, cancellationToken);
+                    return await ReadStatusAsync(cancellationToken);
+                });
             await statusPipe.ServeAsync(shutdown.Token);
         }
 

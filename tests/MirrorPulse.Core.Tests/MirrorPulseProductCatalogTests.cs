@@ -14,6 +14,33 @@ namespace MirrorPulse.Core.Tests;
 public sealed class MirrorPulseProductCatalogTests
 {
     [TestMethod]
+    public async Task SnoozedConflictNotificationSurvivesRestartAndCanBeRestored()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        Guid conflictId = Guid.NewGuid();
+        try
+        {
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                await catalog.SetRemoteConflictSnoozedAsync(conflictId, true);
+                Assert.Contains(conflictId, await catalog.ReadSnoozedRemoteConflictIdsAsync());
+            }
+
+            await using (var reopened = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                Assert.Contains(conflictId, await reopened.ReadSnoozedRemoteConflictIdsAsync());
+                await reopened.SetRemoteConflictSnoozedAsync(conflictId, false);
+                Assert.DoesNotContain(conflictId, await reopened.ReadSnoozedRemoteConflictIdsAsync());
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task AdapterTopologyReopensAndRejectsCollidingRootWithoutChangingStoredInventory()
     {
         string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));

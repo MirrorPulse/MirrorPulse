@@ -13,7 +13,8 @@ public sealed record MirrorPulseInstanceCursorStatus(
 public sealed record MirrorPulseCloudStatusSnapshot(
     int PendingUploadCount,
     int PendingRemoteConflictCount,
-    IReadOnlyList<MirrorPulseInstanceCursorStatus> Cursors);
+    IReadOnlyList<MirrorPulseInstanceCursorStatus> Cursors,
+    IReadOnlySet<Guid> PendingRemoteConflictIds);
 
 /// <summary>Reads CfSharp's authoritative journal, conflicts and checkpoints for product status UI.</summary>
 public static class MirrorPulseCloudStatusReader
@@ -46,6 +47,7 @@ public static class MirrorPulseCloudStatusReader
         }
 
         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-        return new(pending.Count, conflicts.Count, cursors);
+        return new(pending.Count, conflicts.Count, cursors,
+            conflicts.Select(conflict => conflict.ConflictId).ToHashSet());
     }
 }

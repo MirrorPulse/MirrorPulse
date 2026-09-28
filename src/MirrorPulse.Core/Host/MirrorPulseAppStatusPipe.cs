@@ -15,10 +15,17 @@ public sealed record MirrorPulseAppInstanceStatus(
     DateTimeOffset? CursorUpdatedAt,
     DateTimeOffset? LastSuccessfulSync);
 
+public sealed record MirrorPulseAppNotification(
+    string ConflictId,
+    string RelativePath,
+    DateTimeOffset DetectedAt,
+    bool Snoozed);
+
 public sealed record MirrorPulseAppStatusResponse(
     int PendingUploads,
     int PendingRemoteConflicts,
     IReadOnlyList<MirrorPulseAppInstanceStatus> Instances,
+    IReadOnlyList<MirrorPulseAppNotification> Notifications,
     string? Error = null);
 
 /// <summary>Current-user, bounded request/response channel from WinUI to the owner Host.</summary>
@@ -26,10 +33,14 @@ public sealed class MirrorPulseAppStatusPipe
 {
     private const int MaximumFrameBytes = 1024 * 1024;
     private readonly Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> _readStatus;
+    private readonly Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _snooze;
 
-    public MirrorPulseAppStatusPipe(Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus)
+    public MirrorPulseAppStatusPipe(
+        Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
+        Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? snooze = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
+        _snooze = snooze;
     }
 
     public static string CurrentUserPipeName()
@@ -52,11 +63,7 @@ public sealed class MirrorPulseAppStatusPipe
                     await ReadFrameAsync(pipe, cancellationToken).ConfigureAwait(false))
                     ?? string.Empty;
                 MirrorPulseAppStatusResponse response;
-                if (request != "status")
-                {
-                    response = new(0, 0, [], "Unknown Host request.");
-                }
-                else
+                if (request == "status")
                 {
                     try
                     {
@@ -64,8 +71,24 @@ public sealed class MirrorPulseAppStatusPipe
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
-                        response = new(0, 0, [], exception.Message);
+                        response = new(0, 0, [], [], exception.Message);
                     }
+                }
+                else if (request.StartsWith("snooze:", StringComparison.Ordinal) &&
+                    Guid.TryParseExact(request[7..], "D", out Guid conflictId) && _snooze is not null)
+                {
+                    try
+                    {
+                        response = await _snooze(conflictId, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        response = new(0, 0, [], [], exception.Message);
+                    }
+                }
+                else
+                {
+                    response = new(0, 0, [], [], "Unknown Host request.");
                 }
 
                 await WriteFrameAsync(pipe, JsonSerializer.SerializeToUtf8Bytes(response), cancellationToken)
@@ -91,13 +114,30 @@ public sealed class MirrorPulseAppStatusPipe
     }
 
     public static async Task<MirrorPulseAppStatusResponse> RequestAsync(
+        CancellationToken cancellationToken = default) =>
+        await SendRequestAsync("status", cancellationToken).ConfigureAwait(false);
+
+    public static async Task<MirrorPulseAppStatusResponse> SnoozeAsync(
+        Guid conflictId,
+        CancellationToken cancellationToken = default)
+    {
+        if (conflictId == Guid.Empty)
+        {
+            throw new ArgumentException("The conflict ID cannot be empty.", nameof(conflictId));
+        }
+
+        return await SendRequestAsync($"snooze:{conflictId:D}", cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<MirrorPulseAppStatusResponse> SendRequestAsync(
+        string request,
         CancellationToken cancellationToken = default)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
         await using NamedPipeClientStream pipe = await NamedPipeWorkerClient.ConnectAsync(
             CurrentUserPipeName(), TimeSpan.FromSeconds(5), timeout.Token).ConfigureAwait(false);
-        await WriteFrameAsync(pipe, JsonSerializer.SerializeToUtf8Bytes("status"), timeout.Token)
+        await WriteFrameAsync(pipe, JsonSerializer.SerializeToUtf8Bytes(request), timeout.Token)
             .ConfigureAwait(false);
         byte[] payload = await ReadFrameAsync(pipe, timeout.Token).ConfigureAwait(false);
         MirrorPulseAppStatusResponse response = JsonSerializer.Deserialize<MirrorPulseAppStatusResponse>(payload)

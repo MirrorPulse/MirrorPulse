@@ -17,6 +17,9 @@ public sealed partial class SyncStatusPage : Page
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
 
+    private void NotificationsButton_Click(object sender, RoutedEventArgs e) =>
+        Frame.Navigate(typeof(NotificationsPage));
+
     private async Task RefreshAsync()
     {
         try

@@ -77,6 +77,9 @@ public sealed class MirrorPulseRemoteConflictProjectorTests
                     center.Query().Single(record => record.ConflictId == uploadId).Source);
                 Assert.AreEqual(MirrorPulseConflictSource.CfSharpRemote,
                     center.Query().Single(record => record.ConflictId == conflictId).Source);
+                MirrorPulseCloudStatusSnapshot pending = await MirrorPulseCloudStatusReader.ReadAsync(
+                    official, [instance]);
+                Assert.Contains(conflictId, pending.PendingRemoteConflictIds);
 
                 await using (ICloudStateTransaction transaction = await official.BeginTransactionAsync())
                 {
@@ -86,6 +89,9 @@ public sealed class MirrorPulseRemoteConflictProjectorTests
 
                 Assert.IsEmpty(await projector.RestoreAsync());
                 Assert.AreEqual(uploadId, center.Query().Single().ConflictId);
+                MirrorPulseCloudStatusSnapshot resolved = await MirrorPulseCloudStatusReader.ReadAsync(
+                    official, [instance]);
+                Assert.DoesNotContain(conflictId, resolved.PendingRemoteConflictIds);
             }
         }
         finally

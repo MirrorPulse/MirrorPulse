@@ -92,7 +92,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                 version.CommandText = "PRAGMA user_version;";
                 long currentVersion = (long)(await version.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false) ?? 0L);
-                if (currentVersion > 4)
+                if (currentVersion > 5)
                 {
                     throw new InvalidDataException("The MP product catalog schema is newer than this Host supports.");
                 }
@@ -135,7 +135,11 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                         id INTEGER PRIMARY KEY CHECK (id = 1),
                         payload TEXT NOT NULL
                     );
-                    PRAGMA user_version=4;
+                    CREATE TABLE IF NOT EXISTS notification_snoozes (
+                        conflict_id TEXT PRIMARY KEY,
+                        snoozed_utc TEXT NOT NULL
+                    );
+                    PRAGMA user_version=5;
                     """;
                 await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
