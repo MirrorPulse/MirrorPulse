@@ -6,6 +6,39 @@ namespace MirrorPulse.Core.Tests;
 public sealed class MirrorPulseLocalDirectoryWatcherTests
 {
     [TestMethod]
+    public async Task WorkerWritesAreSuppressedWhileExternalSourceChangesRemainVisible()
+    {
+        string source = CreateDirectory();
+        try
+        {
+            var echo = new MirrorPulseLocalDirectoryEchoSuppressor();
+            using var watcher = new MirrorPulseLocalDirectoryWatcher(source, echo);
+            var received = new System.Collections.Concurrent.ConcurrentQueue<MirrorPulseLocalDirectoryChangeEventArgs>();
+            var external = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            watcher.Changed += (_, change) =>
+            {
+                received.Enqueue(change);
+                if (change.RelativePath == "nested/external.txt")
+                {
+                    external.TrySetResult();
+                }
+            };
+            watcher.Start();
+
+            var writer = new MirrorPulseLocalDirectoryWriter(source, echo);
+            await writer.WriteAsync("nested/synced.txt", "worker write"u8.ToArray());
+            await File.WriteAllTextAsync(Path.Combine(source, "nested", "external.txt"), "user write");
+            Assert.AreSame(external.Task, await Task.WhenAny(external.Task, Task.Delay(TimeSpan.FromSeconds(5))));
+            await Task.Delay(100);
+            Assert.IsFalse(received.Any(change => change.RelativePath.Contains("synced.txt", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            Directory.Delete(source, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task WatcherReportsCreatedFilesAsNormalizedRelativeChanges()
     {
         var source = CreateDirectory();

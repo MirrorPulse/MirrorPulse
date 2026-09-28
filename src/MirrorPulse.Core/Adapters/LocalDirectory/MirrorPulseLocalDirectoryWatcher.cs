@@ -46,12 +46,16 @@ public sealed class MirrorPulseLocalDirectoryChangeEventArgs : EventArgs
 public sealed class MirrorPulseLocalDirectoryWatcher : IDisposable
 {
     private readonly string _sourceDirectory;
+    private readonly MirrorPulseLocalDirectoryEchoSuppressor? _echo;
     private FileSystemWatcher? _watcher;
 
-    public MirrorPulseLocalDirectoryWatcher(string sourceDirectory)
+    public MirrorPulseLocalDirectoryWatcher(
+        string sourceDirectory,
+        MirrorPulseLocalDirectoryEchoSuppressor? echo = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
         _sourceDirectory = Path.GetFullPath(sourceDirectory);
+        _echo = echo;
     }
 
     public event EventHandler<MirrorPulseLocalDirectoryChangeEventArgs>? Changed;
@@ -118,6 +122,11 @@ public sealed class MirrorPulseLocalDirectoryWatcher : IDisposable
     {
         var relativePath = Path.GetRelativePath(_sourceDirectory, fullPath);
         var oldRelativePath = oldFullPath is null ? null : Path.GetRelativePath(_sourceDirectory, oldFullPath);
+        if (_echo?.Observe(relativePath, kind, DateTimeOffset.UtcNow) == true)
+        {
+            return;
+        }
+
         Changed?.Invoke(this, new MirrorPulseLocalDirectoryChangeEventArgs(kind, relativePath, oldRelativePath));
     }
 }

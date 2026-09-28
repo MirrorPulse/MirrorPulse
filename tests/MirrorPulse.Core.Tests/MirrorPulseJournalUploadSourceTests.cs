@@ -44,11 +44,7 @@ public sealed class MirrorPulseJournalUploadSourceTests
                 await feed.StartAsync();
                 if (run == 0)
                 {
-                    await feed.SuppressProviderEchoAsync(
-                        CloudStateOperationKind.MetadataUpdate,
-                        "Documents",
-                        DateTimeOffset.UtcNow.AddMinutes(1));
-                    await fileSystem.Root.CreatePlaceholdersAsync(router.CreateRootPage().Children);
+                    await new MirrorPulseRootPopulationCoordinator(fileSystem, feed).PopulateAsync(router);
                 }
                 await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
                 if (run == 0)
@@ -61,6 +57,8 @@ public sealed class MirrorPulseJournalUploadSourceTests
                     feed, router, catalog, _ => run == 0);
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 MirrorPulseJournalUploadBatch batch = await source.ReadPendingAsync(timeout.Token);
+                CloudLocalChangeBatch raw = await feed.ReadBatchAsync(timeout.Token);
+                Assert.IsFalse(raw.Changes.Any(change => change.RelativePath == "Documents"));
                 Assert.IsFalse(batch.RequiresFullRescan);
                 if (run == 0)
                 {
