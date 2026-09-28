@@ -24,12 +24,14 @@ public sealed class MirrorPulseJournalUploadSource
     private readonly MirrorPulseRootRouter _router;
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly Func<InstanceId, bool> _mayDispatch;
+    private readonly MirrorPulseJournalUploadCompletion? _completion;
 
     public MirrorPulseJournalUploadSource(
         CloudLocalChangeFeed feed,
         MirrorPulseRootRouter router,
         MirrorPulseProductCatalog catalog,
-        Func<InstanceId, bool> mayDispatch)
+        Func<InstanceId, bool> mayDispatch,
+        MirrorPulseJournalUploadCompletion? completion = null)
     {
         ArgumentNullException.ThrowIfNull(feed);
         ArgumentNullException.ThrowIfNull(router);
@@ -39,6 +41,7 @@ public sealed class MirrorPulseJournalUploadSource
         _router = router;
         _catalog = catalog;
         _mayDispatch = mayDispatch;
+        _completion = completion;
     }
 
     public async ValueTask<MirrorPulseJournalUploadBatch> ReadPendingAsync(
@@ -61,7 +64,12 @@ public sealed class MirrorPulseJournalUploadSource
                 command.InstanceId,
                 fingerprint,
                 cancellationToken).ConfigureAwait(false);
-            if (_mayDispatch(command.InstanceId))
+            DateTimeOffset? retryAfter = _completion is null
+                ? null
+                : await _completion.GetRetryAfterAsync(command.OperationId, cancellationToken)
+                    .ConfigureAwait(false);
+            if (_mayDispatch(command.InstanceId) &&
+                (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow))
             {
                 ready.Add(command);
             }

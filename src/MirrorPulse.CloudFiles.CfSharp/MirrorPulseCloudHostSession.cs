@@ -29,7 +29,9 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
     public IMirrorPulseCloudRuntime Create(MirrorPulseStoragePaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        var state = new MirrorPulseCfSharpStateSession(paths);
         return new CfSharpRuntime(new MirrorPulseCloudFileSystemBuilder(paths)
+            .WithStateStore(state)
             .WithContentProvider(_provider ?? MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath))
             .Build());
     }

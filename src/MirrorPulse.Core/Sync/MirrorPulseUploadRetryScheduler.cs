@@ -26,7 +26,16 @@ public sealed class MirrorPulseUploadRetryScheduler
             throw new InvalidOperationException("Only in-flight uploads can be scheduled for retry.");
         }
 
-        var attempt = checked(operation.Attempt + 1);
+        return Schedule(operation.Attempt, now, reason);
+    }
+
+    public RetryAfterDirective Schedule(
+        int previousAttempt,
+        DateTimeOffset now,
+        string? reason = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(previousAttempt);
+        var attempt = checked(previousAttempt + 1);
         var delay = CalculateDelay(attempt);
         return new RetryAfterDirective(delay, attempt, now + delay, reason);
     }
