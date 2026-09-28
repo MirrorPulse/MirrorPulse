@@ -30,7 +30,7 @@ public sealed record MirrorPulseInstanceRuntimeState(
 /// tables in its own database; this catalog tracks Worker idempotency, user intent, and
 /// non-authoritative conflict UI projections.
 /// </summary>
-public sealed class MirrorPulseProductCatalog : IAsyncDisposable
+public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
 {
     private readonly FileStream _owner;
     private readonly SqliteConnection _connection;
@@ -92,7 +92,7 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
                 version.CommandText = "PRAGMA user_version;";
                 long currentVersion = (long)(await version.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false) ?? 0L);
-                if (currentVersion > 3)
+                if (currentVersion > 4)
                 {
                     throw new InvalidDataException("The MP product catalog schema is newer than this Host supports.");
                 }
@@ -131,7 +131,11 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
                         requires_full_rescan INTEGER NOT NULL,
                         last_successful_sync_utc TEXT NULL
                     );
-                    PRAGMA user_version=3;
+                    CREATE TABLE IF NOT EXISTS adapter_topology (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        payload TEXT NOT NULL
+                    );
+                    PRAGMA user_version=4;
                     """;
                 await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }

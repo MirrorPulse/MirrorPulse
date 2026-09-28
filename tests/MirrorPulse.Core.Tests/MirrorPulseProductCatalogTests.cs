@@ -5,6 +5,7 @@ using CfSharp.Storage.Sqlite;
 using Microsoft.Data.Sqlite;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.State;
 
 namespace MirrorPulse.Core.Tests;
@@ -12,6 +13,60 @@ namespace MirrorPulse.Core.Tests;
 [TestClass]
 public sealed class MirrorPulseProductCatalogTests
 {
+    [TestMethod]
+    public async Task AdapterTopologyReopensAndRejectsCollidingRootWithoutChangingStoredInventory()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        AdapterId adapterId = AdapterId.Parse("example.drive");
+        var installId = InstallId.New();
+        var instanceId = InstanceId.New();
+        var manifest = new AdapterManifest(1, adapterId, "Example", "1.0.0",
+            new ProtocolVersionRange(1, 1), new Dictionary<string, string>
+            {
+                ["win-x64"] = "worker/win-x64/adapter.exe",
+                ["win-arm64"] = "worker/win-arm64/adapter.exe",
+            }, new AdapterInstallPolicy(null), new AdapterInstancePolicy(null, null),
+            new AdapterCapabilities(true, false, true, true), ["en-US"], "1.0.0");
+        var installation = new InstalledAdapter(manifest, installId, Path.Combine(root, "installed"),
+            new Sha256Digest(new string('A', 64)), AdapterInstallSource.LocalFile, null,
+            true, DateTimeOffset.UtcNow, AdapterLifecycleState.Installed);
+        var instance = new AdapterInstance(adapterId, installId, instanceId, "Personal drive",
+            new Dictionary<string, string> { ["server"] = "example.test" }, ["credential-1"],
+            Path.Combine(root, "file-cache"), Path.Combine(root, "transfer-cache"), true,
+            AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+        RootRegistration first = AdapterRootRegistrationMapper.Map(adapterId, instanceId,
+            new AdapterRootDefinition("files", "Files", "Files", false), RootRegistrationState.Active);
+        var topology = new MirrorPulseAdapterTopology([installation], [instance], [first]);
+
+        try
+        {
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                await catalog.SaveAdapterTopologyAsync(topology);
+                RootRegistration duplicate = AdapterRootRegistrationMapper.Map(adapterId, instanceId,
+                    new AdapterRootDefinition("other", "files", "files", false), RootRegistrationState.Disabled);
+                await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                    catalog.SaveAdapterTopologyAsync(new([installation], [instance], [first, duplicate])));
+            }
+
+            await using var reopened = await MirrorPulseProductCatalog.OpenAsync(paths);
+            MirrorPulseAdapterTopology restored = await reopened.ReadAdapterTopologyAsync();
+            Assert.HasCount(1, restored.Installations);
+            Assert.HasCount(1, restored.Instances);
+            Assert.HasCount(1, restored.Roots);
+            Assert.AreEqual("example.drive", restored.Installations[0].AdapterId.ToString());
+            Assert.AreEqual("Personal drive", restored.Instances[0].DisplayName);
+            Assert.AreEqual("credential-1", restored.Instances[0].CredentialReferences[0]);
+            Assert.AreEqual(first.RootId, restored.Roots[0].RootId);
+            Assert.IsNotNull(await reopened.FindAsync(installId));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [TestMethod]
     public async Task VersionOneCatalogUpgradesWithoutLosingWorkerFingerprint()
     {
