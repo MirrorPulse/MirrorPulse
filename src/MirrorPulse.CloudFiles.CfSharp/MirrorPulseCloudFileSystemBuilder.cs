@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using CfSharp;
 
-namespace MirrorPulse.Core.CloudFiles;
+namespace MirrorPulse.CloudFiles.CfSharp;
 
 /// <summary>
 /// Composes the CfSharp CloudFileSystem with MP-owned registration and durable-state dependencies.
