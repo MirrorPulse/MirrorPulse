@@ -5,7 +5,7 @@
       "CfSharp.Native": {
         "type": "Transitive",
         "resolved": "0.1.0-preview.1",
-        "contentHash": "URun51bqitFEJOgOMxUqEfRi6N7MLsrgyGYltk74G3K+/dZyKbu3XZuqN55UDdjUy7mTb09fXfNt+V94wCRmHg=="
+        "contentHash": "2PskOBSlah6aCjzxGV/xMxnCee79hmVxMRuepfHU29lX/cd5UOaGtrxaXF1iZHpo5OoitTaua0AV2JiPgrjuzw=="
       },
       "mirrorpulse.core": {
         "type": "Project",
@@ -17,7 +17,7 @@
         "type": "CentralTransitive",
         "requested": "[0.1.0-preview.1, )",
         "resolved": "0.1.0-preview.1",
-        "contentHash": "T207qbjnQFA99eQ4G87iDgPCC/ijMjX1k+sj+Y9V/LMd8YTykzUXGAdBuGknxCCXjic68GLY6pyapVE/CqA1Yw==",
+        "contentHash": "e9Zpm7JNEhH69ZhbdcwW8Eu6ITBqHLgHaTuGc1/bOEYbsFzPjkVJekmqVRF8yG5Sj5K9j3yYCK51plfOjhzU+Q==",
         "dependencies": {
           "CfSharp.Native": "0.1.0-preview.1"
         }
