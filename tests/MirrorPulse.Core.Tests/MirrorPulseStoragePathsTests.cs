@@ -1,4 +1,5 @@
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Contracts;
 
 namespace MirrorPulse.Core.Tests;
 
@@ -13,6 +14,8 @@ public sealed class MirrorPulseStoragePathsTests
 
         Assert.AreEqual(Path.Combine(root, "sync"), paths.SyncRootPath);
         Assert.AreEqual(Path.Combine(root, "data"), paths.DataRootPath);
+        Assert.AreEqual(Path.Combine(root, "data", "state", "cfsharp.db"), paths.CfSharpStateDatabasePath);
+        Assert.IsFalse(SourceDirectoryPathNormalizer.IsWithin(paths.SyncRootPath, paths.CfSharpStateDatabasePath));
     }
 
     [TestMethod]
@@ -23,5 +26,7 @@ public sealed class MirrorPulseStoragePathsTests
         Assert.ThrowsExactly<ArgumentException>(() => new MirrorPulseStoragePaths(root, root));
         Assert.ThrowsExactly<ArgumentException>(() => new MirrorPulseStoragePaths(root, Path.Combine(root, "data")));
         Assert.ThrowsExactly<ArgumentException>(() => new MirrorPulseStoragePaths(Path.Combine(root, "sync"), root));
+        Assert.ThrowsExactly<ArgumentException>(() => new MirrorPulseStoragePaths("relative-sync", Path.Combine(root, "data")));
+        Assert.ThrowsExactly<ArgumentException>(() => new MirrorPulseStoragePaths(Path.Combine(root, "sync"), "relative-data"));
     }
 }
