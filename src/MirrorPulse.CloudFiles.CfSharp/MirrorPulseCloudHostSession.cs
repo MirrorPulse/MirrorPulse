@@ -19,18 +19,18 @@ public interface IMirrorPulseCloudRuntimeFactory
 [SupportedOSPlatform("windows10.0.16299")]
 public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRuntimeFactory
 {
-    private readonly ICloudDemandProvider _provider;
+    private readonly ICloudDemandProvider? _provider;
 
     public CfSharpMirrorPulseCloudRuntimeFactory(ICloudDemandProvider? provider = null)
     {
-        _provider = provider ?? MirrorPulseDemandProvider.CreateWithoutAdapters();
+        _provider = provider;
     }
 
     public IMirrorPulseCloudRuntime Create(MirrorPulseStoragePaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
         return new CfSharpRuntime(new MirrorPulseCloudFileSystemBuilder(paths)
-            .WithContentProvider(_provider)
+            .WithContentProvider(_provider ?? MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath))
             .Build());
     }
 

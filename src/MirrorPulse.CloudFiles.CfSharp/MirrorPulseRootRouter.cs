@@ -1,0 +1,116 @@
+using System.Runtime.Versioning;
+using CfSharp;
+using MirrorPulse.Core.CloudFiles;
+using MirrorPulse.Core.Contracts;
+
+namespace MirrorPulse.CloudFiles.CfSharp;
+
+public sealed record MirrorPulseRoutedItem(InstanceId InstanceId, string RelativePath);
+
+/// <summary>Projects active Adapter roots into one Cloud Files sync root and validates callback routing.</summary>
+[SupportedOSPlatform("windows10.0.16299")]
+public sealed class MirrorPulseRootRouter
+{
+    private readonly string _syncRootPath;
+    private readonly Dictionary<string, RootRegistration> _roots;
+
+    public MirrorPulseRootRouter(string syncRootPath, IEnumerable<RootRegistration> registrations)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(syncRootPath);
+        ArgumentNullException.ThrowIfNull(registrations);
+        _syncRootPath = Path.GetFullPath(syncRootPath);
+        _roots = new Dictionary<string, RootRegistration>(StringComparer.OrdinalIgnoreCase);
+        var labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (RootRegistration root in registrations.Where(root => root.State == RootRegistrationState.Active))
+        {
+            if (!string.Equals(root.Label, root.DirectoryName, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("An active Adapter root's visible Label must equal its directory name.");
+            }
+
+            if (!labels.Add(root.Label) || !_roots.TryAdd(root.DirectoryName, root))
+            {
+                throw new InvalidDataException($"Duplicate first-level Adapter Label: '{root.Label}'.");
+            }
+        }
+    }
+
+    public CloudProviderDirectoryPage CreateRootPage()
+    {
+        CloudPlaceholderSpec[] roots = _roots.Values
+            .OrderBy(root => root.DirectoryName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(root => root.DirectoryName, StringComparer.Ordinal)
+            .Select(root => (CloudPlaceholderSpec)CloudDirectoryPlaceholderSpec
+                .CreateBuilder(root.DirectoryName, CreateRootIdentity(root))
+                .WithPopulationState(CloudDirectoryPopulationState.Partial)
+                .Build())
+            .ToArray();
+        return new CloudProviderDirectoryPage(roots);
+    }
+
+    public bool IsSyncRoot(string callbackPath) => GetRelativePath(callbackPath).Length == 0;
+
+    public MirrorPulseRoutedItem Resolve(string callbackPath, ReadOnlySpan<byte> encodedIdentity)
+    {
+        string relative = GetRelativePath(callbackPath);
+        if (relative.Length == 0)
+        {
+            throw new InvalidDataException("The sync root does not belong to one Adapter instance.");
+        }
+
+        int separator = relative.IndexOf(Path.DirectorySeparatorChar);
+        string first = separator < 0 ? relative : relative[..separator];
+        if (!_roots.TryGetValue(first, out RootRegistration? root))
+        {
+            throw new FileNotFoundException("The Adapter root is not active.");
+        }
+
+        CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(encodedIdentity);
+        Guid expected = MirrorPulsePlaceholderIdentity
+            .Create(root.InstanceId, identity.RemoteId, identity.RemoteRevision)
+            .ToCfSharp()
+            .ItemId;
+        if (identity.ItemId != expected)
+        {
+            throw new InvalidDataException("The placeholder identity belongs to another Adapter instance.");
+        }
+
+        string innerPath = separator < 0 ? string.Empty : relative[(separator + 1)..];
+        if (innerPath.Length == 0 && identity.ItemId != CreateRootIdentity(root).ItemId)
+        {
+            throw new InvalidDataException("The Adapter root has an unexpected placeholder identity.");
+        }
+
+        return new(root.InstanceId, innerPath);
+    }
+
+    private string GetRelativePath(string callbackPath)
+    {
+        ArgumentNullException.ThrowIfNull(callbackPath);
+        if (callbackPath.Length == 0 || callbackPath is "/" or "\\")
+        {
+            return string.Empty;
+        }
+
+        string candidate = Path.IsPathFullyQualified(callbackPath)
+            ? Path.GetFullPath(callbackPath)
+            : Path.GetFullPath(Path.Combine(_syncRootPath, callbackPath.TrimStart('/', '\\')));
+        if (string.Equals(candidate, _syncRootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        string prefix = _syncRootPath.EndsWith(Path.DirectorySeparatorChar)
+            ? _syncRootPath
+            : _syncRootPath + Path.DirectorySeparatorChar;
+        if (!candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The Cloud Files callback path is outside the MirrorPulse root.");
+        }
+
+        return candidate[prefix.Length..];
+    }
+
+    private static CloudPlaceholderIdentity CreateRootIdentity(RootRegistration root) =>
+        MirrorPulsePlaceholderIdentity.Create(root.InstanceId, $"mirrorpulse-root:{root.RootId}").ToCfSharp();
+}

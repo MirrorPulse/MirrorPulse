@@ -27,6 +27,7 @@ public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
     private readonly InstanceId[] _activeInstances;
     private readonly IMirrorPulseWorkerRangeTransport _transport;
     private readonly IMirrorPulseDirectoryPageSource? _directoryPages;
+    private readonly MirrorPulseRootRouter? _rootRouter;
 
     public MirrorPulseDemandProvider(
         IEnumerable<InstanceId> activeInstances,
@@ -40,9 +41,22 @@ public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
         _directoryPages = directoryPages;
     }
 
+    public MirrorPulseDemandProvider(
+        MirrorPulseRootRouter rootRouter,
+        IMirrorPulseWorkerRangeTransport transport,
+        IMirrorPulseDirectoryPageSource? directoryPages = null)
+        : this([], transport, directoryPages)
+    {
+        ArgumentNullException.ThrowIfNull(rootRouter);
+        _rootRouter = rootRouter;
+    }
+
     /// <summary>Connects a real CfSharp session while the current user has no active Adapters.</summary>
     public static MirrorPulseDemandProvider CreateWithoutAdapters() =>
         new([], new NoActiveAdapterRangeTransport());
+
+    public static MirrorPulseDemandProvider CreateWithoutAdapters(string syncRootPath) =>
+        new(new MirrorPulseRootRouter(syncRootPath, []), new NoActiveAdapterRangeTransport());
 
     public ValueTask<CloudProviderDirectoryPage> FetchChildrenAsync(
         CloudProviderFetchPlaceholdersRequest request,
@@ -64,6 +78,16 @@ public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
     {
         ArgumentNullException.ThrowIfNull(normalizedPath);
         cancellationToken.ThrowIfCancellationRequested();
+        if (_rootRouter?.IsSyncRoot(normalizedPath) == true)
+        {
+            if (continuationToken is not null)
+            {
+                throw new InvalidDataException("The top-level Adapter roots have no continuation page.");
+            }
+
+            return _rootRouter.CreateRootPage();
+        }
+
         if ((normalizedPath.Length == 0 || normalizedPath is "/" or "\\")
             && directoryIdentity.IsEmpty && _activeInstances.Length == 0)
         {
@@ -75,11 +99,23 @@ public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
             throw new NotSupportedException("No Adapter directory source is connected.");
         }
 
-        CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(directoryIdentity.Span);
-        InstanceId instanceId = ResolveInstance(identity);
+        InstanceId instanceId;
+        string adapterPath = normalizedPath;
+        if (_rootRouter is null)
+        {
+            CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(directoryIdentity.Span);
+            instanceId = ResolveInstance(identity);
+        }
+        else
+        {
+            MirrorPulseRoutedItem routed = _rootRouter.Resolve(normalizedPath, directoryIdentity.Span);
+            instanceId = routed.InstanceId;
+            adapterPath = routed.RelativePath;
+        }
+
         ReadOnlyMemory<byte> cursor = DecodeContinuation(continuationToken);
         CloudRemoteDirectoryPage page = await _directoryPages
-            .ReadPageAsync(instanceId, normalizedPath, cursor, DirectoryPageSize, cancellationToken)
+            .ReadPageAsync(instanceId, adapterPath, cursor, DirectoryPageSize, cancellationToken)
             .ConfigureAwait(false) ?? throw new InvalidDataException("The Adapter returned no directory page.");
         if (page.Entries.Count > DirectoryPageSize)
         {
@@ -160,12 +196,24 @@ public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(encodedIdentity.Span);
-        InstanceId instanceId = ResolveInstance(identity);
+        InstanceId instanceId;
+        string adapterPath = normalizedPath;
+        if (_rootRouter is null)
+        {
+            CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(encodedIdentity.Span);
+            instanceId = ResolveInstance(identity);
+        }
+        else
+        {
+            MirrorPulseRoutedItem routed = _rootRouter.Resolve(normalizedPath, encodedIdentity.Span);
+            instanceId = routed.InstanceId;
+            adapterPath = routed.RelativePath;
+        }
+
         Stream stream = new WorkerRangeStream(
             _transport,
             instanceId,
-            normalizedPath,
+            adapterPath,
             encodedIdentity.ToArray(),
             fileSize);
         return ValueTask.FromResult(stream);
