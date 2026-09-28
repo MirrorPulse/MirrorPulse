@@ -76,6 +76,22 @@ public sealed class MirrorPulseRootRouterTests
         Assert.ThrowsExactly<InvalidDataException>(() => router.Resolve(Path.Combine(syncRoot, "..", "outside"), identity));
     }
 
+    [TestMethod]
+    public void VolumeRootedNativeCallbackResolvesOnSyncRootVolume()
+    {
+        string syncRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var instance = InstanceId.New();
+        var router = new MirrorPulseRootRouter(syncRoot, [CreateRoot(instance, "Documents")]);
+        string fullPath = Path.Combine(syncRoot, "Documents", "note.txt");
+        string volumeRoot = Path.GetPathRoot(syncRoot)!;
+        string volumeRelativePath = Path.DirectorySeparatorChar + fullPath[volumeRoot.Length..];
+
+        Assert.AreEqual(instance, router.ResolvePath(volumeRelativePath).InstanceId);
+        Assert.AreEqual("note.txt", router.ResolvePath(volumeRelativePath).RelativePath);
+        Assert.ThrowsExactly<InvalidDataException>(() => router.ResolvePath(
+            Path.DirectorySeparatorChar + Path.Combine("outside", "note.txt")));
+    }
+
     private static RootRegistration CreateRoot(InstanceId instanceId, string label) =>
         AdapterRootRegistrationMapper.Map(
             AdapterId.Parse("example.drive"), instanceId,

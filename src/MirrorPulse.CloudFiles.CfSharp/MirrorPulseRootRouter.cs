@@ -104,9 +104,10 @@ public sealed class MirrorPulseRootRouter
             return string.Empty;
         }
 
-        string candidate = Path.IsPathFullyQualified(callbackPath)
-            ? Path.GetFullPath(callbackPath)
-            : Path.GetFullPath(Path.Combine(_syncRootPath, callbackPath.TrimStart('/', '\\')));
+        // CfSharp forwards native callbacks as volume-rooted paths (for example,
+        // \Users\name\MirrorPulse) without the drive letter. Resolve those against
+        // the sync root's volume; combining them as child paths misroutes callbacks.
+        string candidate = Path.GetFullPath(callbackPath, _syncRootPath);
         if (string.Equals(candidate, _syncRootPath, StringComparison.OrdinalIgnoreCase))
         {
             return string.Empty;
