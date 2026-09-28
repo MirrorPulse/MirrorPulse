@@ -17,6 +17,11 @@ public sealed record MirrorPulseWebDavReadResult(
     long? TotalLength,
     string? ETag);
 
+public sealed record MirrorPulseWebDavUploadResult(
+    string RelativePath,
+    long Length,
+    string? ETag);
+
 /// <summary>
 /// Lists WebDAV directories through authenticated PROPFIND requests.
 /// </summary>
@@ -80,6 +85,47 @@ public sealed class MirrorPulseWebDavDirectoryClient
         var content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         var totalLength = response.Content.Headers.ContentRange?.Length ?? response.Content.Headers.ContentLength;
         return new MirrorPulseWebDavReadResult(content, totalLength, response.Headers.ETag?.Tag);
+    }
+
+    public async Task<MirrorPulseWebDavUploadResult> UploadAsync(
+        string relativePath,
+        ReadOnlyMemory<byte> content,
+        CancellationToken cancellationToken = default)
+    {
+        var destination = Resolve(relativePath);
+        var temporaryRelativePath = $"{relativePath}.mp-upload-{Guid.NewGuid():N}";
+        var temporary = Resolve(temporaryRelativePath);
+        try
+        {
+            using (var put = MirrorPulseWebDavAuthenticator.CreateRequest(HttpMethod.Put, temporary, _credential))
+            {
+                put.Content = new ByteArrayContent(content.ToArray());
+                put.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                using var putResponse = await _httpClient.SendAsync(put, cancellationToken).ConfigureAwait(false);
+                putResponse.EnsureSuccessStatusCode();
+            }
+
+            using var move = MirrorPulseWebDavAuthenticator.CreateRequest(new HttpMethod("MOVE"), temporary, _credential);
+            move.Headers.TryAddWithoutValidation("Destination", destination.AbsoluteUri);
+            move.Headers.TryAddWithoutValidation("Overwrite", "T");
+            using var moveResponse = await _httpClient.SendAsync(move, cancellationToken).ConfigureAwait(false);
+            moveResponse.EnsureSuccessStatusCode();
+            return new MirrorPulseWebDavUploadResult(relativePath.Replace('\\', '/'), content.Length, moveResponse.Headers.ETag?.Tag);
+        }
+        catch
+        {
+            try
+            {
+                using var delete = MirrorPulseWebDavAuthenticator.CreateRequest(HttpMethod.Delete, temporary, _credential);
+                using var deleteResponse = await _httpClient.SendAsync(delete, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (HttpRequestException)
+            {
+                // Preserve the original upload failure when cleanup is unavailable.
+            }
+
+            throw;
+        }
     }
 
     private Uri Resolve(string relativePath)
