@@ -9,7 +9,8 @@ public sealed record OfficialProcessAdapterPackageInput(
     string Label,
     string Version,
     string WinX64PublishDirectory,
-    string WinArm64PublishDirectory);
+    string WinArm64PublishDirectory,
+    string WorkerExecutableName = "MirrorPulse.Adapter.Ftp.Worker.exe");
 
 public sealed record SignedAdapterPackageBuildResult(
     AdapterPackageBuildResult Package,
@@ -44,8 +45,10 @@ public static class OfficialProcessAdapterPackageBuilder
         string staging = Path.Combine(Path.GetTempPath(), $"mirrorpulse-package-{Guid.NewGuid():N}");
         try
         {
-            CopyPublishedWorker(input.WinX64PublishDirectory, Path.Combine(staging, "worker", "win-x64"));
-            CopyPublishedWorker(input.WinArm64PublishDirectory, Path.Combine(staging, "worker", "win-arm64"));
+            CopyPublishedWorker(input.WinX64PublishDirectory, Path.Combine(staging, "worker", "win-x64"),
+                input.WorkerExecutableName);
+            CopyPublishedWorker(input.WinArm64PublishDirectory, Path.Combine(staging, "worker", "win-arm64"),
+                input.WorkerExecutableName);
             var manifest = new
             {
                 schemaVersion = 1,
@@ -110,13 +113,20 @@ public static class OfficialProcessAdapterPackageBuilder
         }
     }
 
-    private static void CopyPublishedWorker(string publishDirectory, string destination)
+    private static void CopyPublishedWorker(string publishDirectory, string destination, string executableName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publishDirectory);
-        string source = Path.GetFullPath(publishDirectory);
-        if (!File.Exists(Path.Combine(source, "MirrorPulse.Adapter.Ftp.Worker.exe")))
+        if (Path.GetFileName(executableName) != executableName ||
+            !executableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
-            throw new FileNotFoundException("The published FTP Worker executable is missing.", source);
+            throw new ArgumentException("The Worker executable name must be a plain .exe filename.",
+                nameof(executableName));
+        }
+
+        string source = Path.GetFullPath(publishDirectory);
+        if (!File.Exists(Path.Combine(source, executableName)))
+        {
+            throw new FileNotFoundException("The published Worker executable is missing.", source);
         }
 
         Directory.CreateDirectory(destination);
@@ -133,7 +143,7 @@ public static class OfficialProcessAdapterPackageBuilder
             File.Copy(file, target);
         }
 
-        File.Move(Path.Combine(destination, "MirrorPulse.Adapter.Ftp.Worker.exe"),
+        File.Move(Path.Combine(destination, executableName),
             Path.Combine(destination, WorkerName));
     }
 }
