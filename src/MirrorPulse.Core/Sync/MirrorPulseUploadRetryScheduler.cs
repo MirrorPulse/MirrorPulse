@@ -16,20 +16,6 @@ public sealed class MirrorPulseUploadRetryScheduler
     }
 
     public RetryAfterDirective Schedule(
-        MirrorPulseQueuedUpload operation,
-        DateTimeOffset now,
-        string? reason = null)
-    {
-        ArgumentNullException.ThrowIfNull(operation);
-        if (operation.State is not MirrorPulseUploadOperationState.InFlight)
-        {
-            throw new InvalidOperationException("Only in-flight uploads can be scheduled for retry.");
-        }
-
-        return Schedule(operation.Attempt, now, reason);
-    }
-
-    public RetryAfterDirective Schedule(
         int previousAttempt,
         DateTimeOffset now,
         string? reason = null)

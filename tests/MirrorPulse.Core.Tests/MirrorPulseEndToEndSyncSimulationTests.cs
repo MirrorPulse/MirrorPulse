@@ -18,14 +18,9 @@ public sealed class MirrorPulseEndToEndSyncSimulationTests
     {
         var instanceId = InstanceId.New();
         var localId = Guid.NewGuid();
-        var local = new MirrorPulseQueuedUpload(
-            localId,
-            instanceId,
-            MirrorPulseUploadOperationKind.Create,
-            "docs/a.txt",
-            null,
-            new byte[] { 1 },
-            DateTimeOffset.UtcNow);
+        var local = new MirrorPulseWorkerChangeCommand(
+            localId, 1, instanceId, "docs", MirrorPulseWorkerChangeKind.Create,
+            "a.txt", null, null, false, null, DateTimeOffset.UtcNow);
         var remote = CreateRemote("remote-1");
         var conflictId = Guid.NewGuid();
         var conflict = new MirrorPulseConflictRecord(

@@ -1,79 +1,27 @@
 namespace MirrorPulse.Core.Sync;
 
 /// <summary>
-/// Produces a deterministic topological order for queued uploads.
+/// Presents the ordered CfSharp journal as a Worker delivery plan. Sequence is owned by CfSharp;
+/// MP does not persist another dependency graph or reorder operations by local timestamps.
 /// </summary>
 public static class MirrorPulseUploadDependencyPlanner
 {
-    public static IReadOnlyList<MirrorPulseQueuedUpload> Plan(
-        IEnumerable<MirrorPulseQueuedUpload> operations)
+    public static IReadOnlyList<MirrorPulseWorkerChangeCommand> Plan(
+        IEnumerable<MirrorPulseWorkerChangeCommand> commands)
     {
-        ArgumentNullException.ThrowIfNull(operations);
-        var operationMap = operations.ToDictionary(operation => operation.OperationId);
-        var indegree = operationMap.Keys.ToDictionary(operationId => operationId, _ => 0);
-        var dependents = operationMap.Keys.ToDictionary(operationId => operationId, _ => new List<Guid>());
-
-        foreach (var operation in operationMap.Values)
+        ArgumentNullException.ThrowIfNull(commands);
+        MirrorPulseWorkerChangeCommand[] snapshot = commands.ToArray();
+        if (snapshot.Any(command => command.OperationId == Guid.Empty || command.Sequence <= 0))
         {
-            foreach (var dependency in operation.Dependencies)
-            {
-                if (dependency == operation.OperationId)
-                {
-                    throw new InvalidDataException("An upload operation cannot depend on itself.");
-                }
-
-                if (!operationMap.ContainsKey(dependency))
-                {
-                    throw new InvalidDataException(
-                        $"Upload operation {operation.OperationId:D} depends on a missing operation.");
-                }
-
-                indegree[operation.OperationId]++;
-                dependents[dependency].Add(operation.OperationId);
-            }
+            throw new InvalidDataException("Every Worker command requires a CfSharp operation ID and journal sequence.");
         }
 
-        var ready = new SortedSet<Guid>(CreateComparer(operationMap));
-        foreach (var pair in indegree.Where(pair => pair.Value == 0))
+        if (snapshot.Select(command => command.OperationId).Distinct().Count() != snapshot.Length ||
+            snapshot.Select(command => command.Sequence).Distinct().Count() != snapshot.Length)
         {
-            ready.Add(pair.Key);
+            throw new InvalidDataException("A CfSharp journal page cannot repeat an operation ID or sequence.");
         }
 
-        var ordered = new List<MirrorPulseQueuedUpload>(operationMap.Count);
-        while (ready.Count > 0)
-        {
-            var operationId = ready.Min;
-            ready.Remove(operationId);
-            ordered.Add(operationMap[operationId]);
-
-            foreach (var dependent in dependents[operationId])
-            {
-                indegree[dependent]--;
-                if (indegree[dependent] == 0)
-                {
-                    ready.Add(dependent);
-                }
-            }
-        }
-
-        if (ordered.Count != operationMap.Count)
-        {
-            throw new InvalidDataException("The upload operation graph contains a dependency cycle.");
-        }
-
-        return ordered;
+        return Array.AsReadOnly(snapshot.OrderBy(command => command.Sequence).ToArray());
     }
-
-    private static Comparer<Guid> CreateComparer(
-        Dictionary<Guid, MirrorPulseQueuedUpload> operationMap) =>
-        Comparer<Guid>.Create((left, right) =>
-        {
-            if (left == right)
-            {
-                return 0;
-            }
-
-            var comparison = operationMap[left].CreatedAt.CompareTo(operationMap[right].CreatedAt);
-            return comparison != 0 ? comparison : left.CompareTo(right);
-        });
 }

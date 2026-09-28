@@ -10,13 +10,13 @@ public sealed record MirrorPulseSyncReplayResult(
     IReadOnlyList<string> RemoteChangeIds);
 
 /// <summary>
-/// Replays local queue dependencies and ordered remote operations without native or network access.
+/// Presents CfSharp journal order and remote operations without native or network access.
 /// </summary>
 [SupportedOSPlatform("windows10.0.16299")]
 public static class MirrorPulseSyncReplayHarness
 {
     public static MirrorPulseSyncReplayResult Replay(
-        IEnumerable<MirrorPulseQueuedUpload> localOperations,
+        IEnumerable<MirrorPulseWorkerChangeCommand> localOperations,
         IEnumerable<MirrorPulseRemoteOperation> remoteOperations)
     {
         ArgumentNullException.ThrowIfNull(localOperations);

@@ -7,43 +7,35 @@ namespace MirrorPulse.Core.Tests;
 public sealed class MirrorPulseUploadDependencyPlannerTests
 {
     [TestMethod]
-    public void PlannerPlacesDependenciesBeforeDependentsDeterministically()
+    public void PlanFollowsCfSharpJournalSequenceAcrossCreateMoveAndDelete()
     {
-        var firstId = Guid.NewGuid();
-        var first = Create(firstId, DateTimeOffset.UtcNow);
-        var second = Create(Guid.NewGuid(), first.CreatedAt.AddMinutes(1), [firstId]);
-        var third = Create(Guid.NewGuid(), first.CreatedAt.AddMinutes(2));
+        var instance = InstanceId.New();
+        var created = Command(1, instance, MirrorPulseWorkerChangeKind.Create);
+        var moved = Command(2, instance, MirrorPulseWorkerChangeKind.Move);
+        var deleted = Command(3, instance, MirrorPulseWorkerChangeKind.Delete);
 
-        var ordered = MirrorPulseUploadDependencyPlanner.Plan([second, third, first]);
+        IReadOnlyList<MirrorPulseWorkerChangeCommand> ordered = MirrorPulseUploadDependencyPlanner.Plan(
+            [deleted, created, moved]);
 
-        CollectionAssert.AreEqual(new[] { first, second, third }, ordered.ToArray());
+        CollectionAssert.AreEqual(new[] { created, moved, deleted }, ordered.ToArray());
     }
 
     [TestMethod]
-    public void PlannerRejectsMissingDependenciesAndCycles()
+    public void PlanRejectsRepeatedJournalIdentityOrSequence()
     {
-        var missing = Guid.NewGuid();
-        Assert.ThrowsExactly<InvalidDataException>(() =>
-            MirrorPulseUploadDependencyPlanner.Plan([Create(Guid.NewGuid(), DateTimeOffset.UtcNow, [missing])]));
+        var instance = InstanceId.New();
+        var first = Command(1, instance, MirrorPulseWorkerChangeKind.Create);
+        var repeatedSequence = Command(1, instance, MirrorPulseWorkerChangeKind.Delete);
+        var repeatedId = first with { Sequence = 2 };
 
-        var firstId = Guid.NewGuid();
-        var secondId = Guid.NewGuid();
-        var first = Create(firstId, DateTimeOffset.UtcNow, [secondId]);
-        var second = Create(secondId, DateTimeOffset.UtcNow.AddMinutes(1), [firstId]);
-        Assert.ThrowsExactly<InvalidDataException>(() =>
-            MirrorPulseUploadDependencyPlanner.Plan([first, second]));
+        Assert.ThrowsExactly<InvalidDataException>(() => MirrorPulseUploadDependencyPlanner.Plan([first, repeatedSequence]));
+        Assert.ThrowsExactly<InvalidDataException>(() => MirrorPulseUploadDependencyPlanner.Plan([first, repeatedId]));
     }
 
-    private static MirrorPulseQueuedUpload Create(
-        Guid operationId,
-        DateTimeOffset createdAt,
-        IReadOnlyList<Guid>? dependencies = null) => new(
-            operationId,
-            InstanceId.New(),
-            MirrorPulseUploadOperationKind.Update,
-            $"{operationId:D}.txt",
-            null,
-            new byte[] { 1 },
-            createdAt,
-            dependencies);
+    private static MirrorPulseWorkerChangeCommand Command(
+        long sequence,
+        InstanceId instanceId,
+        MirrorPulseWorkerChangeKind kind) => new(
+            Guid.NewGuid(), sequence, instanceId, "docs", kind, "a.txt", null, null,
+            false, null, DateTimeOffset.UtcNow);
 }

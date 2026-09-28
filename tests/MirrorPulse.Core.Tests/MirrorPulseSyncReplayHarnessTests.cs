@@ -16,23 +16,16 @@ public sealed class MirrorPulseSyncReplayHarnessTests
     public void HarnessReplaysLocalDependenciesBeforeRemoteChanges()
     {
         var firstId = Guid.NewGuid();
-        var first = new MirrorPulseQueuedUpload(
-            firstId,
-            InstanceId.New(),
-            MirrorPulseUploadOperationKind.Create,
-            "docs/a.txt",
-            null,
-            new byte[] { 1 },
-            DateTimeOffset.UtcNow);
-        var second = new MirrorPulseQueuedUpload(
-            Guid.NewGuid(),
-            first.InstanceId,
-            MirrorPulseUploadOperationKind.Update,
-            "docs/a.txt",
-            null,
-            new byte[] { 2 },
-            first.CreatedAt.AddMinutes(1),
-            [firstId]);
+        var instance = InstanceId.New();
+        var first = new MirrorPulseWorkerChangeCommand(
+            firstId, 1, instance, "docs", MirrorPulseWorkerChangeKind.Create,
+            "a.txt", null, null, false, null, DateTimeOffset.UtcNow);
+        var second = first with
+        {
+            OperationId = Guid.NewGuid(),
+            Sequence = 2,
+            Kind = MirrorPulseWorkerChangeKind.ContentUpdate,
+        };
         var remote = new MirrorPulseRemoteOperation(
             MirrorPulseRemoteOperationKind.MetadataUpdate,
             "remote-1",

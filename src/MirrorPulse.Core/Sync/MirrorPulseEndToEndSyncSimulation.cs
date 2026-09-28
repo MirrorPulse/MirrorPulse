@@ -12,13 +12,13 @@ public sealed record MirrorPulseEndToEndSyncSimulationResult(
     int NotificationCount);
 
 /// <summary>
-/// Exercises the local queue, remote change replay, conflict center, and immediate notification path together.
+/// Exercises the local journal plan, remote replay, conflict center, and notification path together.
 /// </summary>
 [SupportedOSPlatform("windows10.0.16299")]
 public static class MirrorPulseEndToEndSyncSimulation
 {
     public static async Task<MirrorPulseEndToEndSyncSimulationResult> RunAsync(
-        IEnumerable<MirrorPulseQueuedUpload> localOperations,
+        IEnumerable<MirrorPulseWorkerChangeCommand> localOperations,
         IEnumerable<MirrorPulseRemoteOperation> remoteOperations,
         IEnumerable<MirrorPulseConflictRecord> conflicts,
         CancellationToken cancellationToken = default)
