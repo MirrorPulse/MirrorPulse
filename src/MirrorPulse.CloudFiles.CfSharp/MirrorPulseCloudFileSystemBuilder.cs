@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using CfSharp;
+using MirrorPulse.Core.Configuration;
 
 namespace MirrorPulse.CloudFiles.CfSharp;
 
@@ -18,6 +19,12 @@ public sealed class MirrorPulseCloudFileSystemBuilder
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(syncRootPath);
         _syncRootPath = Path.GetFullPath(syncRootPath.Trim());
+    }
+
+    public MirrorPulseCloudFileSystemBuilder(MirrorPulseStoragePaths paths)
+        : this(paths?.SyncRootPath ?? throw new ArgumentNullException(nameof(paths)))
+    {
+        _stateStoreFactory = MirrorPulseCfSharpStateStoreFactory.Create(paths);
     }
 
     public MirrorPulseCloudFileSystemBuilder WithStateStore(ICloudStateStoreFactory stateStoreFactory)

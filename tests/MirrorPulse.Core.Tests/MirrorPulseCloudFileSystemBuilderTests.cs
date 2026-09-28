@@ -1,6 +1,8 @@
 using System.Runtime.Versioning;
 using CfSharp;
+using CfSharp.Storage.Sqlite;
 using MirrorPulse.CloudFiles.CfSharp;
+using MirrorPulse.Core.Configuration;
 
 namespace MirrorPulse.Core.Tests;
 
@@ -47,6 +49,58 @@ public sealed class MirrorPulseCloudFileSystemBuilderTests
         finally
         {
             Directory.Delete(path, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task StoragePathsUseOfficialSqliteStoreAcrossReopen()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        Directory.CreateDirectory(paths.SyncRootPath);
+
+        try
+        {
+            await using (var fileSystem = new MirrorPulseCloudFileSystemBuilder(paths).Build())
+            {
+                Assert.AreEqual(CloudFileSystemLifecycleState.Created, fileSystem.LifecycleState);
+            }
+
+            var factory = MirrorPulseCfSharpStateStoreFactory.Create(paths);
+            var context = new CloudStateStoreContext(paths.SyncRootPath);
+            await using (var store = await factory.OpenAsync(context))
+            {
+                await using var transaction = await store.BeginTransactionAsync();
+                await transaction.Checkpoints.UpsertAsync(
+                    new CloudStateCheckpoint("mirrorpulse/test", [1, 2, 3], DateTimeOffset.UtcNow));
+                await transaction.CommitAsync();
+
+                var owned = await Assert.ThrowsExactlyAsync<SqliteCloudStateStoreException>(async () =>
+                {
+                    await factory.OpenAsync(context);
+                });
+                Assert.AreEqual(SqliteCloudStateStoreError.AlreadyInUse, owned.Error);
+            }
+
+            await using (var reopened = await factory.OpenAsync(context))
+            {
+                await using var transaction = await reopened.BeginTransactionAsync();
+                var checkpoint = await transaction.Checkpoints.GetAsync("mirrorpulse/test");
+                Assert.IsNotNull(checkpoint);
+                CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, checkpoint.Value.ToArray());
+                await transaction.RollbackAsync();
+            }
+
+            var insideRoot = new SqliteCloudStateStoreFactory(Path.Combine(paths.SyncRootPath, "unsafe.db"));
+            var rejected = await Assert.ThrowsExactlyAsync<SqliteCloudStateStoreException>(async () =>
+            {
+                await insideRoot.OpenAsync(context);
+            });
+            Assert.AreEqual(SqliteCloudStateStoreError.PathInsideSyncRoot, rejected.Error);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
         }
     }
 

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="CfSharp" />
+    <PackageReference Include="CfSharp.Storage.Sqlite" />
     <ProjectReference Include="..\MirrorPulse.Core\MirrorPulse.Core.csproj" />
   </ItemGroup>
 
