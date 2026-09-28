@@ -14,6 +14,41 @@ namespace MirrorPulse.Core.Tests;
 public sealed class MirrorPulseProductCatalogTests
 {
     [TestMethod]
+    public async Task CatalogRejectsSecondInstallationWhenFirstPackageRequiresUniqueness()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        AdapterId adapterId = AdapterId.Parse("example.unique");
+        var manifest = new AdapterManifest(1, adapterId, "Example", "1.0.0",
+            new ProtocolVersionRange(1, 1), new Dictionary<string, string>
+            {
+                ["win-x64"] = "worker/adapter.exe",
+                ["win-arm64"] = "worker/adapter.exe",
+            }, new AdapterInstallPolicy(1), new AdapterInstancePolicy(null, null),
+            new AdapterCapabilities(true, false, true, false), ["en-US"], "1.0.0");
+        InstalledAdapter NewInstallation(string directory, AdapterManifest packageManifest) =>
+            new(packageManifest, InstallId.New(), Path.Combine(root, directory),
+                new Sha256Digest(new string('A', 64)), AdapterInstallSource.LocalFile, null,
+                true, DateTimeOffset.UtcNow, AdapterLifecycleState.Installed);
+        try
+        {
+            await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
+            await catalog.AddInstallationAsync(NewInstallation("first", manifest));
+            var permissive = new AdapterManifest(1, adapterId, "Example", "2.0.0",
+                manifest.Protocol, manifest.Entrypoints, new AdapterInstallPolicy(null),
+                manifest.InstancePolicy, manifest.Capabilities, manifest.Locales,
+                manifest.MinimumMirrorPulseVersion);
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                catalog.AddInstallationAsync(NewInstallation("second", permissive)));
+            Assert.HasCount(1, (await catalog.ReadAdapterTopologyAsync()).Installations);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task SnoozedConflictNotificationSurvivesRestartAndCanBeRestored()
     {
         string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));

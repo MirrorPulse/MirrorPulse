@@ -4,8 +4,10 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Packaging;
+using MirrorPulse.Core.State;
 using MirrorPulse.Core.Transport;
 using MirrorPulse.Core.Workers;
 
@@ -52,6 +54,27 @@ public sealed class FtpSignedPackageProcessTests
             Assert.AreEqual("com.mirrorpulse.adapter.ftp", installation.AdapterId);
             Assert.IsTrue(File.Exists(installation.ExecutablePath));
             await VerifyInstalledWorkerStartsAsync(installation);
+
+            var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"),
+                Path.Combine(root, "product-data"));
+            InstallId registeredId;
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                InstalledAdapter registered = await catalog.InstallSignedAdapterAsync(packagePath,
+                    package.SignaturePath, Path.Combine(root, "catalog-installed"), runtimeIdentifier,
+                    key, "MirrorPulse");
+                registeredId = registered.InstallId;
+                Assert.AreEqual("com.mirrorpulse.adapter.ftp", registered.AdapterId.ToString());
+                Assert.IsTrue(registered.IsSigned);
+                Assert.IsTrue(File.Exists(Path.Combine(registered.InstallationDirectory, "manifest.json")));
+            }
+
+            await using (var reopened = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                MirrorPulseAdapterTopology topology = await reopened.ReadAdapterTopologyAsync();
+                Assert.HasCount(1, topology.Installations);
+                Assert.AreEqual(registeredId, topology.Installations[0].InstallId);
+            }
 
             using (var archive = ZipFile.Open(packagePath, ZipArchiveMode.Update))
             {
