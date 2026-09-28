@@ -33,6 +33,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MirrorPulse.CloudFiles.CfSh
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MirrorPulse.CfSharp.CrashProbe", "tests\MirrorPulse.CfSharp.CrashProbe\MirrorPulse.CfSharp.CrashProbe.csproj", "{29D20A18-ECE9-4F9F-AF4F-CA8D929D3573}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MirrorPulse.Adapter.Ftp.Worker", "Adapters\official\MirrorPulse.Adapter.Ftp.Worker\MirrorPulse.Adapter.Ftp.Worker.csproj", "{9AD9F39B-2147-4573-85C2-8F63D7061E32}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -163,6 +165,18 @@ Global
 		{29D20A18-ECE9-4F9F-AF4F-CA8D929D3573}.Release|x64.Build.0 = Release|Any CPU
 		{29D20A18-ECE9-4F9F-AF4F-CA8D929D3573}.Release|x86.ActiveCfg = Release|Any CPU
 		{29D20A18-ECE9-4F9F-AF4F-CA8D929D3573}.Release|x86.Build.0 = Release|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Debug|x64.Build.0 = Debug|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Debug|x86.Build.0 = Debug|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Release|x64.ActiveCfg = Release|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Release|x64.Build.0 = Release|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Release|x86.ActiveCfg = Release|Any CPU
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -180,5 +194,6 @@ Global
 		{A44363DE-3745-4460-AAF5-26AD89AD12DD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E781D26C-7BEC-4C00-8B9D-7CFEC15995E1} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{29D20A18-ECE9-4F9F-AF4F-CA8D929D3573} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{9AD9F39B-2147-4573-85C2-8F63D7061E32} = {09DF2EE5-5FE7-3EC7-59CB-CAD7E0928979}
 	EndGlobalSection
 EndGlobal

@@ -192,6 +192,13 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
+      "mirrorpulse.adapter.ftp.worker": {
+        "type": "Project",
+        "dependencies": {
+          "FluentFTP": "[54.2.1, )",
+          "MirrorPulse.Adapter.Sdk": "[1.0.0, )"
+        }
+      },
       "mirrorpulse.adapter.sdk": {
         "type": "Project"
       },
@@ -228,6 +235,12 @@
           "CfSharp": "0.1.0-preview.1",
           "Microsoft.Data.Sqlite": "8.0.31"
         }
+      },
+      "FluentFTP": {
+        "type": "CentralTransitive",
+        "requested": "[54.2.1, )",
+        "resolved": "54.2.1",
+        "contentHash": "Rv7MWPUR8orjoSHoDgH2Yp8JC7on6T4dh6+l76lvplu8p4nGmI+tl97hsiERy06HqigxCdhAccuZAv978d7aeQ=="
       },
       "Microsoft.Data.Sqlite": {
         "type": "CentralTransitive",

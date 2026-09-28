@@ -12,7 +12,7 @@ $specialTargetFrameworks = @{
     "MirrorPulse.CloudFiles.CfSharp.Tests.csproj" = "net10.0-windows10.0.26100.0"
     "MirrorPulse.CfSharp.CrashProbe.csproj" = "net10.0-windows10.0.26100.0"
 }
-$projectRoots = @("src", "tests")
+$projectRoots = @("src", "tests", "Adapters")
 $projects = foreach ($root in $projectRoots) {
     Get-ChildItem (Join-Path $repositoryRoot $root) -Filter "*.csproj" -Recurse -File
 }
