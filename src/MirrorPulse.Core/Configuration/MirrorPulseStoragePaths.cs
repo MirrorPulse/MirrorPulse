@@ -9,6 +9,8 @@ public sealed record MirrorPulseStoragePaths
 {
     public const string CfSharpDatabaseFileName = "cfsharp.db";
 
+    public const string ProductCatalogFileName = "product.db";
+
     public MirrorPulseStoragePaths(string syncRootPath, string dataRootPath)
     {
         SyncRootPath = SourceDirectoryPathNormalizer.Normalize(syncRootPath);
@@ -29,4 +31,7 @@ public sealed record MirrorPulseStoragePaths
     /// performs the final physical path and ownership checks when opening this database.
     /// </summary>
     public string CfSharpStateDatabasePath => Path.Combine(DataRootPath, "state", CfSharpDatabaseFileName);
+
+    /// <summary>MP-owned Worker and user-command metadata, separate from CfSharp's state.</summary>
+    public string ProductCatalogDatabasePath => Path.Combine(DataRootPath, "state", ProductCatalogFileName);
 }

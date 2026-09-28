@@ -30,15 +30,6 @@
         "resolved": "18.0.1",
         "contentHash": "O+utSr97NAJowIQT/OVp3Lh9QgW/wALVTP4RG1m2AfFP4IyJmJz0ZBmFJUsRQiAPgq6IRC0t8AAzsiPIsaUDEA=="
       },
-      "Microsoft.Data.Sqlite": {
-        "type": "Transitive",
-        "resolved": "8.0.31",
-        "contentHash": "WBM+0lBcUKeItKCAdBuTariYoV2tAICxE4FSzFDxlZXx9mO1YSr9NBD7vX2tYrKCHKOhpdwVJPa7fMD6zVHDjw==",
-        "dependencies": {
-          "Microsoft.Data.Sqlite.Core": "8.0.31",
-          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.12"
-        }
-      },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
         "resolved": "8.0.31",
@@ -215,7 +206,8 @@
       "mirrorpulse.core": {
         "type": "Project",
         "dependencies": {
-          "CfSharp": "[0.1.0-preview.1, )"
+          "CfSharp": "[0.1.0-preview.1, )",
+          "Microsoft.Data.Sqlite": "[8.0.31, )"
         }
       },
       "CfSharp": {
@@ -235,6 +227,16 @@
         "dependencies": {
           "CfSharp": "0.1.0-preview.1",
           "Microsoft.Data.Sqlite": "8.0.31"
+        }
+      },
+      "Microsoft.Data.Sqlite": {
+        "type": "CentralTransitive",
+        "requested": "[8.0.31, )",
+        "resolved": "8.0.31",
+        "contentHash": "WBM+0lBcUKeItKCAdBuTariYoV2tAICxE4FSzFDxlZXx9mO1YSr9NBD7vX2tYrKCHKOhpdwVJPa7fMD6zVHDjw==",
+        "dependencies": {
+          "Microsoft.Data.Sqlite.Core": "8.0.31",
+          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.12"
         }
       }
     }
