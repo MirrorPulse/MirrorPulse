@@ -29,7 +29,8 @@ public static class MirrorPulseLocalBatchMapper
             MirrorPulseRoutedItem current = router.ResolvePath(change.RelativePath);
             if (current.RelativePath.Length == 0)
             {
-                throw new InvalidDataException("An Adapter's first-level directory requires root reconciliation.");
+                throw new InvalidDataException(
+                    $"First-level Adapter directory change '{change.Kind}: {change.RelativePath}' requires root reconciliation.");
             }
 
             MirrorPulseRoutedItem? previous = change.PreviousRelativePath is null
