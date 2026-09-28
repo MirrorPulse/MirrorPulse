@@ -7,7 +7,8 @@
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap uap10 rescap systemai">
+  xmlns:desktop3="http://schemas.microsoft.com/appx/manifest/desktop/windows10/3"
+  IgnorableNamespaces="uap uap10 rescap systemai desktop3">
 
   <Identity
     Name="0B72358D-6DC9-479D-8C28-F0232B42A0B3"
@@ -47,6 +48,11 @@
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+      <Extensions>
+        <desktop3:Extension Category="windows.cloudFiles">
+          <desktop3:CloudFiles IconResource="Assets\StoreLogo.png" />
+        </desktop3:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
