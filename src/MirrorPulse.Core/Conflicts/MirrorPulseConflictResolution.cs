@@ -10,6 +10,7 @@ public enum MirrorPulseConflictAction
     Retry,
     DeleteLocal,
     DeleteRemote,
+    Defer,
 }
 
 public sealed record MirrorPulseConflictResolution(
@@ -56,7 +57,7 @@ public static class MirrorPulseConflictResolutionPlanner
             action,
             preservedPath,
             appliedAt);
-        var status = action == MirrorPulseConflictAction.Retry
+        var status = action is MirrorPulseConflictAction.Retry or MirrorPulseConflictAction.Defer
             ? MirrorPulseConflictStatus.Pending
             : MirrorPulseConflictStatus.Resolved;
         var updated = new MirrorPulseConflictRecord(
