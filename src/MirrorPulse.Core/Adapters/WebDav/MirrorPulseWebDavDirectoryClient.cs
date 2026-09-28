@@ -82,7 +82,23 @@ public sealed class MirrorPulseWebDavDirectoryClient
         request.Headers.Range = new RangeHeaderValue(offset, checked(offset + length - 1));
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+        if (response.StatusCode != HttpStatusCode.PartialContent && offset > 0)
+        {
+            throw new InvalidDataException("The WebDAV server ignored a nonzero byte-range request.");
+        }
+
+        if (response.StatusCode == HttpStatusCode.PartialContent &&
+            response.Content.Headers.ContentRange?.From != offset)
+        {
+            throw new InvalidDataException("The WebDAV response does not match the requested byte range.");
+        }
+
         var content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (content.Length > length)
+        {
+            throw new InvalidDataException("The WebDAV server returned more bytes than requested.");
+        }
+
         var totalLength = response.Content.Headers.ContentRange?.Length ?? response.Content.Headers.ContentLength;
         return new MirrorPulseWebDavReadResult(content, totalLength, response.Headers.ETag?.Tag);
     }
@@ -100,26 +116,26 @@ public sealed class MirrorPulseWebDavDirectoryClient
         {
             using (var put = MirrorPulseWebDavAuthenticator.CreateRequest(HttpMethod.Put, temporary, _credential))
             {
-                if (expectedETag is not null)
-                {
-                    MirrorPulseWebDavEtagGuard.ApplyIfMatch(put, expectedETag);
-                }
-
                 put.Content = new ByteArrayContent(content.ToArray());
                 put.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                 using var putResponse = await _httpClient.SendAsync(put, cancellationToken).ConfigureAwait(false);
-                if (putResponse.StatusCode == HttpStatusCode.PreconditionFailed && expectedETag is not null)
-                {
-                    throw new MirrorPulseWebDavConflictException(relativePath, expectedETag, putResponse.Headers.ETag?.Tag);
-                }
-
                 putResponse.EnsureSuccessStatusCode();
             }
 
             using var move = MirrorPulseWebDavAuthenticator.CreateRequest(new HttpMethod("MOVE"), temporary, _credential);
             move.Headers.TryAddWithoutValidation("Destination", destination.AbsoluteUri);
-            move.Headers.TryAddWithoutValidation("Overwrite", "T");
+            move.Headers.TryAddWithoutValidation("Overwrite", expectedETag is null ? "F" : "T");
+            if (expectedETag is not null)
+            {
+                MirrorPulseWebDavEtagGuard.ApplyDestinationCondition(move, destination, expectedETag);
+            }
+
             using var moveResponse = await _httpClient.SendAsync(move, cancellationToken).ConfigureAwait(false);
+            if (moveResponse.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                throw new MirrorPulseWebDavConflictException(relativePath, expectedETag, moveResponse.Headers.ETag?.Tag);
+            }
+
             moveResponse.EnsureSuccessStatusCode();
             return new MirrorPulseWebDavUploadResult(relativePath.Replace('\\', '/'), content.Length, moveResponse.Headers.ETag?.Tag);
         }
@@ -142,12 +158,23 @@ public sealed class MirrorPulseWebDavDirectoryClient
     private Uri Resolve(string relativePath)
     {
         ArgumentNullException.ThrowIfNull(relativePath);
-        if (Uri.TryCreate(relativePath, UriKind.Absolute, out _))
+        var decoded = Uri.UnescapeDataString(relativePath).Replace('\\', '/');
+        if (Uri.TryCreate(relativePath, UriKind.Absolute, out _) ||
+            decoded.StartsWith('/') ||
+            decoded.Contains('?') ||
+            decoded.Contains('#') ||
+            decoded.Split('/').Any(segment => segment is "." or ".."))
         {
             throw new ArgumentException("WebDAV paths must be relative to the configured base URI.", nameof(relativePath));
         }
 
-        return new Uri(_baseUri, relativePath.TrimStart('/'));
+        var resolved = new Uri(_baseUri, relativePath);
+        if (!_baseUri.IsBaseOf(resolved))
+        {
+            throw new ArgumentException("A WebDAV path must remain below the configured base URI.", nameof(relativePath));
+        }
+
+        return resolved;
     }
 
     private static ReadOnlyCollection<MirrorPulseWebDavRemoteEntry> ParseEntries(string xml, Uri endpoint)

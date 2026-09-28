@@ -19,7 +19,7 @@ public sealed class MirrorPulseWebDavEtagGuardTests
         Assert.AreEqual("file.txt", conflict.RelativePath);
         Assert.AreEqual("\"v1\"", conflict.ExpectedETag);
         Assert.AreEqual("\"v2\"", conflict.ActualETag);
-        Assert.AreEqual("\"v1\"", handler.IfMatch);
+        Assert.AreEqual("<https://dav.example.test/remote/file.txt> ([\"v1\"])", handler.DestinationCondition);
     }
 
     [TestMethod]
@@ -32,19 +32,20 @@ public sealed class MirrorPulseWebDavEtagGuardTests
 
     private sealed class ConflictHandler : HttpMessageHandler
     {
-        public string? IfMatch { get; private set; }
+        public string? DestinationCondition { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.Method == HttpMethod.Put)
             {
-                IfMatch = request.Headers.IfMatch.Single().Tag;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
             }
-            else
+            else if (request.Method == HttpMethod.Delete)
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
             }
 
+            DestinationCondition = request.Headers.GetValues("If").Single();
             var response = new HttpResponseMessage(HttpStatusCode.PreconditionFailed);
             response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"v2\"");
             return Task.FromResult(response);

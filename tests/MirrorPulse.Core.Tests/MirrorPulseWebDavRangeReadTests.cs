@@ -31,6 +31,33 @@ public sealed class MirrorPulseWebDavRangeReadTests
         await Assert.ThrowsExactlyAsync<ArgumentOutOfRangeException>(() => directory.ReadRangeAsync("file.bin", 0, 0));
     }
 
+    [TestMethod]
+    public async Task ClientRejectsServersThatIgnoreNonzeroRanges()
+    {
+        using var client = new HttpClient(new IgnoringRangeHandler());
+        var directory = new MirrorPulseWebDavDirectoryClient(client, new Uri("https://dav.example.test/remote/"));
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => directory.ReadRangeAsync("file.bin", 2, 4));
+    }
+
+    [TestMethod]
+    public async Task ClientRejectsPathsOutsideItsBaseDirectory()
+    {
+        using var client = new HttpClient(new RangeHandler());
+        var directory = new MirrorPulseWebDavDirectoryClient(client, new Uri("https://dav.example.test/remote/"));
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => directory.ReadRangeAsync("../outside.bin", 0, 4));
+    }
+
+    private sealed class IgnoringRangeHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent([0, 1, 2, 3, 4, 5]),
+            });
+    }
+
     private sealed class RangeHandler : HttpMessageHandler
     {
         public string? Range { get; private set; }

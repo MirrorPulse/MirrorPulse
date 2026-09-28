@@ -23,7 +23,7 @@ public sealed class MirrorPulseWebDavUploadTests
         CollectionAssert.AreEqual(ExpectedPutMoveMethods, handler.Methods.ToArray());
         StringAssert.Contains(handler.PutUri!, ".mp-upload-");
         Assert.AreEqual("https://dav.example.test/remote/docs/file.txt", handler.Destination);
-        Assert.AreEqual("T", handler.Overwrite);
+        Assert.AreEqual("F", handler.Overwrite);
     }
 
     [TestMethod]
