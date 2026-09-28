@@ -5,6 +5,16 @@ using MirrorPulse.Core.Contracts;
 
 namespace MirrorPulse.CloudFiles.CfSharp;
 
+public interface IMirrorPulseDirectoryPageSource
+{
+    ValueTask<CloudRemoteDirectoryPage> ReadPageAsync(
+        InstanceId instanceId,
+        string normalizedPath,
+        ReadOnlyMemory<byte> continuationCursor,
+        int pageSize,
+        CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Converts one CfSharp hydration callback into reads from the Worker selected by the stable
 /// placeholder identity. The returned seekable stream translates CfSharp absolute offsets into
@@ -13,22 +23,110 @@ namespace MirrorPulse.CloudFiles.CfSharp;
 [SupportedOSPlatform("windows10.0.16299")]
 public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
 {
+    private const int DirectoryPageSize = 128;
     private readonly InstanceId[] _activeInstances;
     private readonly IMirrorPulseWorkerRangeTransport _transport;
+    private readonly IMirrorPulseDirectoryPageSource? _directoryPages;
 
     public MirrorPulseDemandProvider(
         IEnumerable<InstanceId> activeInstances,
-        IMirrorPulseWorkerRangeTransport transport)
+        IMirrorPulseWorkerRangeTransport transport,
+        IMirrorPulseDirectoryPageSource? directoryPages = null)
     {
         ArgumentNullException.ThrowIfNull(activeInstances);
         ArgumentNullException.ThrowIfNull(transport);
         _activeInstances = activeInstances.Distinct().ToArray();
         _transport = transport;
+        _directoryPages = directoryPages;
     }
 
     /// <summary>Connects a real CfSharp session while the current user has no active Adapters.</summary>
     public static MirrorPulseDemandProvider CreateWithoutAdapters() =>
         new([], new NoActiveAdapterRangeTransport());
+
+    public ValueTask<CloudProviderDirectoryPage> FetchChildrenAsync(
+        CloudProviderFetchPlaceholdersRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return FetchChildrenAsync(
+            request.NormalizedPath,
+            request.DirectoryIdentity,
+            request.ContinuationToken,
+            cancellationToken);
+    }
+
+    public async ValueTask<CloudProviderDirectoryPage> FetchChildrenAsync(
+        string normalizedPath,
+        ReadOnlyMemory<byte> directoryIdentity,
+        string? continuationToken,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(normalizedPath);
+        cancellationToken.ThrowIfCancellationRequested();
+        if ((normalizedPath.Length == 0 || normalizedPath is "/" or "\\")
+            && directoryIdentity.IsEmpty && _activeInstances.Length == 0)
+        {
+            return new CloudProviderDirectoryPage([]);
+        }
+
+        if (_directoryPages is null)
+        {
+            throw new NotSupportedException("No Adapter directory source is connected.");
+        }
+
+        CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(directoryIdentity.Span);
+        InstanceId instanceId = ResolveInstance(identity);
+        ReadOnlyMemory<byte> cursor = DecodeContinuation(continuationToken);
+        CloudRemoteDirectoryPage page = await _directoryPages
+            .ReadPageAsync(instanceId, normalizedPath, cursor, DirectoryPageSize, cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidDataException("The Adapter returned no directory page.");
+        if (page.Entries.Count > DirectoryPageSize)
+        {
+            throw new InvalidDataException("The Adapter directory page exceeds the requested size.");
+        }
+
+        string? next = page.IsComplete ? null : Convert.ToBase64String(page.ContinuationCursor.Span);
+        if (next?.Length > 4096)
+        {
+            throw new InvalidDataException("The Adapter directory continuation cursor is too large.");
+        }
+        if (next is not null && string.Equals(next, continuationToken, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The Adapter repeated a directory continuation cursor.");
+        }
+
+        MirrorPulsePlaceholderBatchPlan plan = MirrorPulsePlaceholderBatchCoordinator.Plan(instanceId, page.Entries);
+        return new CloudProviderDirectoryPage(plan.Placeholders, next);
+    }
+
+    private static ReadOnlyMemory<byte> DecodeContinuation(string? continuationToken)
+    {
+        if (continuationToken is null)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+
+        if (continuationToken.Length > 4096)
+        {
+            throw new InvalidDataException("The directory continuation token is too large.");
+        }
+
+        try
+        {
+            byte[] decoded = Convert.FromBase64String(continuationToken);
+            if (decoded.Length == 0)
+            {
+                throw new InvalidDataException("The directory continuation cursor is empty.");
+            }
+
+            return decoded;
+        }
+        catch (FormatException exception)
+        {
+            throw new InvalidDataException("The directory continuation token is invalid.", exception);
+        }
+    }
 
     public ValueTask<Stream> OpenReadAsync(
         CloudFileFetchRequest request,
