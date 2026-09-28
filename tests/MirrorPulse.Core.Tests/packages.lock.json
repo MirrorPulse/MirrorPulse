@@ -200,6 +200,7 @@
         "dependencies": {
           "CfSharp": "[0.1.0-preview.1, )",
           "CfSharp.Storage.Sqlite": "[0.1.0-preview.1, )",
+          "MirrorPulse.Adapter.Sdk": "[1.0.0, )",
           "MirrorPulse.Core": "[1.0.0, )"
         }
       },

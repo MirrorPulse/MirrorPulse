@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Runtime.Versioning;
+using CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Conflicts;
 
@@ -19,7 +20,7 @@ public static class MirrorPulseEndToEndSyncSimulation
 {
     public static async Task<MirrorPulseEndToEndSyncSimulationResult> RunAsync(
         IEnumerable<MirrorPulseWorkerChangeCommand> localOperations,
-        IEnumerable<MirrorPulseRemoteOperation> remoteOperations,
+        IEnumerable<CloudRemoteChange> remoteOperations,
         IEnumerable<MirrorPulseConflictRecord> conflicts,
         CancellationToken cancellationToken = default)
     {

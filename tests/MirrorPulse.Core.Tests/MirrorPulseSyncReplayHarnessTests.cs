@@ -26,13 +26,13 @@ public sealed class MirrorPulseSyncReplayHarnessTests
             Sequence = 2,
             Kind = MirrorPulseWorkerChangeKind.ContentUpdate,
         };
-        var remote = new MirrorPulseRemoteOperation(
-            MirrorPulseRemoteOperationKind.MetadataUpdate,
+        var remote = new CloudRemoteChange(
             "remote-1",
+            CloudRemoteChangeKind.MetadataUpdate,
             "object-1",
             "revision-1",
-            "docs\\a.txt",
             CloudItemKind.File,
+            "docs\\a.txt",
             null,
             "revision-0",
             null,
@@ -55,13 +55,13 @@ public sealed class MirrorPulseSyncReplayHarnessTests
             MirrorPulseSyncReplayHarness.Replay([], [remote, remote]));
     }
 
-    private static MirrorPulseRemoteOperation CreateRemote(string changeId) => new(
-        MirrorPulseRemoteOperationKind.Delete,
+    private static CloudRemoteChange CreateRemote(string changeId) => new(
         changeId,
+        CloudRemoteChangeKind.Delete,
         "object-1",
         "revision-1",
-        "docs\\a.txt",
         CloudItemKind.File,
+        "docs\\a.txt",
         null,
         "revision-0",
         null,

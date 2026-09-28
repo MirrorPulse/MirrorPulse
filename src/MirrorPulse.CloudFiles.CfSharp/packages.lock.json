@@ -61,6 +61,9 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
+      "mirrorpulse.adapter.sdk": {
+        "type": "Project"
+      },
       "mirrorpulse.core": {
         "type": "Project",
         "dependencies": {

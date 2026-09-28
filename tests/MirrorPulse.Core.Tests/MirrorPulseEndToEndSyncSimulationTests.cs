@@ -66,17 +66,17 @@ public sealed class MirrorPulseEndToEndSyncSimulationTests
         Assert.AreEqual(0, result.NotificationCount);
     }
 
-    private static MirrorPulseRemoteOperation CreateRemote(string changeId) => new(
-        MirrorPulseRemoteOperationKind.UpdateFile,
+    private static CloudRemoteChange CreateRemote(string changeId) => new(
         changeId,
+        CloudRemoteChangeKind.FileUpsert,
         "object-1",
         "revision-1",
-        "docs\\a.txt",
         CloudItemKind.File,
+        "docs\\a.txt",
         null,
         "revision-0",
         null,
-        null,
-        null,
+        1,
+        CloudPlaceholderMetadata.CreateFileBuilder().Build(),
         ReadOnlyMemory<byte>.Empty);
 }

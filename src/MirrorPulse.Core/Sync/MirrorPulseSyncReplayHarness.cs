@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Runtime.Versioning;
+using CfSharp;
 using MirrorPulse.Core.CloudFiles;
 
 namespace MirrorPulse.Core.Sync;
@@ -17,7 +18,7 @@ public static class MirrorPulseSyncReplayHarness
 {
     public static MirrorPulseSyncReplayResult Replay(
         IEnumerable<MirrorPulseWorkerChangeCommand> localOperations,
-        IEnumerable<MirrorPulseRemoteOperation> remoteOperations)
+        IEnumerable<CloudRemoteChange> remoteOperations)
     {
         ArgumentNullException.ThrowIfNull(localOperations);
         ArgumentNullException.ThrowIfNull(remoteOperations);
