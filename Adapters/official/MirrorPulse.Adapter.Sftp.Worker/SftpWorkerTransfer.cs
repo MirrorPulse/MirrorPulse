@@ -204,6 +204,7 @@ public sealed class SftpWorkerTransferProtocol(
         string stagedFile = Path.Combine(cache, $"sftp-{command.RequestId:N}.tmp");
         await channel.SendAsync("UploadReady", command.RequestId, true, new { streamId }, cancellationToken)
             .ConfigureAwait(false);
+        string revision;
         try
         {
             await using (var output = new FileStream(stagedFile, FileMode.Create, FileAccess.Write,
@@ -235,14 +236,15 @@ public sealed class SftpWorkerTransferProtocol(
 
             await using var input = new FileStream(stagedFile, FileMode.Open, FileAccess.Read,
                 FileShare.Read, 64 * 1024, FileOptions.Asynchronous);
-            string revision = await _transfer.UploadAsync(path, expectedRevision, input,
+            revision = await _transfer.UploadAsync(path, expectedRevision, input,
                 command.RequestId, cancellationToken).ConfigureAwait(false);
-            await channel.SendAsync("UploadComplete", command.RequestId, true,
-                new { revision }, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             File.Delete(stagedFile);
         }
+
+        await channel.SendAsync("UploadComplete", command.RequestId, true,
+            new { revision }, cancellationToken).ConfigureAwait(false);
     }
 }

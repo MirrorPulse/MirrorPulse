@@ -37,6 +37,7 @@ public sealed class SftpWorkerTransferTests
             ControlFrameEnvelope complete = await worker.UploadAsync(Guid.NewGuid(),
                 "report.bin", oldRevision, [1, 4, 9, 16]);
             Assert.AreEqual("UploadComplete", complete.MessageType, complete.Payload.ToString());
+            worker.AssertTransferCacheEmpty();
             CollectionAssert.AreEqual(new byte[] { 1, 4, 9, 16 }, await File.ReadAllBytesAsync(file));
 
             ControlFrameEnvelope conflict = await worker.UploadAsync(Guid.NewGuid(),
@@ -63,6 +64,7 @@ public sealed class SftpWorkerTransferTests
             ControlFrameEnvelope completed = await resumed.UploadAsync(retryId,
                 "new.bin", null, [6, 2, 6]);
             Assert.AreEqual("UploadComplete", completed.MessageType, completed.Payload.ToString());
+            resumed.AssertTransferCacheEmpty();
             CollectionAssert.AreEqual(new byte[] { 6, 2, 6 },
                 await File.ReadAllBytesAsync(Path.Combine(fixture.StorageDirectory, "new.bin")));
         }
@@ -91,6 +93,8 @@ public sealed class SftpWorkerTransferTests
         public WorkerSessionId Session { get; }
 
         public CancellationToken Token => _timeout.Token;
+
+        public void AssertTransferCacheEmpty() => Assert.IsEmpty(Directory.EnumerateFiles(_cache));
 
         public static async Task<WorkerHarness> StartAsync(SftpProtocolFixture fixture)
         {
