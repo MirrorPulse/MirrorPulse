@@ -64,6 +64,26 @@ public sealed class MirrorPulseRootRouterTests
     }
 
     [TestMethod]
+    public void DuplicateLabelWithinOneInstanceRejectsReplacementWithoutChangingExistingRouter()
+    {
+        var instance = InstanceId.New();
+        string syncRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var existing = new MirrorPulseRootRouter(syncRoot, [CreateRoot(instance, "Documents")]);
+        RootRegistration duplicate = AdapterRootRegistrationMapper.Map(
+            AdapterId.Parse("example.drive"), instance,
+            new AdapterRootDefinition("second-key", "documents", "documents", false),
+            RootRegistrationState.Active);
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new MirrorPulseRootRouter(syncRoot, [CreateRoot(instance, "Documents"), duplicate]));
+
+        CloudProviderDirectoryPage preserved = existing.CreateRootPage();
+        Assert.HasCount(1, preserved.Children);
+        Assert.AreEqual("Documents", preserved.Children[0].Name);
+        Assert.AreEqual(instance, existing.ResolvePath(Path.Combine(syncRoot, "Documents")).InstanceId);
+    }
+
+    [TestMethod]
     public void WrongInstanceIdentityCannotCrossFirstLevelDirectory()
     {
         var first = InstanceId.New();
