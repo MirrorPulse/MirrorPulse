@@ -5,7 +5,7 @@ using MirrorPulse.Core.Contracts;
 
 namespace MirrorPulse.CloudFiles.CfSharp;
 
-public sealed record MirrorPulseRoutedItem(InstanceId InstanceId, string RelativePath);
+public sealed record MirrorPulseRoutedItem(InstanceId InstanceId, string RootKey, string RelativePath);
 
 /// <summary>Projects active Adapter roots into one Cloud Files sync root and validates callback routing.</summary>
 [SupportedOSPlatform("windows10.0.16299")]
@@ -52,6 +52,34 @@ public sealed class MirrorPulseRootRouter
 
     public MirrorPulseRoutedItem Resolve(string callbackPath, ReadOnlySpan<byte> encodedIdentity)
     {
+        (RootRegistration root, string innerPath) = FindRoot(callbackPath);
+
+        CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(encodedIdentity);
+        Guid expected = MirrorPulsePlaceholderIdentity
+            .Create(root.InstanceId, identity.RemoteId, identity.RemoteRevision)
+            .ToCfSharp()
+            .ItemId;
+        if (identity.ItemId != expected)
+        {
+            throw new InvalidDataException("The placeholder identity belongs to another Adapter instance.");
+        }
+
+        if (innerPath.Length == 0 && identity.ItemId != CreateRootIdentity(root).ItemId)
+        {
+            throw new InvalidDataException("The Adapter root has an unexpected placeholder identity.");
+        }
+
+        return new(root.InstanceId, root.UniquenessKey, innerPath);
+    }
+
+    public MirrorPulseRoutedItem ResolvePath(string callbackPath)
+    {
+        (RootRegistration root, string innerPath) = FindRoot(callbackPath);
+        return new(root.InstanceId, root.UniquenessKey, innerPath);
+    }
+
+    private (RootRegistration Root, string InnerPath) FindRoot(string callbackPath)
+    {
         string relative = GetRelativePath(callbackPath);
         if (relative.Length == 0)
         {
@@ -65,23 +93,7 @@ public sealed class MirrorPulseRootRouter
             throw new FileNotFoundException("The Adapter root is not active.");
         }
 
-        CloudPlaceholderIdentity identity = CloudPlaceholderIdentity.Decode(encodedIdentity);
-        Guid expected = MirrorPulsePlaceholderIdentity
-            .Create(root.InstanceId, identity.RemoteId, identity.RemoteRevision)
-            .ToCfSharp()
-            .ItemId;
-        if (identity.ItemId != expected)
-        {
-            throw new InvalidDataException("The placeholder identity belongs to another Adapter instance.");
-        }
-
-        string innerPath = separator < 0 ? string.Empty : relative[(separator + 1)..];
-        if (innerPath.Length == 0 && identity.ItemId != CreateRootIdentity(root).ItemId)
-        {
-            throw new InvalidDataException("The Adapter root has an unexpected placeholder identity.");
-        }
-
-        return new(root.InstanceId, innerPath);
+        return (root, separator < 0 ? string.Empty : relative[(separator + 1)..]);
     }
 
     private string GetRelativePath(string callbackPath)
