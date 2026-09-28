@@ -90,6 +90,7 @@ public sealed class MirrorPulseWebDavDirectoryClient
     public async Task<MirrorPulseWebDavUploadResult> UploadAsync(
         string relativePath,
         ReadOnlyMemory<byte> content,
+        string? expectedETag = null,
         CancellationToken cancellationToken = default)
     {
         var destination = Resolve(relativePath);
@@ -99,9 +100,19 @@ public sealed class MirrorPulseWebDavDirectoryClient
         {
             using (var put = MirrorPulseWebDavAuthenticator.CreateRequest(HttpMethod.Put, temporary, _credential))
             {
+                if (expectedETag is not null)
+                {
+                    MirrorPulseWebDavEtagGuard.ApplyIfMatch(put, expectedETag);
+                }
+
                 put.Content = new ByteArrayContent(content.ToArray());
                 put.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                 using var putResponse = await _httpClient.SendAsync(put, cancellationToken).ConfigureAwait(false);
+                if (putResponse.StatusCode == HttpStatusCode.PreconditionFailed && expectedETag is not null)
+                {
+                    throw new MirrorPulseWebDavConflictException(relativePath, expectedETag, putResponse.Headers.ETag?.Tag);
+                }
+
                 putResponse.EnsureSuccessStatusCode();
             }
 
