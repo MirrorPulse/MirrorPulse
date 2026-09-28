@@ -15,6 +15,65 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 [TestClass]
 public sealed class MirrorPulseExternalConsumerTests
 {
+    private static readonly string[] ExpectedRootNames = ["Backup", "Documents", "Photos"];
+
+    [TestMethod]
+    public async Task NativeOneSyncRootRetainsMultipleInstancesAndDirectoriesAcrossRestart()
+    {
+        if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
+        {
+            return;
+        }
+
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-native-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        var first = InstanceId.New();
+        var second = InstanceId.New();
+        AdapterId adapterId = AdapterId.Parse("example.drive");
+        RootRegistration[] registrations = [
+            .. AdapterRootRegistrationMapper.MapAll(adapterId, first, [
+                new AdapterRootDefinition("docs", "Documents", "Documents", false),
+                new AdapterRootDefinition("photos", "Photos", "Photos", false)], RootRegistrationState.Active),
+            .. AdapterRootRegistrationMapper.MapAll(adapterId, second, [
+                new AdapterRootDefinition("backup", "Backup", "Backup", false)], RootRegistrationState.Active),
+        ];
+        var router = new MirrorPulseRootRouter(paths.SyncRootPath, registrations);
+        var cloud = new CfSharpMirrorPulseCloudRootRegistry();
+        var definition = new MirrorPulseSyncRootDefinition(paths.SyncRootPath, "0.1.0", Guid.NewGuid(), [1, 2, 3]);
+
+        try
+        {
+            cloud.Register(definition);
+            for (int run = 0; run < 2; run++)
+            {
+                var state = new MirrorPulseCfSharpStateSession(paths);
+                await using var fileSystem = new MirrorPulseCloudFileSystemBuilder(paths)
+                    .WithStateStore(state)
+                    .WithContentProvider(new MirrorPulseDemandProvider(router, new OfflineRangeTransport()))
+                    .Build();
+                await fileSystem.StartAsync();
+                if (run == 0)
+                {
+                    await using CloudLocalChangeFeed feed = fileSystem.CreateLocalChangeFeed();
+                    await feed.StartAsync();
+                    await new MirrorPulseRootPopulationCoordinator(fileSystem, feed).PopulateAsync(router);
+                }
+
+                string output = await RunProcessAsync(CreateDirectoryEnumerationProcess(paths.SyncRootPath));
+                string[] names = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+                CollectionAssert.AreEquivalent(ExpectedRootNames, names);
+            }
+        }
+        finally
+        {
+            cloud.Unregister(paths.SyncRootPath);
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     [TestMethod]
     public async Task NativeExternalConsumerEnumeratesAndHydratesAcrossRestart()
     {
@@ -98,6 +157,27 @@ public sealed class MirrorPulseExternalConsumerTests
         string path = Convert.ToBase64String(Encoding.UTF8.GetBytes(directory));
         string command = "$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + path +
             "')); [IO.Directory]::EnumerateFiles($p) | ForEach-Object { Write-Output $_ }";
+        var start = new ProcessStartInfo(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "System32", "WindowsPowerShell", "v1.0", "powershell.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        start.ArgumentList.Add("-NoProfile");
+        start.ArgumentList.Add("-NonInteractive");
+        start.ArgumentList.Add("-EncodedCommand");
+        start.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(command)));
+        return start;
+    }
+
+    private static ProcessStartInfo CreateDirectoryEnumerationProcess(string directory)
+    {
+        string path = Convert.ToBase64String(Encoding.UTF8.GetBytes(directory));
+        string command = "$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + path +
+            "')); [IO.Directory]::EnumerateDirectories($p) | ForEach-Object { Write-Output ([IO.Path]::GetFileName($_)) }";
         var start = new ProcessStartInfo(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "WindowsPowerShell", "v1.0", "powershell.exe"))
@@ -221,5 +301,13 @@ public sealed class MirrorPulseExternalConsumerTests
                 request.NormalizedPath, request.Offset, checked((int)request.Length), cancellationToken);
             return new MemoryStream(content, writable: false);
         }
+    }
+
+    private sealed class OfflineRangeTransport : IMirrorPulseWorkerRangeTransport
+    {
+        public ValueTask<Stream> ReadRangeAsync(
+            MirrorPulseWorkerReadRangeRequest request,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromException<Stream>(new IOException("The Adapter is offline."));
     }
 }
