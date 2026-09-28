@@ -1,4 +1,8 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using MirrorPulse.Core;
+using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.State;
 
 namespace MirrorPulse.App;
 
@@ -10,12 +14,35 @@ public sealed partial class InstalledAdaptersPage : Page
     public InstalledAdaptersPage()
     {
         InitializeComponent();
+        Loaded += InstalledAdaptersPage_Loaded;
     }
 
-    private void AdapterEnableToggle_Toggled(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    private async void InstalledAdaptersPage_Loaded(object sender, RoutedEventArgs e)
     {
-        EmptyStateText.Text = AdapterEnableToggle.IsOn
-            ? "The selected Adapter will start with MirrorPulse."
-            : "The selected Adapter is offline until enabled.";
+        try
+        {
+            string dataRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductInfo.Name);
+            string syncRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ProductInfo.Name);
+            var paths = new MirrorPulseStoragePaths(syncRoot, dataRoot);
+            MirrorPulseAdapterTopology topology = await MirrorPulseProductCatalog
+                .ReadAdapterTopologySnapshotAsync(paths);
+            InstalledAdaptersList.ItemsSource = topology.Installations.Select(installation =>
+            {
+                string instances = string.Join(", ", topology.Instances
+                    .Where(instance => instance.InstallId == installation.InstallId)
+                    .Select(instance => instance.DisplayName));
+                return $"{installation.AdapterId}  ·  {installation.Version}  ·  {installation.InstallId}" +
+                    (instances.Length == 0 ? string.Empty : $"  ·  {instances}");
+            }).ToArray();
+            EmptyStateText.Visibility = topology.Installations.Count == 0
+                ? Visibility.Visible : Visibility.Collapsed;
+        }
+        catch (Exception exception)
+        {
+            EmptyStateText.Text = $"Could not read installed Adapters: {exception.Message}";
+            EmptyStateText.Visibility = Visibility.Visible;
+        }
     }
 }

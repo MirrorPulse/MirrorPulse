@@ -3,9 +3,9 @@ using System.Text;
 using CfSharp;
 using CfSharp.Storage.Sqlite;
 using Microsoft.Data.Sqlite;
+using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
-using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.State;
 
 namespace MirrorPulse.Core.Tests;
@@ -37,29 +37,55 @@ public sealed class MirrorPulseProductCatalogTests
             AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
         RootRegistration first = AdapterRootRegistrationMapper.Map(adapterId, instanceId,
             new AdapterRootDefinition("files", "Files", "Files", false), RootRegistrationState.Active);
-        var topology = new MirrorPulseAdapterTopology([installation], [instance], [first]);
+        var secondInstallId = InstallId.New();
+        var secondInstanceId = InstanceId.New();
+        var newerManifest = new AdapterManifest(1, adapterId, "Example", "2.0.0",
+            manifest.Protocol, manifest.Entrypoints, manifest.InstallPolicy, manifest.InstancePolicy,
+            manifest.Capabilities, manifest.Locales, manifest.MinimumMirrorPulseVersion);
+        var newerInstallation = new InstalledAdapter(newerManifest, secondInstallId,
+            Path.Combine(root, "installed-newer"), new Sha256Digest(new string('B', 64)),
+            AdapterInstallSource.LocalFile, null, true, DateTimeOffset.UtcNow, AdapterLifecycleState.Installed);
+        var secondInstance = new AdapterInstance(adapterId, secondInstallId, secondInstanceId, "Backup",
+            new Dictionary<string, string>(), [], Path.Combine(root, "files-2"),
+            Path.Combine(root, "transfer-2"), true, AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+        RootRegistration secondRoot = AdapterRootRegistrationMapper.Map(adapterId, secondInstanceId,
+            new AdapterRootDefinition("backup", "Backup", "Backup", false), RootRegistrationState.Active);
+        var topology = new MirrorPulseAdapterTopology(
+            [installation, newerInstallation], [instance, secondInstance], [first, secondRoot]);
 
         try
         {
+            MirrorPulseAdapterTopology beforeOpen = await MirrorPulseProductCatalog
+                .ReadAdapterTopologySnapshotAsync(paths);
+            Assert.IsEmpty(beforeOpen.Installations);
             await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
             {
                 await catalog.SaveAdapterTopologyAsync(topology);
+                MirrorPulseAdapterTopology whileHostOwnsCatalog = await MirrorPulseProductCatalog
+                    .ReadAdapterTopologySnapshotAsync(paths);
+                Assert.HasCount(2, whileHostOwnsCatalog.Installations);
+                Assert.AreEqual(installId, whileHostOwnsCatalog.Installations[0].InstallId);
                 RootRegistration duplicate = AdapterRootRegistrationMapper.Map(adapterId, instanceId,
                     new AdapterRootDefinition("other", "files", "files", false), RootRegistrationState.Disabled);
                 await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                    catalog.SaveAdapterTopologyAsync(new([installation], [instance], [first, duplicate])));
+                    catalog.SaveAdapterTopologyAsync(new(
+                        [installation, newerInstallation], [instance, secondInstance],
+                        [first, secondRoot, duplicate])));
             }
 
             await using var reopened = await MirrorPulseProductCatalog.OpenAsync(paths);
             MirrorPulseAdapterTopology restored = await reopened.ReadAdapterTopologyAsync();
-            Assert.HasCount(1, restored.Installations);
-            Assert.HasCount(1, restored.Instances);
-            Assert.HasCount(1, restored.Roots);
+            MirrorPulseAdapterTopology snapshot = await MirrorPulseProductCatalog.ReadAdapterTopologySnapshotAsync(paths);
+            Assert.HasCount(2, restored.Installations);
+            Assert.HasCount(2, restored.Instances);
+            Assert.HasCount(2, restored.Roots);
             Assert.AreEqual("example.drive", restored.Installations[0].AdapterId.ToString());
             Assert.AreEqual("Personal drive", restored.Instances[0].DisplayName);
             Assert.AreEqual("credential-1", restored.Instances[0].CredentialReferences[0]);
             Assert.AreEqual(first.RootId, restored.Roots[0].RootId);
+            Assert.AreEqual(first.RootId, snapshot.Roots[0].RootId);
             Assert.IsNotNull(await reopened.FindAsync(installId));
+            Assert.AreEqual("2.0.0", (await reopened.FindAsync(secondInstallId))?.Version);
         }
         finally
         {

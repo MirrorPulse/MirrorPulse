@@ -70,11 +70,7 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
 
             try
             {
-                MirrorPulseAdapterTopology topology = JsonSerializer.Deserialize<MirrorPulseAdapterTopology>(
-                    payload, TopologyJsonOptions)
-                    ?? throw new InvalidDataException("The Adapter topology is empty.");
-                ValidateTopology(topology);
-                return topology;
+                return DeserializeTopology(payload);
             }
             catch (JsonException exception)
             {
@@ -85,6 +81,41 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>Reads a WAL-consistent inventory from another current-user process without taking the Host writer lock.</summary>
+    public static async Task<MirrorPulseAdapterTopology> ReadAdapterTopologySnapshotAsync(
+        Configuration.MirrorPulseStoragePaths paths,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        if (!File.Exists(paths.ProductCatalogDatabasePath))
+        {
+            return new([], [], []);
+        }
+
+        var settings = new SqliteConnectionStringBuilder
+        {
+            DataSource = paths.ProductCatalogDatabasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Cache = SqliteCacheMode.Private,
+            Pooling = false,
+        };
+        await using var connection = new SqliteConnection(settings.ToString());
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (SqliteCommand table = connection.CreateCommand())
+        {
+            table.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'adapter_topology';";
+            if (await table.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+            {
+                return new([], [], []);
+            }
+        }
+
+        await using SqliteCommand query = connection.CreateCommand();
+        query.CommandText = "SELECT payload FROM adapter_topology WHERE id = 1;";
+        string? payload = (string?)await query.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return payload is null ? new([], [], []) : DeserializeTopology(payload);
     }
 
     public async ValueTask<InstalledAdapter?> FindAsync(
@@ -141,6 +172,22 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
             {
                 throw new InvalidDataException("The Adapter topology contains a duplicate first-level Label.");
             }
+        }
+    }
+
+    private static MirrorPulseAdapterTopology DeserializeTopology(string payload)
+    {
+        try
+        {
+            MirrorPulseAdapterTopology topology = JsonSerializer.Deserialize<MirrorPulseAdapterTopology>(
+                payload, TopologyJsonOptions)
+                ?? throw new InvalidDataException("The Adapter topology is empty.");
+            ValidateTopology(topology);
+            return topology;
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The Adapter topology is invalid JSON.", exception);
         }
     }
 

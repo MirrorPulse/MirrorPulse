@@ -10,7 +10,7 @@ public sealed class UiContractTests
         var pages = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["MainPage.xaml"] = ["Welcome to MirrorPulse", "GetStartedButton"],
-            ["InstalledAdaptersPage.xaml"] = ["InstalledAdaptersList", "AdapterEnableToggle"],
+            ["InstalledAdaptersPage.xaml"] = ["InstalledAdaptersList", "EmptyStateText"],
             ["AdapterInstallPage.xaml"] = [".mpadapter", "InstallButton"],
             ["InstanceConfigurationPage.xaml"] = ["SourcePathTextBox", "CredentialReferenceTextBox"],
             ["StartupSettingsPage.xaml"] = ["StartWithWindowsToggle", "SyncRootNameText"],

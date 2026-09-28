@@ -11,7 +11,6 @@
         <StackPanel Spacing="16" Padding="32">
             <TextBlock Text="Installed Adapters" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock Text="Manage the adapters that provide your MirrorPulse locations." TextWrapping="Wrap" />
-            <ToggleSwitch x:Name="AdapterEnableToggle" Header="Enable selected Adapter" Toggled="AdapterEnableToggle_Toggled" />
             <ListView x:Name="InstalledAdaptersList" SelectionMode="None" />
             <TextBlock x:Name="EmptyStateText" Text="No Adapters are installed yet." Opacity="0.75" />
         </StackPanel>
