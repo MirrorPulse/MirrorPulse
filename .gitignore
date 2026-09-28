@@ -15,6 +15,7 @@ TestResults/
 *.userprefs
 
 # Local secrets and signing material
+/.local-signing/
 *.pfx
 *.p12
 *.snk
