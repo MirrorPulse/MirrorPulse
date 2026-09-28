@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.Core.State;
 
@@ -19,7 +21,8 @@ public sealed record MirrorPulseUserCommandRecord(
 
 /// <summary>
 /// MP's separate product catalog. CfSharp owns Cloud Files journal, batch, conflict and checkpoint
-/// tables in its own database; this catalog only tracks Worker idempotency and user intent.
+/// tables in its own database; this catalog tracks Worker idempotency, user intent, and
+/// non-authoritative conflict UI projections.
 /// </summary>
 public sealed class MirrorPulseProductCatalog : IAsyncDisposable
 {
@@ -83,7 +86,7 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
                 version.CommandText = "PRAGMA user_version;";
                 long currentVersion = (long)(await version.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false) ?? 0L);
-                if (currentVersion > 1)
+                if (currentVersion > 2)
                 {
                     throw new InvalidDataException("The MP product catalog schema is newer than this Host supports.");
                 }
@@ -105,7 +108,18 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
                         target_id TEXT NOT NULL,
                         state TEXT NOT NULL
                     );
-                    PRAGMA user_version=1;
+                    CREATE TABLE IF NOT EXISTS remote_conflict_projections (
+                        conflict_id TEXT PRIMARY KEY,
+                        instance_id TEXT NOT NULL,
+                        change_id TEXT NOT NULL,
+                        relative_path TEXT NOT NULL,
+                        reason INTEGER NOT NULL,
+                        version_comparison INTEGER NOT NULL,
+                        local_revision TEXT NULL,
+                        remote_revision TEXT NULL,
+                        detected_utc TEXT NOT NULL
+                    );
+                    PRAGMA user_version=2;
                     """;
                 await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -245,6 +259,84 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
             return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
                 ? new(commandId, reader.GetString(0), reader.GetString(1), reader.GetString(2))
                 : null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Stores UI metadata for a conflict whose authority remains in CfSharp.</summary>
+    public async Task SaveRemoteConflictProjectionAsync(
+        MirrorPulseConflictRecord conflict,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conflict);
+        if (conflict.Source != MirrorPulseConflictSource.CfSharpRemote || !conflict.IsPending)
+        {
+            throw new ArgumentException("Only pending CfSharp remote conflicts can be projected.", nameof(conflict));
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand command = _connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO remote_conflict_projections
+                    (conflict_id, instance_id, change_id, relative_path, reason,
+                     version_comparison, local_revision, remote_revision, detected_utc)
+                VALUES ($id, $instance, $change, $path, $reason, $comparison, $local, $remote, $detected)
+                ON CONFLICT(conflict_id) DO NOTHING;
+                """;
+            command.Parameters.AddWithValue("$id", conflict.ConflictId.ToString("D"));
+            command.Parameters.AddWithValue("$instance", conflict.InstanceId.ToString());
+            command.Parameters.AddWithValue("$change", conflict.ChangeId);
+            command.Parameters.AddWithValue("$path", conflict.RelativePath);
+            command.Parameters.AddWithValue("$reason", (int)conflict.Reason);
+            command.Parameters.AddWithValue("$comparison", (int)conflict.VersionComparison);
+            command.Parameters.AddWithValue("$local", (object?)conflict.LocalRevision ?? DBNull.Value);
+            command.Parameters.AddWithValue("$remote", (object?)conflict.RemoteRevision ?? DBNull.Value);
+            command.Parameters.AddWithValue("$detected", conflict.DetectedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<MirrorPulseConflictRecord>> ReadRemoteConflictProjectionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand query = _connection.CreateCommand();
+            query.CommandText = """
+                SELECT conflict_id, instance_id, change_id, relative_path, reason,
+                       version_comparison, local_revision, remote_revision, detected_utc
+                FROM remote_conflict_projections ORDER BY detected_utc, conflict_id;
+                """;
+            await using SqliteDataReader reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var records = new List<MirrorPulseConflictRecord>();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                records.Add(new MirrorPulseConflictRecord(
+                    Guid.Parse(reader.GetString(0)),
+                    InstanceId.Parse(reader.GetString(1)),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    (MirrorPulseConflictReason)reader.GetInt32(4),
+                    (MirrorPulseVersionComparison)reader.GetInt32(5),
+                    reader.IsDBNull(6) ? null : reader.GetString(6),
+                    reader.IsDBNull(7) ? null : reader.GetString(7),
+                    DateTimeOffset.Parse(reader.GetString(8), System.Globalization.CultureInfo.InvariantCulture),
+                    source: MirrorPulseConflictSource.CfSharpRemote));
+            }
+
+            return records;
         }
         finally
         {

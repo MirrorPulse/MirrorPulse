@@ -69,7 +69,8 @@ public static class MirrorPulseConflictResolutionPlanner
             conflict.LocalRevision,
             conflict.RemoteRevision,
             conflict.DetectedAt,
-            status);
+            status,
+            conflict.Source);
         return new(resolution, updated);
     }
 

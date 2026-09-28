@@ -20,6 +20,14 @@ public sealed class MirrorPulseConflictCenter
         }
     }
 
+    public bool Remove(Guid conflictId)
+    {
+        lock (_gate)
+        {
+            return _records.Remove(conflictId);
+        }
+    }
+
     public IReadOnlyList<MirrorPulseConflictRecord> Query(
         InstanceId? instanceId = null,
         bool pendingOnly = true)

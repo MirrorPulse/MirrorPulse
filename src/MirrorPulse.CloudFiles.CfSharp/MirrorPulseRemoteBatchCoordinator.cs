@@ -13,15 +13,18 @@ public sealed class MirrorPulseRemoteBatchCoordinator
 {
     private readonly CloudFileSystem _fileSystem;
     private readonly MirrorPulseCfSharpStateSession _state;
+    private readonly MirrorPulseRemoteConflictProjector? _conflicts;
 
     public MirrorPulseRemoteBatchCoordinator(
         CloudFileSystem fileSystem,
-        MirrorPulseCfSharpStateSession state)
+        MirrorPulseCfSharpStateSession state,
+        MirrorPulseRemoteConflictProjector? conflicts = null)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
         ArgumentNullException.ThrowIfNull(state);
         _fileSystem = fileSystem;
         _state = state;
+        _conflicts = conflicts;
     }
 
     public async ValueTask<CloudRemoteApplyResult> ApplyAsync(
@@ -62,6 +65,11 @@ public sealed class MirrorPulseRemoteBatchCoordinator
 
         CloudRemoteApplyResult result = await _fileSystem.ApplyRemoteChangesAsync(
             batch, options ?? CloudRemoteApplyOptions.Default, cancellationToken).ConfigureAwait(false);
+        if (_conflicts is not null)
+        {
+            await _conflicts.CaptureResultAsync(instanceId, result, cancellationToken).ConfigureAwait(false);
+        }
+
         if (result.RequiresRetry || result.Status != CloudRemoteBatchStatus.Applied)
         {
             return result;

@@ -22,6 +22,13 @@ public enum MirrorPulseConflictStatus
     Dismissed,
 }
 
+public enum MirrorPulseConflictSource
+{
+    Upload,
+    Protocol,
+    CfSharpRemote,
+}
+
 /// <summary>
 /// Durable conflict-center entry kept outside the Cloud Files sync root.
 /// </summary>
@@ -37,7 +44,8 @@ public sealed record MirrorPulseConflictRecord
         string? localRevision,
         string? remoteRevision,
         DateTimeOffset detectedAt,
-        MirrorPulseConflictStatus status = MirrorPulseConflictStatus.Pending)
+        MirrorPulseConflictStatus status = MirrorPulseConflictStatus.Pending,
+        MirrorPulseConflictSource source = MirrorPulseConflictSource.Upload)
     {
         if (conflictId == Guid.Empty)
         {
@@ -61,6 +69,7 @@ public sealed record MirrorPulseConflictRecord
         RemoteRevision = remoteRevision;
         DetectedAt = detectedAt;
         Status = status;
+        Source = source;
     }
 
     public Guid ConflictId { get; }
@@ -82,6 +91,8 @@ public sealed record MirrorPulseConflictRecord
     public DateTimeOffset DetectedAt { get; }
 
     public MirrorPulseConflictStatus Status { get; }
+
+    public MirrorPulseConflictSource Source { get; }
 
     public bool IsPending => Status == MirrorPulseConflictStatus.Pending;
 }
