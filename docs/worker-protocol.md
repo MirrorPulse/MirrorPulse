@@ -1,9 +1,10 @@
 # MirrorPulse Worker Protocol
 
 This document describes the version-one control contract between MirrorPulse and
-one Adapter Worker process. It records the contract implemented by the Core
-models; transport services and message serialization are introduced in later
-commits.
+one Adapter Worker process. Core owns the Host envelope codec, and the Adapter
+SDK implements the corresponding version-one frame format for out-of-process
+Workers. Protocol messages listed below include target contract elements that
+are not yet wired into the product Host.
 
 ## Process and identity boundary
 
@@ -43,6 +44,33 @@ payloads are UTF-8 JSON and contain a `ControlFrameEnvelope` with:
 Requests and responses share a correlation request ID. Cancellation targets the
 request ID of the operation being cancelled. Each Worker event has its own event
 ID and monotonic per-session sequence.
+
+## Implemented FTP Worker subset
+
+The official FTP Worker is a separate EXE. Its process arguments carry only the
+instance ID, Worker session ID, and current-user pipe name. After `Hello`, the
+Host sends `Ready` with an FTP endpoint, username, security mode, and credential
+reference. The Worker sends `CredentialRequest` for that reference; the Host
+returns `CredentialResponse` over the pipe. Neither the secret nor the CfSharp
+database path is placed on the process command line. The Worker reports
+`Connected` or a stable `Error` code and accepts `Stop`/`Stopped`.
+
+The current FTP transfer subset accepts `Stat`, `ReadRange`, and `Upload` control
+messages. `StatResult` supplies the FTP size and modification-time revision when
+available. `ReadRangeReady` precedes one bounded binary chunk. `UploadReady`
+precedes binary chunks whose offset, session IDs, stream ID, and SHA-256 digest
+are validated before data is written to the transfer cache. `UploadComplete`
+returns the resulting revision. `OperationError` distinguishes invalid requests,
+remote conflicts, unavailable server capabilities, and retryable transfer
+failures.
+
+FTP uploads stage a temporary remote file, compare the destination's revision
+before transfer and again before rename, then rename the staged file. Standard
+FTP offers no atomic compare-and-swap operation. This is an optimistic check,
+not a strong conditional write: another client can change the destination
+between the second check and rename, and some servers cannot overwrite on
+rename. The Adapter capability matrix must expose that limitation; MirrorPulse
+must retain conflicting content until the user resolves it.
 
 ## Lifecycle messages
 

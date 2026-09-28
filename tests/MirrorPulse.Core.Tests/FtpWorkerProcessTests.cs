@@ -70,6 +70,172 @@ public sealed class FtpWorkerProcessTests
         }
     }
 
+    [TestMethod]
+    public async Task IndependentWorkerReadsRestartedRangeAndStagesConditionalUploadWithRetry()
+    {
+        await using var fixture = new LoopbackFtpFixture(FtpSecurityMode.Plain);
+        var instance = InstanceId.New();
+        var session = WorkerSessionId.New();
+        string pipeName = $"mirrorpulse-ftp-{Guid.NewGuid():N}";
+        string cache = Path.Combine(Path.GetTempPath(), "MirrorPulse-ftp-tests", Guid.NewGuid().ToString("N"));
+        await using var pipe = SecureNamedPipeServerFactory.Create(new NamedPipeServerOptions(pipeName));
+        string executable = Path.ChangeExtension(typeof(FtpWorkerEntryMarker).Assembly.Location, ".exe");
+        var request = new WorkerLaunchRequest(instance, session, executable,
+            Path.GetDirectoryName(executable)!,
+            ["--instance-id", instance.ToString(), "--worker-session-id", session.ToString(),
+             "--pipe-name", pipeName],
+            new Dictionary<string, string> { ["MP_TRANSFER_CACHE_DIR"] = cache });
+        using WorkerProcessHandle worker = WorkerProcessLauncher.Start(request);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            await pipe.WaitForConnectionAsync(timeout.Token);
+            ControlFrameEnvelope hello = await ReadAsync(pipe, timeout.Token);
+            await WriteAsync(pipe, new ControlFrameEnvelope(1, "Ready", hello.RequestId,
+                instance, session, true, JsonSerializer.SerializeToElement(new
+                {
+                    endpoint = $"ftp://127.0.0.1:{fixture.Port}/",
+                    username = "user",
+                    credentialReference = "ftp-password",
+                    securityMode = "Plain",
+                })), timeout.Token);
+            ControlFrameEnvelope credential = await ReadAsync(pipe, timeout.Token);
+            await WriteAsync(pipe, new ControlFrameEnvelope(1, "CredentialResponse",
+                credential.RequestId, instance, session, true,
+                JsonSerializer.SerializeToElement(new { referenceId = "ftp-password", secret = "correct-secret" })),
+                timeout.Token);
+            Assert.AreEqual("Connected", (await ReadAsync(pipe, timeout.Token)).MessageType);
+
+            Guid readId = Guid.NewGuid();
+            await WriteAsync(pipe, new ControlFrameEnvelope(1, "ReadRange", readId,
+                instance, session, false,
+                JsonSerializer.SerializeToElement(new { path = "report.bin", offset = 2, length = 3 })),
+                timeout.Token);
+            ControlFrameEnvelope range = await ReadAsync(pipe, timeout.Token);
+            Assert.AreEqual("ReadRangeReady", range.MessageType,
+                range.MessageType == "OperationError" ? range.Payload.ToString() : string.Empty);
+            BinaryChunkFrame chunk = BinaryChunkCodec.Decode(
+                await LengthPrefixedFrameReader.ReadAsync(pipe, timeout.Token));
+            CollectionAssert.AreEqual(new byte[] { 5, 7, 11 }, chunk.Data.ToArray());
+            Assert.AreEqual(2, chunk.Offset);
+            Assert.IsTrue(chunk.EndOfStream);
+
+            Guid statId = Guid.NewGuid();
+            await WriteAsync(pipe, new ControlFrameEnvelope(1, "Stat", statId, instance, session,
+                false, JsonSerializer.SerializeToElement(new { path = "report.bin" })), timeout.Token);
+            ControlFrameEnvelope stat = await ReadAsync(pipe, timeout.Token);
+            Assert.AreEqual("StatResult", stat.MessageType);
+            string originalRevision = stat.Payload.GetProperty("revision").GetString()!;
+            Assert.IsFalse(string.IsNullOrWhiteSpace(originalRevision));
+
+            byte[] replacement = [1, 4, 9, 16];
+            ControlFrameEnvelope complete = await UploadAsync(
+                pipe, instance, session, Guid.NewGuid(), "report.bin", originalRevision,
+                replacement, timeout.Token);
+            Assert.AreEqual("UploadComplete", complete.MessageType,
+                complete.MessageType == "OperationError" ? complete.Payload.ToString() : string.Empty);
+            CollectionAssert.AreEqual(replacement, fixture.ReadStoredFile("/report.bin"));
+
+            ControlFrameEnvelope conflict = await UploadAsync(
+                pipe, instance, session, Guid.NewGuid(), "report.bin", originalRevision,
+                [8, 8, 8], timeout.Token);
+            Assert.AreEqual("OperationError", conflict.MessageType);
+            Assert.AreEqual("RemoteConflict", conflict.Payload.GetProperty("code").GetString());
+            CollectionAssert.AreEqual(replacement, fixture.ReadStoredFile("/report.bin"));
+
+            fixture.FailNextStore = true;
+            Guid retryId = Guid.NewGuid();
+            ControlFrameEnvelope failed = await UploadAsync(pipe, instance, session, retryId,
+                "new.bin", null, [6, 2, 6], timeout.Token);
+            Assert.AreEqual("OperationError", failed.MessageType);
+            Assert.AreEqual("RetryableTransferFailure", failed.Payload.GetProperty("code").GetString());
+            ControlFrameEnvelope retried = await UploadAsync(pipe, instance, session, retryId,
+                "new.bin", null, [6, 2, 6], timeout.Token);
+            Assert.AreEqual("UploadComplete", retried.MessageType,
+                retried.MessageType == "OperationError" ? retried.Payload.ToString() : string.Empty);
+            CollectionAssert.AreEqual(new byte[] { 6, 2, 6 }, fixture.ReadStoredFile("/new.bin"));
+
+            await WriteAsync(pipe, new ControlFrameEnvelope(1, "ReadRange", Guid.NewGuid(),
+                instance, session, false,
+                JsonSerializer.SerializeToElement(new { path = "../outside", offset = 0, length = 1 })),
+                timeout.Token);
+            ControlFrameEnvelope unsafePath = await ReadAsync(pipe, timeout.Token);
+            Assert.AreEqual("OperationError", unsafePath.MessageType);
+            Assert.AreEqual("InvalidRequest", unsafePath.Payload.GetProperty("code").GetString());
+
+            Guid corruptId = Guid.NewGuid();
+            Guid corruptStream = Guid.NewGuid();
+            await WriteAsync(pipe, new ControlFrameEnvelope(1, "Upload", corruptId, instance,
+                session, false, JsonSerializer.SerializeToElement(new
+                {
+                    path = "bad.bin",
+                    expectedRevision = (string?)null,
+                    length = 2,
+                    streamId = corruptStream,
+                })), timeout.Token);
+            Assert.AreEqual("UploadReady", (await ReadAsync(pipe, timeout.Token)).MessageType);
+            byte[] corrupt = BinaryChunkCodec.Encode(new BinaryChunkFrame(
+                corruptId, instance, session, corruptStream, 0, new byte[] { 1, 2 }, true,
+                Sha256Digest.Compute([1, 2])));
+            corrupt[^1] ^= 0x10;
+            await WritePayloadAsync(pipe, corrupt, timeout.Token);
+            ControlFrameEnvelope rejectedChunk = await ReadAsync(pipe, timeout.Token);
+            Assert.AreEqual("OperationError", rejectedChunk.MessageType);
+            Assert.AreEqual("InvalidRequest", rejectedChunk.Payload.GetProperty("code").GetString());
+            Assert.IsNull(fixture.ReadStoredFile("/bad.bin"));
+
+            Guid stopId = Guid.NewGuid();
+            await WriteAsync(pipe, new ControlFrameEnvelope(1, "Stop", stopId, instance,
+                session, false, JsonSerializer.SerializeToElement(new { })), timeout.Token);
+            Assert.AreEqual("Stopped", (await ReadAsync(pipe, timeout.Token)).MessageType);
+            await worker.WaitForExitAsync(timeout.Token);
+            Assert.AreEqual(0, worker.Process.ExitCode);
+            Assert.IsEmpty(Directory.EnumerateFiles(cache));
+        }
+        finally
+        {
+            if (!worker.Process.HasExited)
+            {
+                worker.Process.Kill(entireProcessTree: true);
+                await worker.WaitForExitAsync();
+            }
+
+            if (Directory.Exists(cache))
+            {
+                Directory.Delete(cache, recursive: true);
+            }
+        }
+    }
+
+    private static async Task<ControlFrameEnvelope> UploadAsync(
+        Stream pipe,
+        InstanceId instance,
+        WorkerSessionId session,
+        Guid requestId,
+        string path,
+        string? expectedRevision,
+        byte[] content,
+        CancellationToken cancellationToken)
+    {
+        Guid streamId = Guid.NewGuid();
+        await WriteAsync(pipe, new ControlFrameEnvelope(1, "Upload", requestId, instance,
+            session, false, JsonSerializer.SerializeToElement(new
+            {
+                path,
+                expectedRevision,
+                length = content.Length,
+                streamId,
+            })), cancellationToken);
+        ControlFrameEnvelope ready = await ReadAsync(pipe, cancellationToken);
+        Assert.AreEqual("UploadReady", ready.MessageType,
+            ready.MessageType == "OperationError" ? ready.Payload.ToString() : string.Empty);
+        byte[] encoded = BinaryChunkCodec.Encode(new BinaryChunkFrame(
+            requestId, instance, session, streamId, 0, content, true,
+            Sha256Digest.Compute(content)));
+        await WritePayloadAsync(pipe, encoded, cancellationToken);
+        return await ReadAsync(pipe, cancellationToken);
+    }
+
     private static async Task VerifyModeAsync(FtpSecurityMode mode)
     {
         await using var fixture = new LoopbackFtpFixture(mode);
@@ -150,7 +316,14 @@ public sealed class FtpWorkerProcessTests
         ControlFrameEnvelope envelope,
         CancellationToken cancellationToken)
     {
-        byte[] payload = ControlFrameJsonCodec.Encode(envelope);
+        await WritePayloadAsync(stream, ControlFrameJsonCodec.Encode(envelope), cancellationToken);
+    }
+
+    private static async ValueTask WritePayloadAsync(
+        Stream stream,
+        byte[] payload,
+        CancellationToken cancellationToken)
+    {
         var frame = new byte[4 + payload.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(frame, checked((uint)payload.Length));
         payload.CopyTo(frame.AsSpan(4));
@@ -164,6 +337,13 @@ public sealed class FtpWorkerProcessTests
         private readonly X509Certificate2 _certificate;
         private readonly Task _server;
         private readonly FtpSecurityMode _mode;
+        private readonly Dictionary<string, (byte[] Content, DateTime Modified)> _files =
+            new(StringComparer.Ordinal);
+        private TcpListener? _dataListener;
+        private long _restartOffset;
+        private string? _renameFrom;
+        private bool _protectData;
+        private int _uploadCount;
 
         public LoopbackFtpFixture(FtpSecurityMode mode)
         {
@@ -180,6 +360,8 @@ public sealed class FtpWorkerProcessTests
             _listener = new TcpListener(IPAddress.Loopback, 0);
             _listener.Start();
             Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            _files["/report.bin"] = ([2, 3, 5, 7, 11, 13, 17, 19],
+                new DateTime(2026, 9, 29, 12, 0, 0, DateTimeKind.Utc));
             _server = ServeAsync();
         }
 
@@ -191,9 +373,15 @@ public sealed class FtpWorkerProcessTests
 
         public bool ControlChannelEncrypted { get; private set; }
 
+        public bool FailNextStore { get; set; }
+
+        public byte[]? ReadStoredFile(string path) =>
+            _files.TryGetValue(path, out var file) ? file.Content.ToArray() : null;
+
         public async ValueTask DisposeAsync()
         {
             _listener.Stop();
+            _dataListener?.Stop();
             try
             {
                 await _server.WaitAsync(TimeSpan.FromSeconds(2));
@@ -240,7 +428,98 @@ public sealed class FtpWorkerProcessTests
                         await SendAsync(stream, Authenticated ? "230 Logged in\r\n" : "530 Login incorrect\r\n");
                         break;
                     case "FEAT":
-                        await SendAsync(stream, "211-Features\r\n UTF8\r\n211 End\r\n");
+                        await SendAsync(stream, "211-Features\r\n UTF8\r\n SIZE\r\n MDTM\r\n REST STREAM\r\n211 End\r\n");
+                        break;
+                    case "PROT":
+                        _protectData = argument == "P";
+                        await SendAsync(stream, "200 Data protection set\r\n");
+                        break;
+                    case "SIZE":
+                        await SendAsync(stream, _files.TryGetValue(argument, out var sized)
+                            ? $"213 {sized.Content.Length}\r\n" : "550 Not found\r\n");
+                        break;
+                    case "MDTM":
+                        await SendAsync(stream, _files.TryGetValue(argument, out var dated)
+                            ? $"213 {dated.Modified:yyyyMMddHHmmss}\r\n" : "550 Not found\r\n");
+                        break;
+                    case "EPSV":
+                    case "PASV":
+                        _dataListener?.Stop();
+                        _dataListener = new TcpListener(IPAddress.Loopback, 0);
+                        _dataListener.Start();
+                        int port = ((IPEndPoint)_dataListener.LocalEndpoint).Port;
+                        await SendAsync(stream, command == "EPSV"
+                            ? $"229 Entering Extended Passive Mode (|||{port}|)\r\n"
+                            : $"227 Entering Passive Mode (127,0,0,1,{port / 256},{port % 256})\r\n");
+                        break;
+                    case "REST":
+                        _restartOffset = long.Parse(argument, System.Globalization.CultureInfo.InvariantCulture);
+                        await SendAsync(stream, "350 Restart position accepted\r\n");
+                        break;
+                    case "RETR":
+                        if (!_files.TryGetValue(argument, out var retrieved))
+                        {
+                            await SendAsync(stream, "550 Not found\r\n");
+                            break;
+                        }
+
+                        await SendAsync(stream, "150 Opening data connection\r\n");
+                        using (TcpClient data = await (_dataListener ?? throw new InvalidDataException()).AcceptTcpClientAsync())
+                        {
+                            Stream dataStream = _protectData ? await SecureAsync(data.GetStream()) : data.GetStream();
+                            await dataStream.WriteAsync(retrieved.Content.AsMemory(checked((int)_restartOffset)));
+                            await dataStream.FlushAsync();
+                        }
+
+                        _restartOffset = 0;
+                        _dataListener?.Stop();
+                        await SendAsync(stream, "226 Transfer complete\r\n");
+                        break;
+                    case "STOR":
+                        await SendAsync(stream, "150 Opening data connection\r\n");
+                        using (TcpClient data = await (_dataListener ?? throw new InvalidDataException()).AcceptTcpClientAsync())
+                        {
+                            Stream dataStream = _protectData ? await SecureAsync(data.GetStream()) : data.GetStream();
+                            using var output = new MemoryStream();
+                            await dataStream.CopyToAsync(output);
+                            if (!FailNextStore)
+                            {
+                                _uploadCount++;
+                                _files[argument] = (output.ToArray(),
+                                    new DateTime(2026, 9, 29, 12, 0, 0, DateTimeKind.Utc).AddSeconds(_uploadCount));
+                            }
+                        }
+
+                        _dataListener?.Stop();
+                        if (FailNextStore)
+                        {
+                            FailNextStore = false;
+                            await SendAsync(stream, "451 Temporary transfer failure\r\n");
+                        }
+                        else
+                        {
+                            await SendAsync(stream, "226 Transfer complete\r\n");
+                        }
+
+                        break;
+                    case "RNFR":
+                        _renameFrom = _files.ContainsKey(argument) ? argument : null;
+                        await SendAsync(stream, _renameFrom is null ? "550 Not found\r\n" : "350 Ready for destination\r\n");
+                        break;
+                    case "RNTO":
+                        if (_renameFrom is null)
+                        {
+                            await SendAsync(stream, "503 Rename source missing\r\n");
+                            break;
+                        }
+
+                        _files[argument] = _files[_renameFrom];
+                        _files.Remove(_renameFrom);
+                        _renameFrom = null;
+                        await SendAsync(stream, "250 Rename complete\r\n");
+                        break;
+                    case "DELE":
+                        await SendAsync(stream, _files.Remove(argument) ? "250 Deleted\r\n" : "550 Not found\r\n");
                         break;
                     case "SYST":
                         await SendAsync(stream, "215 UNIX Type: L8\r\n");

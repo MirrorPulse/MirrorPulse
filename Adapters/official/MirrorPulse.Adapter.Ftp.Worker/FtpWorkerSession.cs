@@ -157,15 +157,25 @@ public static class FtpWorkerProgram
                 configuration, secret, cancellationToken).ConfigureAwait(false);
             await channel.SendAsync("Connected", helloId, false,
                 new { encrypted = client.IsEncrypted }, cancellationToken).ConfigureAwait(false);
-            AdapterControlFrame stop = await channel.ReadAsync(cancellationToken).ConfigureAwait(false);
-            if (stop.MessageType != "Stop" || stop.IsResponse)
+            var transfer = new FtpWorkerTransferProtocol(channel, client, configuration,
+                arguments.InstanceId, arguments.WorkerSessionId);
+            while (true)
             {
-                throw new InvalidDataException("The FTP Worker received an unsupported command.");
-            }
+                AdapterControlFrame command = await channel.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (command.IsResponse)
+                {
+                    throw new InvalidDataException("The Host sent an unexpected FTP response.");
+                }
 
-            await channel.SendAsync("Stopped", stop.RequestId, true, new { }, cancellationToken)
-                .ConfigureAwait(false);
-            return 0;
+                if (command.MessageType == "Stop")
+                {
+                    await channel.SendAsync("Stopped", command.RequestId, true, new { }, cancellationToken)
+                        .ConfigureAwait(false);
+                    return 0;
+                }
+
+                await transfer.HandleAsync(command, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

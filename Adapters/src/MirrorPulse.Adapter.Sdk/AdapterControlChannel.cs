@@ -72,6 +72,29 @@ public sealed class AdapterControlChannel : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => _pipe.DisposeAsync();
+
+    public ValueTask SendChunkAsync(AdapterBinaryChunk chunk, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chunk);
+        if (chunk.InstanceId != _instanceId || chunk.WorkerSessionId != _workerSessionId)
+        {
+            throw new InvalidDataException("The binary chunk belongs to another Worker session.");
+        }
+
+        return _pipe.WriteFrameAsync(AdapterBinaryChunkCodec.Encode(chunk), cancellationToken);
+    }
+
+    public async ValueTask<AdapterBinaryChunk> ReadChunkAsync(CancellationToken cancellationToken = default)
+    {
+        AdapterBinaryChunk chunk = AdapterBinaryChunkCodec.Decode(
+            await _pipe.ReadFrameAsync(cancellationToken).ConfigureAwait(false));
+        if (chunk.InstanceId != _instanceId || chunk.WorkerSessionId != _workerSessionId)
+        {
+            throw new InvalidDataException("The binary chunk belongs to another Worker session.");
+        }
+
+        return chunk;
+    }
 }
 
 public sealed record AdapterWorkerProcessArguments(Guid InstanceId, Guid WorkerSessionId, string PipeName)
