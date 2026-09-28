@@ -4,7 +4,7 @@ using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Contracts;
 
-namespace MirrorPulse.Core.Tests;
+namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
 [SupportedOSPlatform("windows10.0.16299")]
 [TestClass]

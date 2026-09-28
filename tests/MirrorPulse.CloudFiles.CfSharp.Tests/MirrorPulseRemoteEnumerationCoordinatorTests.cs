@@ -1,7 +1,8 @@
 using CfSharp;
+using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
 
-namespace MirrorPulse.Core.Tests;
+namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
 [TestClass]
 public sealed class MirrorPulseRemoteEnumerationCoordinatorTests

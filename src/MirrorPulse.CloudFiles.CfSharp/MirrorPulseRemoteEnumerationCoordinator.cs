@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using CfSharp;
 
-namespace MirrorPulse.Core.CloudFiles;
+namespace MirrorPulse.CloudFiles.CfSharp;
 
 public sealed record MirrorPulseRemoteEnumerationResult(
     IReadOnlyList<CloudRemoteDirectoryEntry> Entries,

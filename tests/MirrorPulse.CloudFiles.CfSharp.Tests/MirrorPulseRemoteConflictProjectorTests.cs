@@ -5,7 +5,7 @@ using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
 
-namespace MirrorPulse.Core.Tests;
+namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
 [TestClass]
 public sealed class MirrorPulseRemoteConflictProjectorTests
