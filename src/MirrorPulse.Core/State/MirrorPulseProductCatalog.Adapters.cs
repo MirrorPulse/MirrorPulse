@@ -139,7 +139,7 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteCommand query = connection.CreateCommand();
         query.CommandText = """
-            SELECT instance_id, phase, requires_full_rescan, last_successful_sync_utc
+            SELECT instance_id, phase, requires_full_rescan, last_successful_sync_utc, last_error_code
             FROM instance_runtime ORDER BY instance_id;
             """;
         await using SqliteDataReader reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -149,7 +149,8 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
             states.Add(new MirrorPulseInstanceRuntimeState(
                 InstanceId.Parse(reader.GetString(0)), reader.GetString(1), reader.GetInt32(2) != 0,
                 reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3),
-                    System.Globalization.CultureInfo.InvariantCulture)));
+                    System.Globalization.CultureInfo.InvariantCulture),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
         }
 
         return states;

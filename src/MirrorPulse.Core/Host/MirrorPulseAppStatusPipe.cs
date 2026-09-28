@@ -14,7 +14,8 @@ public sealed record MirrorPulseAppInstanceStatus(
     string Phase,
     string? CursorFingerprint,
     DateTimeOffset? CursorUpdatedAt,
-    DateTimeOffset? LastSuccessfulSync);
+    DateTimeOffset? LastSuccessfulSync,
+    string? LastErrorCode = null);
 
 public sealed record MirrorPulseAppNotification(
     string ConflictId,

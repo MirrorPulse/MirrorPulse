@@ -57,7 +57,7 @@ public sealed class AdapterInstanceProcessSupervisorTests
                 {
                     MirrorPulseInstanceRuntimeState? state = await catalog.ReadInstanceRuntimeStateAsync(
                         enabledId, timeout.Token);
-                    if (state?.Phase == "Worker error: InvalidConfiguration")
+                    if (state?.Phase == "Worker error" && state.LastErrorCode == "InvalidConfiguration")
                     {
                         break;
                     }

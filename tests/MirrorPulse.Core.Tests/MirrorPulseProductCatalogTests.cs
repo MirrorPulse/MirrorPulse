@@ -218,6 +218,59 @@ public sealed class MirrorPulseProductCatalogTests
     }
 
     [TestMethod]
+    public async Task VersionFiveRuntimeUpgradesWithoutLosingPhaseAndPersistsRecentError()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.ProductCatalogDatabasePath)!);
+        InstanceId instanceId = InstanceId.New();
+        try
+        {
+            await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = paths.ProductCatalogDatabasePath,
+                Pooling = false,
+            }.ToString()))
+            {
+                await connection.OpenAsync();
+                await using SqliteCommand legacy = connection.CreateCommand();
+                legacy.CommandText = """
+                    CREATE TABLE instance_runtime (
+                        instance_id TEXT PRIMARY KEY,
+                        phase TEXT NOT NULL,
+                        requires_full_rescan INTEGER NOT NULL,
+                        last_successful_sync_utc TEXT NULL
+                    );
+                    INSERT INTO instance_runtime (instance_id, phase, requires_full_rescan)
+                    VALUES ($instance, 'recovering', 1);
+                    PRAGMA user_version=5;
+                    """;
+                legacy.Parameters.AddWithValue("$instance", instanceId.ToString());
+                await legacy.ExecuteNonQueryAsync();
+            }
+
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                MirrorPulseInstanceRuntimeState? restored = await catalog.ReadInstanceRuntimeStateAsync(instanceId);
+                Assert.AreEqual("recovering", restored?.Phase);
+                Assert.IsNull(restored?.LastErrorCode);
+                await catalog.SaveInstanceRuntimeStateAsync(new(instanceId, "Worker error", true,
+                    null, "NetworkUnavailable"));
+                await catalog.SaveInstanceRuntimeStateAsync(new(instanceId, "Connected", false, null));
+            }
+
+            await using var reopened = await MirrorPulseProductCatalog.OpenAsync(paths);
+            MirrorPulseInstanceRuntimeState? updated = await reopened.ReadInstanceRuntimeStateAsync(instanceId);
+            Assert.AreEqual("Connected", updated?.Phase);
+            Assert.AreEqual("NetworkUnavailable", updated?.LastErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task ProductMetadataReopensSeparatelyFromOfficialCfSharpState()
     {
         string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
@@ -226,7 +279,8 @@ public sealed class MirrorPulseProductCatalogTests
         var operationId = Guid.NewGuid();
         var commandId = Guid.NewGuid();
         var instance = InstanceId.New();
-        var runtime = new MirrorPulseInstanceRuntimeState(instance, "recovering", true, DateTimeOffset.UtcNow);
+        var runtime = new MirrorPulseInstanceRuntimeState(instance, "recovering", true,
+            DateTimeOffset.UtcNow, "NetworkUnavailable");
         byte[] fingerprint = SHA256.HashData(Encoding.UTF8.GetBytes("stable Worker request"));
         try
         {

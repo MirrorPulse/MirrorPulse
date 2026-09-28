@@ -64,7 +64,8 @@ try
                     entries.Add(new MirrorPulseAppInstanceStatus(instance.InstanceId.ToString(),
                         instance.DisplayName, instance.Enabled,
                         instance.Enabled ? runtime?.Phase ?? "Not running" : "Offline",
-                        cursor?.CursorFingerprint, cursor?.UpdatedAt, runtime?.LastSuccessfulSync));
+                        cursor?.CursorFingerprint, cursor?.UpdatedAt, runtime?.LastSuccessfulSync,
+                        runtime?.LastErrorCode));
                 }
 
                 IReadOnlySet<Guid> snoozed = await catalog.ReadSnoozedRemoteConflictIdsAsync(cancellationToken);

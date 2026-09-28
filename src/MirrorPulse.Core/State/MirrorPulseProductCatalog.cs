@@ -23,7 +23,8 @@ public sealed record MirrorPulseInstanceRuntimeState(
     InstanceId InstanceId,
     string Phase,
     bool RequiresFullRescan,
-    DateTimeOffset? LastSuccessfulSync);
+    DateTimeOffset? LastSuccessfulSync,
+    string? LastErrorCode = null);
 
 /// <summary>
 /// MP's separate product catalog. CfSharp owns Cloud Files journal, batch, conflict and checkpoint
@@ -92,7 +93,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                 version.CommandText = "PRAGMA user_version;";
                 long currentVersion = (long)(await version.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false) ?? 0L);
-                if (currentVersion > 5)
+                if (currentVersion > 6)
                 {
                     throw new InvalidDataException("The MP product catalog schema is newer than this Host supports.");
                 }
@@ -139,9 +140,25 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                         conflict_id TEXT PRIMARY KEY,
                         snoozed_utc TEXT NOT NULL
                     );
-                    PRAGMA user_version=5;
                     """;
                 await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await using (SqliteCommand column = connection.CreateCommand())
+            {
+                column.CommandText = "SELECT 1 FROM pragma_table_info('instance_runtime') WHERE name = 'last_error_code';";
+                if (await column.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+                {
+                    await using SqliteCommand alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE instance_runtime ADD COLUMN last_error_code TEXT NULL;";
+                    await alter.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            await using (SqliteCommand version = connection.CreateCommand())
+            {
+                version.CommandText = "PRAGMA user_version=6;";
+                await version.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
             return new(owner, connection);
@@ -382,12 +399,13 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
             await using SqliteCommand command = _connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO instance_runtime
-                    (instance_id, phase, requires_full_rescan, last_successful_sync_utc)
-                VALUES ($instance, $phase, $rescan, $last)
+                    (instance_id, phase, requires_full_rescan, last_successful_sync_utc, last_error_code)
+                VALUES ($instance, $phase, $rescan, $last, $error)
                 ON CONFLICT(instance_id) DO UPDATE SET
                     phase = excluded.phase,
                     requires_full_rescan = excluded.requires_full_rescan,
-                    last_successful_sync_utc = excluded.last_successful_sync_utc;
+                    last_successful_sync_utc = excluded.last_successful_sync_utc,
+                    last_error_code = COALESCE(excluded.last_error_code, instance_runtime.last_error_code);
                 """;
             command.Parameters.AddWithValue("$instance", state.InstanceId.ToString());
             command.Parameters.AddWithValue("$phase", state.Phase);
@@ -395,6 +413,8 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
             command.Parameters.AddWithValue("$last", state.LastSuccessfulSync is null
                 ? DBNull.Value
                 : state.LastSuccessfulSync.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            command.Parameters.AddWithValue("$error", state.LastErrorCode is null
+                ? DBNull.Value : state.LastErrorCode);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -413,7 +433,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
             ThrowIfDisposed();
             await using SqliteCommand query = _connection.CreateCommand();
             query.CommandText = """
-                SELECT phase, requires_full_rescan, last_successful_sync_utc
+                SELECT phase, requires_full_rescan, last_successful_sync_utc, last_error_code
                 FROM instance_runtime WHERE instance_id = $instance;
                 """;
             query.Parameters.AddWithValue("$instance", instanceId.ToString());
@@ -424,7 +444,8 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                     reader.GetString(0),
                     reader.GetInt32(1) != 0,
                     reader.IsDBNull(2) ? null : DateTimeOffset.Parse(
-                        reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture))
+                        reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture),
+                    reader.IsDBNull(3) ? null : reader.GetString(3))
                 : null;
         }
         finally

@@ -104,8 +104,8 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            await SetPhaseAsync(instance.InstanceId, $"Worker failed: {exception.GetType().Name}",
-                CancellationToken.None).ConfigureAwait(false);
+            await SetPhaseAsync(instance.InstanceId, "Worker failed", CancellationToken.None,
+                exception.GetType().Name).ConfigureAwait(false);
         }
     }
 
@@ -145,7 +145,7 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
                 case "Error":
                     string code = frame.Payload.TryGetProperty("code", out JsonElement value)
                         ? value.GetString() ?? "Unknown" : "Unknown";
-                    await SetPhaseAsync(instance.InstanceId, $"Worker error: {code}", cancellationToken)
+                    await SetPhaseAsync(instance.InstanceId, "Worker error", cancellationToken, code)
                         .ConfigureAwait(false);
                     return;
                 default:
@@ -179,8 +179,12 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
-    private Task SetPhaseAsync(InstanceId instanceId, string phase, CancellationToken cancellationToken) =>
-        _catalog.SaveInstanceRuntimeStateAsync(new(instanceId, phase, false, null), cancellationToken);
+    private Task SetPhaseAsync(
+        InstanceId instanceId,
+        string phase,
+        CancellationToken cancellationToken,
+        string? errorCode = null) =>
+        _catalog.SaveInstanceRuntimeStateAsync(new(instanceId, phase, false, null, errorCode), cancellationToken);
 
     private static void ValidateFrame(
         ControlFrameEnvelope frame,

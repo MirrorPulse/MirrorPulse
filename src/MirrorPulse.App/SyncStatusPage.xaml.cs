@@ -32,7 +32,9 @@ public sealed partial class SyncStatusPage : Page
                 string checkpoint = instance.CursorFingerprint is not null
                     ? $"Cursor {instance.CursorFingerprint} ({instance.CursorUpdatedAt:yyyy-MM-dd HH:mm})"
                     : "No remote cursor";
-                return $"{instance.DisplayName}  ·  {instance.Phase}  ·  {checkpoint}";
+                string error = instance.LastErrorCode is null
+                    ? string.Empty : $"  ·  Last error: {instance.LastErrorCode}";
+                return $"{instance.DisplayName}  ·  {instance.Phase}  ·  {checkpoint}{error}";
             }).ToArray();
             StatusMessageText.Text = status.Instances.Count == 0
                 ? "No Adapter instances are configured."
