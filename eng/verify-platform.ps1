@@ -6,6 +6,9 @@ $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $expectedTargetFramework = "net10.0-windows"
 $specialTargetFrameworks = @{
     "MirrorPulse.App.csproj" = "net10.0-windows10.0.26100.0"
+    "MirrorPulse.CloudFiles.CfSharp.csproj" = "net10.0-windows10.0.26100.0"
+    "MirrorPulse.Host.csproj" = "net10.0-windows10.0.26100.0"
+    "MirrorPulse.Core.Tests.csproj" = "net10.0-windows10.0.26100.0"
 }
 $projectRoots = @("src", "tests")
 $projects = foreach ($root in $projectRoots) {
