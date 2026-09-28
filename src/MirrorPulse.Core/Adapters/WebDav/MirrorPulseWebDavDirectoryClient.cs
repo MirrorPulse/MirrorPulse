@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Xml.Linq;
 
@@ -9,6 +10,11 @@ public sealed record MirrorPulseWebDavRemoteEntry(
     string RelativePath,
     bool IsDirectory,
     long? Length,
+    string? ETag);
+
+public sealed record MirrorPulseWebDavReadResult(
+    byte[] Content,
+    long? TotalLength,
     string? ETag);
 
 /// <summary>
@@ -56,6 +62,24 @@ public sealed class MirrorPulseWebDavDirectoryClient
 
         response.EnsureSuccessStatusCode();
         return ParseEntries(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false), endpoint);
+    }
+
+    public async Task<MirrorPulseWebDavReadResult> ReadRangeAsync(
+        string relativePath,
+        long offset,
+        int length,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        var endpoint = Resolve(relativePath);
+        using var request = MirrorPulseWebDavAuthenticator.CreateRequest(HttpMethod.Get, endpoint, _credential);
+        request.Headers.Range = new RangeHeaderValue(offset, checked(offset + length - 1));
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var totalLength = response.Content.Headers.ContentRange?.Length ?? response.Content.Headers.ContentLength;
+        return new MirrorPulseWebDavReadResult(content, totalLength, response.Headers.ETag?.Tag);
     }
 
     private Uri Resolve(string relativePath)
