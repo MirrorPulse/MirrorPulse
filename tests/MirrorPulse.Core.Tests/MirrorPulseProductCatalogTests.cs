@@ -103,6 +103,10 @@ public sealed class MirrorPulseProductCatalogTests
                 Assert.AreEqual(RootRegistrationState.Disabled, disabled.Roots[0].State);
                 Assert.IsTrue(disabled.Instances[1].Enabled);
                 Assert.AreEqual(RootRegistrationState.Active, disabled.Roots[1].State);
+                MirrorPulseAdapterTopology switched = await catalog.SelectInstanceInstallationAsync(
+                    instanceId, secondInstallId);
+                Assert.AreEqual(secondInstallId, switched.Instances[0].InstallId);
+                Assert.AreEqual(instanceId, switched.Roots[0].InstanceId);
             }
 
             await using var reopened = await MirrorPulseProductCatalog.OpenAsync(paths);
@@ -114,6 +118,7 @@ public sealed class MirrorPulseProductCatalogTests
             Assert.AreEqual("example.drive", restored.Installations[0].AdapterId.ToString());
             Assert.AreEqual("Personal drive", restored.Instances[0].DisplayName);
             Assert.IsFalse(restored.Instances[0].Enabled);
+            Assert.AreEqual(secondInstallId, restored.Instances[0].InstallId);
             Assert.AreEqual(RootRegistrationState.Disabled, restored.Roots[0].State);
             Assert.AreEqual("credential-1", restored.Instances[0].CredentialReferences[0]);
             Assert.AreEqual(first.RootId, restored.Roots[0].RootId);

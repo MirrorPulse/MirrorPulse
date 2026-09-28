@@ -221,6 +221,54 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         }
     }
 
+    /// <summary>Pins one instance to a different installed version of the same Adapter.</summary>
+    public async Task<MirrorPulseAdapterTopology> SelectInstanceInstallationAsync(
+        InstanceId instanceId,
+        InstallId installId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand query = _connection.CreateCommand();
+            query.CommandText = "SELECT payload FROM adapter_topology WHERE id = 1;";
+            string? payload = (string?)await query.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (payload is null)
+            {
+                throw new FileNotFoundException("The Adapter instance is not installed.");
+            }
+
+            MirrorPulseAdapterTopology current = DeserializeTopology(payload);
+            AdapterInstance instance = current.Instances.SingleOrDefault(item => item.InstanceId == instanceId)
+                ?? throw new FileNotFoundException("The Adapter instance is not installed.");
+            InstalledAdapter selected = current.Installations.SingleOrDefault(item => item.InstallId == installId)
+                ?? throw new FileNotFoundException("The selected Adapter version is not installed.");
+            if (selected.AdapterId != instance.AdapterId)
+            {
+                throw new InvalidDataException("An instance cannot select another Adapter's installation.");
+            }
+
+            AdapterInstance[] instances = current.Instances.Select(item =>
+                item.InstanceId != instanceId ? item : new AdapterInstance(
+                    item.AdapterId, installId, item.InstanceId, item.DisplayName,
+                    item.Configuration, item.CredentialReferences, item.FileCacheDirectory,
+                    item.TransferCacheDirectory, item.Enabled, item.LifecycleState,
+                    null, item.CreatedAt)).ToArray();
+            var next = new MirrorPulseAdapterTopology(current.Installations, instances, current.Roots);
+            ValidateTopology(next);
+            await using SqliteCommand update = _connection.CreateCommand();
+            update.CommandText = "UPDATE adapter_topology SET payload = $payload WHERE id = 1;";
+            update.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(next, TopologyJsonOptions));
+            await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return next;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static void ValidateTopology(MirrorPulseAdapterTopology topology)
     {
         ArgumentNullException.ThrowIfNull(topology);
