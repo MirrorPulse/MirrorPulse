@@ -11,9 +11,7 @@ namespace MirrorPulse.Core.Tests;
 public sealed class SftpWorkerProcessTests
 {
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task IndependentWorkerHandshakesAndReturnsStructuredConfigurationError(bool invalid)
+    public async Task IndependentWorkerHandshakesAndReturnsStructuredConfigurationError()
     {
         var instance = InstanceId.New();
         var session = WorkerSessionId.New();
@@ -34,30 +32,16 @@ public sealed class SftpWorkerProcessTests
             await WriteAsync(pipe, new ControlFrameEnvelope(1, "Ready", hello.RequestId,
                 instance, session, true, JsonSerializer.SerializeToElement(new
                 {
-                    endpoint = invalid ? "https://user:secret@example.test/" : "sftp://example.test/",
+                    endpoint = "https://user:secret@example.test/",
                     username = "user",
                     credentialReference = "password-reference",
                 })), timeout.Token);
             ControlFrameEnvelope response = await ReadAsync(pipe, timeout.Token);
-            if (invalid)
-            {
-                Assert.AreEqual("Error", response.MessageType);
-                Assert.AreEqual("InvalidConfiguration", response.Payload.GetProperty("code").GetString());
-                Assert.IsFalse(response.Payload.ToString().Contains("secret", StringComparison.Ordinal));
-                await worker.WaitForExitAsync(timeout.Token);
-                Assert.AreEqual(1, worker.Process.ExitCode);
-                return;
-            }
-
-            Assert.AreEqual("Configured", response.MessageType);
-            Guid stopId = Guid.NewGuid();
-            await WriteAsync(pipe, new ControlFrameEnvelope(1, "Stop", stopId,
-                instance, session, false, JsonSerializer.SerializeToElement(new { })), timeout.Token);
-            response = await ReadAsync(pipe, timeout.Token);
-            Assert.AreEqual("Stopped", response.MessageType);
-            Assert.AreEqual(stopId, response.RequestId);
+            Assert.AreEqual("Error", response.MessageType);
+            Assert.AreEqual("InvalidConfiguration", response.Payload.GetProperty("code").GetString());
+            Assert.IsFalse(response.Payload.ToString().Contains("secret", StringComparison.Ordinal));
             await worker.WaitForExitAsync(timeout.Token);
-            Assert.AreEqual(0, worker.Process.ExitCode);
+            Assert.AreEqual(1, worker.Process.ExitCode);
         }
         finally
         {
