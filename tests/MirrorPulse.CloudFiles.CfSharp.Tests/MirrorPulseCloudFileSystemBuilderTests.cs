@@ -4,7 +4,7 @@ using CfSharp.Storage.Sqlite;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.Configuration;
 
-namespace MirrorPulse.Core.Tests;
+namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
 [SupportedOSPlatform("windows10.0.16299")]
 [TestClass]

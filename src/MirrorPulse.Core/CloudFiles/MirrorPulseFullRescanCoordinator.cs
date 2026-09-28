@@ -1,6 +1,3 @@
-using System.Runtime.Versioning;
-using CfSharp;
-
 namespace MirrorPulse.Core.CloudFiles;
 
 public sealed record MirrorPulseLocalChangeSignal(bool RequiresFullRescan);
@@ -12,7 +9,6 @@ public sealed record MirrorPulseFullRescanResult(
 /// <summary>
 /// Runs a complete local reconciliation before acknowledging a CfSharp full-rescan request.
 /// </summary>
-[SupportedOSPlatform("windows10.0.16299")]
 public sealed class MirrorPulseFullRescanCoordinator
 {
     private readonly Func<CancellationToken, ValueTask<int>> _rescan;
@@ -26,14 +22,6 @@ public sealed class MirrorPulseFullRescanCoordinator
         ArgumentNullException.ThrowIfNull(acknowledge);
         _rescan = rescan;
         _acknowledge = acknowledge;
-    }
-
-    public static MirrorPulseFullRescanCoordinator For(
-        CloudLocalChangeFeed feed,
-        Func<CancellationToken, ValueTask<int>> rescan)
-    {
-        ArgumentNullException.ThrowIfNull(feed);
-        return new(rescan, feed.AcknowledgeFullRescanAsync);
     }
 
     public async ValueTask<MirrorPulseFullRescanResult> HandleAsync(
@@ -52,11 +40,4 @@ public sealed class MirrorPulseFullRescanCoordinator
         return new(true, normalizedCount);
     }
 
-    public ValueTask<MirrorPulseFullRescanResult> HandleAsync(
-        CloudLocalChangeBatch batch,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(batch);
-        return HandleAsync(new MirrorPulseLocalChangeSignal(batch.RequiresFullRescan), cancellationToken);
-    }
 }

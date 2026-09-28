@@ -2,15 +2,6 @@
   "version": 2,
   "dependencies": {
     "net10.0-windows7.0": {
-      "CfSharp": {
-        "type": "Direct",
-        "requested": "[0.1.0-preview.1, )",
-        "resolved": "0.1.0-preview.1",
-        "contentHash": "e9Zpm7JNEhH69ZhbdcwW8Eu6ITBqHLgHaTuGc1/bOEYbsFzPjkVJekmqVRF8yG5Sj5K9j3yYCK51plfOjhzU+Q==",
-        "dependencies": {
-          "CfSharp.Native": "0.1.0-preview.1"
-        }
-      },
       "Microsoft.Data.Sqlite": {
         "type": "Direct",
         "requested": "[8.0.31, )",
@@ -20,11 +11,6 @@
           "Microsoft.Data.Sqlite.Core": "8.0.31",
           "SQLitePCLRaw.bundle_e_sqlite3": "2.1.12"
         }
-      },
-      "CfSharp.Native": {
-        "type": "Transitive",
-        "resolved": "0.1.0-preview.1",
-        "contentHash": "2PskOBSlah6aCjzxGV/xMxnCee79hmVxMRuepfHU29lX/cd5UOaGtrxaXF1iZHpo5OoitTaua0AV2JiPgrjuzw=="
       },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",

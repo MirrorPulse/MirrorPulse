@@ -1,7 +1,7 @@
 using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 
-namespace MirrorPulse.Core.Tests;
+namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
 [TestClass]
 public sealed class MirrorPulseNativeErrorSnapshotTests

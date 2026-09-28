@@ -1,24 +1,8 @@
-using System.Runtime.Versioning;
-using CfSharp;
-
 namespace MirrorPulse.Core.CloudFiles;
 
 public interface IMirrorPulseSyncRootUnregistrar
 {
     void Unregister(string path);
-}
-
-/// <summary>
-/// Removes one registered MirrorPulse sync root through the native Cloud Files API.
-/// </summary>
-[SupportedOSPlatform("windows10.0.16299")]
-public sealed class CfSharpSyncRootUnregistrar : IMirrorPulseSyncRootUnregistrar
-{
-    public void Unregister(string path)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        CloudSyncRoot.Open(System.IO.Path.GetFullPath(path.Trim())).Unregister();
-    }
 }
 
 /// <summary>

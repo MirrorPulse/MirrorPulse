@@ -7,7 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CfSharp" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 
