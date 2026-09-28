@@ -27,3 +27,7 @@ dotnet test MirrorPulse.sln --configuration Release
 ## Privacy
 
 MirrorPulse is designed to keep configuration, credentials, logs, and synchronization state on the user's device. It does not upload telemetry or user files by default.
+
+## License
+
+MirrorPulse is available under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution information.

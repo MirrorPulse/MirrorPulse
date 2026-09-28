@@ -2,6 +2,8 @@
 
 This directory is the starting point for an Adapter that extends MirrorPulse with a remote storage protocol or service.
 
+Adapter template code is distributed under the [Apache License 2.0](../../LICENSE). A packaged Adapter may include its own license terms for its implementation and dependencies; declare those terms in its release documentation.
+
 ## Repository layout
 
 ```text

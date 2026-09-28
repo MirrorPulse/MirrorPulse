@@ -2,6 +2,10 @@
 
 Thank you for contributing. MirrorPulse is a Windows-first Cloud Files application with independently packaged Adapter workers.
 
+## License
+
+Contributions to MirrorPulse are accepted under the [Apache License 2.0](LICENSE). By submitting a contribution, you agree that it may be distributed under that license unless a separate written agreement says otherwise.
+
 ## Language
 
 Use English for tracked source code, configuration, formal documentation, commit messages, issues, and pull requests. Chinese is reserved for the ignored `draft/` collaboration notes.
