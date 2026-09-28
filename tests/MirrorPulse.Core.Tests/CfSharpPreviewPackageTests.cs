@@ -14,4 +14,16 @@ public sealed class CfSharpPreviewPackageTests
         StringAssert.Contains(project, "<PackageReference Include=\"CfSharp\" />");
         StringAssert.Contains(packageProps, "<PackageVersion Include=\"CfSharp\" Version=\"0.1.0-preview.1\" />");
     }
+
+    [TestMethod]
+    public void HostReferencesTheMatchingOfficialSqliteProvider()
+    {
+        var hostProjectPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/MirrorPulse.Host/MirrorPulse.Host.csproj"));
+        var packagePropsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../Directory.Packages.props"));
+        var hostProject = File.ReadAllText(hostProjectPath);
+        var packageProps = File.ReadAllText(packagePropsPath);
+
+        StringAssert.Contains(hostProject, "<PackageReference Include=\"CfSharp.Storage.Sqlite\" />");
+        StringAssert.Contains(packageProps, "<PackageVersion Include=\"CfSharp.Storage.Sqlite\" Version=\"0.1.0-preview.1\" />");
+    }
 }
