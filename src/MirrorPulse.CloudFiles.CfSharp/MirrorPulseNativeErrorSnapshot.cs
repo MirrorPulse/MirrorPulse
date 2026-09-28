@@ -1,7 +1,7 @@
 using System.Text.Json;
 using CfSharp;
 
-namespace MirrorPulse.Core.Diagnostics;
+namespace MirrorPulse.CloudFiles.CfSharp;
 
 public sealed record MirrorPulseNativeErrorSnapshot(
     string ExceptionType,

@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using CfSharp;
 
-namespace MirrorPulse.Core.CloudFiles;
+namespace MirrorPulse.CloudFiles.CfSharp;
 
 /// <summary>
 /// Application-owned inputs for the single MirrorPulse Cloud Files sync root.

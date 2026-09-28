@@ -2,7 +2,7 @@ using System.Runtime.Versioning;
 using CfSharp;
 using MirrorPulse.Core.Contracts;
 
-namespace MirrorPulse.Core.CloudFiles;
+namespace MirrorPulse.CloudFiles.CfSharp;
 
 public sealed record MirrorPulsePlaceholderBatchPlan(
     IReadOnlyList<CloudPlaceholderSpec> Placeholders,

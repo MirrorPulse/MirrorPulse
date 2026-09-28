@@ -1,5 +1,5 @@
 using CfSharp;
-using MirrorPulse.Core.Diagnostics;
+using MirrorPulse.CloudFiles.CfSharp;
 
 namespace MirrorPulse.Core.Tests;
 

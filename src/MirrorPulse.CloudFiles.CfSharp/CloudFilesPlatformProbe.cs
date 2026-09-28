@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using CfSharp;
 
-namespace MirrorPulse.Core.CloudFiles;
+namespace MirrorPulse.CloudFiles.CfSharp;
 
 /// <summary>
 /// Immutable result of the Windows Cloud Files platform and process architecture check.

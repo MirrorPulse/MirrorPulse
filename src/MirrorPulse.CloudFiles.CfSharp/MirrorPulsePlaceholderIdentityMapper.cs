@@ -3,7 +3,7 @@ using System.Text;
 using CfSharp;
 using MirrorPulse.Core.Contracts;
 
-namespace MirrorPulse.Core.CloudFiles;
+namespace MirrorPulse.CloudFiles.CfSharp;
 
 /// <summary>
 /// Maps an Adapter instance and remote object identity to a stable CfSharp placeholder identity.
