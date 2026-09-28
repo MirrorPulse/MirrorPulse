@@ -116,6 +116,7 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
 
         try
         {
+            _owner.EnsureHeld();
             await _registration.EnsureRegisteredAsync(_definition, _profile, cancellationToken).ConfigureAwait(false);
             _runtime = _runtimeFactory.Create(_paths);
             await _runtime.StartAsync(cancellationToken).ConfigureAwait(false);

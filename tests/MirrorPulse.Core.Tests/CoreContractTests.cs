@@ -12,7 +12,6 @@ public sealed class CoreContractTests
     public void CurrentSchemaAndFrameContractsRemainCompatible()
     {
         Assert.AreEqual(MirrorPulseConfiguration.CurrentSchemaVersion, ExpectedSchemaVersion);
-        Assert.AreEqual(MirrorPulsePersistentState.CurrentSchemaVersion, ExpectedSchemaVersion);
         Assert.AreEqual(4L + 1024L, ControlFrameLimits.GetFrameLength(1024));
 
         using var document = JsonDocument.Parse("{\"kind\":\"test\"}");

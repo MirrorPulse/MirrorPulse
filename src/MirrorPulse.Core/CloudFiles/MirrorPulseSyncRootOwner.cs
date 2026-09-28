@@ -22,23 +22,11 @@ public sealed class MirrorPulseSyncRootOwner : IDisposable
 
     public bool TryAcquire(TimeSpan timeout) => _ownerLock.TryAcquire(timeout);
 
-    public void EnsureConsistent(
-        MirrorPulseSyncRootDefinition definition,
-        MirrorPulseSyncRootRegistrationState persistedState)
+    public void EnsureHeld()
     {
-        ArgumentNullException.ThrowIfNull(definition);
-        ArgumentNullException.ThrowIfNull(persistedState);
         if (!_ownerLock.IsHeld)
         {
             throw new InvalidOperationException("The current user does not own the MirrorPulse Sync Root lock.");
-        }
-
-        var persistedPath = Path.GetFullPath(persistedState.Path);
-        if (!string.Equals(persistedPath, definition.Path, StringComparison.OrdinalIgnoreCase)
-            || persistedState.ProviderId != definition.ProviderId
-            || !string.Equals(persistedState.ProviderVersion, definition.ProviderVersion, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("The persisted Sync Root registration does not match the configured MirrorPulse root.");
         }
     }
 

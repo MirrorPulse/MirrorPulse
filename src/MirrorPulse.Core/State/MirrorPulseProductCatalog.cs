@@ -19,6 +19,12 @@ public sealed record MirrorPulseUserCommandRecord(
     string TargetId,
     string State);
 
+public sealed record MirrorPulseInstanceRuntimeState(
+    InstanceId InstanceId,
+    string Phase,
+    bool RequiresFullRescan,
+    DateTimeOffset? LastSuccessfulSync);
+
 /// <summary>
 /// MP's separate product catalog. CfSharp owns Cloud Files journal, batch, conflict and checkpoint
 /// tables in its own database; this catalog tracks Worker idempotency, user intent, and
@@ -86,7 +92,7 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
                 version.CommandText = "PRAGMA user_version;";
                 long currentVersion = (long)(await version.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false) ?? 0L);
-                if (currentVersion > 2)
+                if (currentVersion > 3)
                 {
                     throw new InvalidDataException("The MP product catalog schema is newer than this Host supports.");
                 }
@@ -119,7 +125,13 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
                         remote_revision TEXT NULL,
                         detected_utc TEXT NOT NULL
                     );
-                    PRAGMA user_version=2;
+                    CREATE TABLE IF NOT EXISTS instance_runtime (
+                        instance_id TEXT PRIMARY KEY,
+                        phase TEXT NOT NULL,
+                        requires_full_rescan INTEGER NOT NULL,
+                        last_successful_sync_utc TEXT NULL
+                    );
+                    PRAGMA user_version=3;
                     """;
                 await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -337,6 +349,75 @@ public sealed class MirrorPulseProductCatalog : IAsyncDisposable
             }
 
             return records;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task SaveInstanceRuntimeStateAsync(
+        MirrorPulseInstanceRuntimeState state,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentException.ThrowIfNullOrWhiteSpace(state.Phase);
+        if (state.InstanceId.Value == Guid.Empty)
+        {
+            throw new ArgumentException("The runtime state requires an Adapter instance ID.", nameof(state));
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand command = _connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO instance_runtime
+                    (instance_id, phase, requires_full_rescan, last_successful_sync_utc)
+                VALUES ($instance, $phase, $rescan, $last)
+                ON CONFLICT(instance_id) DO UPDATE SET
+                    phase = excluded.phase,
+                    requires_full_rescan = excluded.requires_full_rescan,
+                    last_successful_sync_utc = excluded.last_successful_sync_utc;
+                """;
+            command.Parameters.AddWithValue("$instance", state.InstanceId.ToString());
+            command.Parameters.AddWithValue("$phase", state.Phase);
+            command.Parameters.AddWithValue("$rescan", state.RequiresFullRescan ? 1 : 0);
+            command.Parameters.AddWithValue("$last", state.LastSuccessfulSync is null
+                ? DBNull.Value
+                : state.LastSuccessfulSync.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<MirrorPulseInstanceRuntimeState?> ReadInstanceRuntimeStateAsync(
+        InstanceId instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand query = _connection.CreateCommand();
+            query.CommandText = """
+                SELECT phase, requires_full_rescan, last_successful_sync_utc
+                FROM instance_runtime WHERE instance_id = $instance;
+                """;
+            query.Parameters.AddWithValue("$instance", instanceId.ToString());
+            await using SqliteDataReader reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                ? new MirrorPulseInstanceRuntimeState(
+                    instanceId,
+                    reader.GetString(0),
+                    reader.GetInt32(1) != 0,
+                    reader.IsDBNull(2) ? null : DateTimeOffset.Parse(
+                        reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture))
+                : null;
         }
         finally
         {
