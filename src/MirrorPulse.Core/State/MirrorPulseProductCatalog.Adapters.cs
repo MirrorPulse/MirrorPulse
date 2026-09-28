@@ -126,6 +126,64 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         return topology.Installations.SingleOrDefault(adapter => adapter.InstallId == installId);
     }
 
+    /// <summary>Changes one instance's startup selection and its retained first-level namespace atomically.</summary>
+    public async Task<MirrorPulseAdapterTopology> SetInstanceEnabledAsync(
+        InstanceId instanceId,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand query = _connection.CreateCommand();
+            query.CommandText = "SELECT payload FROM adapter_topology WHERE id = 1;";
+            string? payload = (string?)await query.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (payload is null)
+            {
+                throw new FileNotFoundException("The Adapter instance is not installed.");
+            }
+
+            MirrorPulseAdapterTopology current = DeserializeTopology(payload);
+            if (!current.Instances.Any(instance => instance.InstanceId == instanceId))
+            {
+                throw new FileNotFoundException("The Adapter instance is not installed.");
+            }
+
+            AdapterInstance[] instances = current.Instances.Select(instance =>
+                instance.InstanceId != instanceId ? instance : new AdapterInstance(
+                    instance.AdapterId, instance.InstallId, instance.InstanceId, instance.DisplayName,
+                    instance.Configuration, instance.CredentialReferences, instance.FileCacheDirectory,
+                    instance.TransferCacheDirectory, enabled,
+                    enabled ? AdapterLifecycleState.Enabled : AdapterLifecycleState.Disabled,
+                    null, instance.CreatedAt)).ToArray();
+            RootRegistration[] roots = current.Roots.Select(root =>
+            {
+                if (root.InstanceId != instanceId ||
+                    root.State is not (RootRegistrationState.Active or RootRegistrationState.Disabled))
+                {
+                    return root;
+                }
+
+                return new RootRegistration(root.AdapterId, root.InstanceId, root.RootId,
+                    root.UniquenessKey, root.Label, root.DirectoryName, root.CustomEntry,
+                    enabled ? RootRegistrationState.Active : RootRegistrationState.Disabled,
+                    root.RegisteredAt);
+            }).ToArray();
+            var next = new MirrorPulseAdapterTopology(current.Installations, instances, roots);
+            ValidateTopology(next);
+            await using SqliteCommand update = _connection.CreateCommand();
+            update.CommandText = "UPDATE adapter_topology SET payload = $payload WHERE id = 1;";
+            update.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(next, TopologyJsonOptions));
+            await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return next;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static void ValidateTopology(MirrorPulseAdapterTopology topology)
     {
         ArgumentNullException.ThrowIfNull(topology);
