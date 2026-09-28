@@ -1,47 +1,60 @@
 # Cloud Files Lifecycle
 
-This document describes the lifecycle boundary between the MirrorPulse Host, CfSharp, and Adapter Workers.
+MirrorPulse has one current-user Cloud Files sync root. CfSharp owns its native
+namespace and coordination database. MirrorPulse owns Adapter installation,
+instance routing, user policy, and a separate product catalog.
 
-## Startup
+## Startup and shutdown today
 
-1. The Host acquires the current-user owner lock.
-2. The Host loads the persisted registration, recovery checkpoint, remote cursor, and enabled Adapter instances.
-3. The Host probes the Windows and process architecture boundary before opening native Cloud Files resources.
-4. The Host opens or registers the `MirrorPulse` sync root and creates the CfSharp `CloudFileSystem`.
-5. Each enabled instance starts its Worker and establishes the named-pipe session.
-6. The Host starts the local change feed and begins remote enumeration from the persisted cursor.
+1. The Host checks the Windows version, loads the display name from product
+   configuration, and derives separate sync-root and data-root paths.
+2. `MirrorPulseCloudHostSession` obtains the current-user owner lock and ensures
+   the Shell and CfSharp registrations agree with its stable root identity.
+3. The session starts one `CloudFileSystem` with the official
+   `CfSharp.Storage.Sqlite` factory. Without configured Adapters, its demand
+   provider exposes an empty root.
+4. Cancellation disposes the CfSharp session and releases the owner lock.
+   Registration and the SQLite database remain for the next run. Explicit
+   account removal has a separate unregister path.
 
-Disabled instances retain their configuration and placeholders but do not start a Worker or network operation.
+The Host does not yet launch installed Adapter Workers or connect its existing
+Named Pipe transport to this session. Those startup and shutdown steps belong
+to the forthcoming Worker integration, and their absence must not be inferred
+from the integration-layer tests.
 
-## Steady state
+## Integrated data paths
 
-- Hydration requests travel from the CfSharp content provider to the instance Worker as bounded range reads.
-- Local feed batches are validated, converted into upload operations, and acknowledged after durable queue acceptance.
-- Remote batches are applied in order. Provider-originated changes receive echo suppression entries before the local feed can observe them.
-- Cursors, recovery phases, and request fingerprints are persisted through the MP state boundary.
-- Adapter Workers never receive the sync-root path, CfSharp database path, or MP catalog path.
+- First-level Adapter labels are routed within the same root. One instance may
+  own multiple labels, and multiple instances of one Adapter have distinct
+  identities. Duplicate active labels are rejected before population.
+- CfSharp requests directory pages and file ranges through the MirrorPulse
+  demand provider. It retains native continuation and hydration semantics.
+  MirrorPulse translates callbacks to Adapter paths and protects instance
+  boundaries, including volume-rooted paths supplied by Windows.
+- CfSharp's local change feed is the authoritative pending upload journal.
+  MirrorPulse maps entries to Worker commands and schedules retries; successful
+  uploads are acknowledged with the accepted remote revision.
+- Adapter remote batches map once to CfSharp batches. CfSharp persists applied
+  progress and conflicts; MirrorPulse advances its named checkpoint only after
+  a safe result. Replaying the same batch covers a crash between those writes.
+- CfSharp suppresses local echoes from remote changes in the sync root.
+  A local-directory Adapter separately suppresses its own source-tree watcher
+  echoes because that is a different file tree.
 
-## Recovery
+## Recovery evidence and remaining gates
 
-On a normal restart, the Host restores the last phase and remote cursor before starting the feed. A failed or incomplete phase marks the checkpoint for a full rescan. The Host completes reconciliation first and acknowledges the CfSharp full-rescan request only after the new local view is durable.
+An opt-in Windows test uses an external consumer process to enumerate a
+partial directory and read an online-only placeholder, then reopens the same
+CfSharp database and reads again. Another test exits a separate process with
+an open SQLite transaction and verifies committed journal, partial batch,
+conflict, echo, and checkpoint data survive while the unfinished write does
+not. It also performs a SQLite integrity check.
 
-The recovery harness exercises close, reopen, state-readability, and feed-readiness as one ordered scenario. Native Explorer checks remain a manual Windows step.
+The current preview fails to apply a newly created remote directory with echo
+suppression because of a SQLite foreign-key error. A corrected CfSharp package
+must pass successful partial application and replay before that path is called
+complete. Durable conflict detail reads and a terminal keep-local decision also
+need public CfSharp APIs. See the compatibility report for the exact limits.
 
-## Shutdown
-
-1. The Host stops accepting new local operations.
-2. In-flight Worker requests are cancelled and their sessions are closed.
-3. Pending queue and recovery state are flushed.
-4. The local change feed is disposed.
-5. The CfSharp `CloudFileSystem` is disposed.
-6. The owner lock is released.
-
-Shutdown is idempotent at each boundary. A failure is recorded as a native error snapshot and leaves the recovery checkpoint available for the next startup.
-
-## Account removal
-
-Account removal unregisters the sync root first. MP-owned persisted state is cleared only after the native unregister operation succeeds. If unregister fails, state remains available for retry and diagnostics.
-
-## Verification
-
-The lifecycle code is covered by unit tests, the Windows Cloud Files integration harness, and the Explorer smoke checklist. Release validation also publishes the Host for `win-x64` and `win-arm64`.
+Run `pwsh ./eng/verify-native.ps1` for the opt-in native checks. The ordinary CI
+workflow runs the portable Release tests and both Host publish targets.
