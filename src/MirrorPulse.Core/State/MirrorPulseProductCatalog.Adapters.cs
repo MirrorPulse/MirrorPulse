@@ -137,8 +137,8 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         };
         await using var connection = new SqliteConnection(settings.ToString());
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using SqliteCommand query = connection.CreateCommand();
-            query.CommandText = """
+        await using SqliteCommand query = connection.CreateCommand();
+        query.CommandText = """
             SELECT instance_id, phase, requires_full_rescan, last_successful_sync_utc, last_error_code,
                    transfer_operation, transfer_bytes, transfer_total, transfer_updated_utc
             FROM instance_runtime ORDER BY instance_id;
