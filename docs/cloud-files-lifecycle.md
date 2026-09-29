@@ -40,7 +40,11 @@ of the same Adapter require distinct first-level folder names.
   boundaries, including volume-rooted paths supplied by Windows.
 - CfSharp's local change feed is the authoritative pending upload journal.
   MirrorPulse maps entries to Worker commands and schedules retries; successful
-  uploads are acknowledged with the accepted remote revision.
+  uploads are acknowledged with the accepted remote revision. Before an upload,
+  MirrorPulse reads CfSharp's last mutually acknowledged item revision and
+  compares it with a fresh Worker Stat. The acknowledged revision, never the
+  fresh Stat value, is passed to the Worker's conditional upload. A mismatch
+  defers the journal entry without overwriting the remote file.
 - Adapter remote batches map once to CfSharp batches. CfSharp persists applied
   progress and conflicts; MirrorPulse advances its named checkpoint only after
   a safe result. Replaying the same batch covers a crash between those writes.
