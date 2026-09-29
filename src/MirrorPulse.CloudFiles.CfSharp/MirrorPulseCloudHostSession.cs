@@ -162,6 +162,20 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
         IEnumerable<RootRegistration> registrations) =>
         CreateDefault(paths, MirrorPulseSyncRootDisplayName.Resolve(instances, registrations));
 
+    public static MirrorPulseCloudHostSession CreateDefault(
+        MirrorPulseStoragePaths paths,
+        IEnumerable<AdapterInstance> instances,
+        IEnumerable<RootRegistration> registrations,
+        ICloudDemandProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        string sid = identity.User?.Value ?? throw new InvalidOperationException("The current Windows user has no SID.");
+        return new(paths, MirrorPulseSyncRootRegistrationCoordinator.CreateDefault(),
+            new CfSharpMirrorPulseCloudRuntimeFactory(provider),
+            MirrorPulseSyncRootOwner.CreateDefault(), sid, instances, registrations);
+    }
+
     public async ValueTask StartAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

@@ -2,6 +2,7 @@ using System.Text.Json;
 using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core;
+using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
@@ -50,9 +51,7 @@ try
     Console.CancelKeyPress += cancel;
     try
     {
-        await using var session = MirrorPulseCloudHostSession.CreateDefault(
-            paths, topology.Instances, topology.Roots);
-        await session.StartAsync(shutdown.Token);
+        MirrorPulseCloudHostSession? currentSession = null;
         async ValueTask ApplyRemoteBatchAsync(
             InstanceId instanceId,
             JsonElement payload,
@@ -60,7 +59,9 @@ try
         {
             CloudRemoteChangeBatch batch = payload.Deserialize<CloudRemoteChangeBatch>()
                 ?? throw new InvalidDataException("The Adapter remote batch payload is empty.");
-            CloudRemoteApplyResult result = await session.ApplyRemoteBatchAsync(
+            CloudRemoteApplyResult result = await (currentSession ??
+                throw new InvalidOperationException("The Cloud Files session has not started."))
+                .ApplyRemoteBatchAsync(
                 instanceId, batch, catalog, conflictCenter, conflictNotifications,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (result.RequiresRetry)
@@ -73,6 +74,12 @@ try
 
         await using var workers = new AdapterInstanceProcessSupervisor(catalog,
             new WindowsCredentialManagerStore(), ApplyRemoteBatchAsync);
+        var rootRouter = new MirrorPulseRootRouter(paths.SyncRootPath, topology.Roots);
+        var provider = new MirrorPulseDemandProvider(rootRouter, workers);
+        await using var session = MirrorPulseCloudHostSession.CreateDefault(
+            paths, topology.Instances, topology.Roots, provider);
+        currentSession = session;
+        await session.StartAsync(shutdown.Token);
         await workers.StartAsync(topology);
         Console.WriteLine($"{ProductInfo.Name} Cloud Files session started at {paths.SyncRootPath}.");
         if (args.Length == 0)

@@ -1,7 +1,9 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Security;
 using MirrorPulse.Core.State;
@@ -11,12 +13,13 @@ using MirrorPulse.Core.Workers;
 namespace MirrorPulse.Core.Host;
 
 /// <summary>Owns one isolated process and current-user control pipe per enabled Adapter instance.</summary>
-public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
+public sealed class AdapterInstanceProcessSupervisor : IMirrorPulseWorkerRangeTransport, IAsyncDisposable
 {
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly ISecureCredentialStore _credentials;
     private readonly Func<InstanceId, JsonElement, CancellationToken, ValueTask>? _remoteBatch;
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly ConcurrentDictionary<InstanceId, AdapterWorkerReadRangeClient> _connected = new();
     private Task[] _workers = [];
     private bool _started;
 
@@ -46,6 +49,16 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
 
         _workers = topology.Instances.Where(item => item.Enabled)
             .Select(instance => RunInstanceAsync(topology, instance, _shutdown.Token)).ToArray();
+    }
+
+    public ValueTask<Stream> ReadRangeAsync(
+        MirrorPulseWorkerReadRangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return _connected.TryGetValue(request.InstanceId, out AdapterWorkerReadRangeClient? client)
+            ? client.ReadRangeAsync(request, cancellationToken)
+            : ValueTask.FromException<Stream>(new IOException("The Adapter instance is offline."));
     }
 
     private async Task RunInstanceAsync(
@@ -122,58 +135,78 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
     {
         ControlFrameEnvelope hello = await ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
         ValidateFrame(hello, "Hello", instance.InstanceId, sessionId);
-        await WriteAsync(pipe, new ControlFrameEnvelope(1, "Ready", hello.RequestId,
+        var channel = new AdapterWorkerReadRangeClient(pipe, instance.InstanceId, sessionId);
+        await channel.WriteControlAsync(new ControlFrameEnvelope(1, "Ready", hello.RequestId,
             instance.InstanceId, sessionId, true, JsonSerializer.SerializeToElement(instance.Configuration)),
             cancellationToken).ConfigureAwait(false);
-        while (true)
+        if (!_connected.TryAdd(instance.InstanceId, channel))
         {
-            ControlFrameEnvelope frame = await ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
-            ValidateFrame(frame, null, instance.InstanceId, sessionId);
-            switch (frame.MessageType)
-            {
-                case "CredentialRequest":
-                    await AnswerCredentialAsync(pipe, instance, sessionId, frame, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-                case "HostKeyChallenge":
-                    await WriteAsync(pipe, new ControlFrameEnvelope(1, "HostKeyDecision", frame.RequestId,
-                        instance.InstanceId, sessionId, true,
-                        JsonSerializer.SerializeToElement(new
-                        {
-                            sha256 = frame.Payload.GetProperty("sha256").GetString(),
-                            approved = false,
-                        })), cancellationToken).ConfigureAwait(false);
-                    break;
-                case "Connected":
-                    await SetPhaseAsync(instance.InstanceId, "Connected", cancellationToken).ConfigureAwait(false);
-                    break;
-                case "TransferProgress":
-                    await SaveTransferProgressAsync(instance.InstanceId, frame.Payload, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-                case "RemoteBatch":
-                    if (_remoteBatch is null)
-                    {
-                        throw new InvalidDataException("The Host has no remote batch ingress configured.");
-                    }
+            throw new InvalidOperationException("The Adapter instance already has a connected Worker.");
+        }
 
-                    await _remoteBatch(instance.InstanceId, frame.Payload, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-                case "Error":
-                    string code = frame.Payload.TryGetProperty("code", out JsonElement value)
-                        ? value.GetString() ?? "Unknown" : "Unknown";
-                    await SetPhaseAsync(instance.InstanceId, "Worker error", cancellationToken, code)
-                        .ConfigureAwait(false);
-                    return;
-                default:
-                    throw new InvalidDataException("The Adapter sent an unexpected control message.");
+        try
+        {
+            while (true)
+            {
+                ControlFrameEnvelope frame = await ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
+                if (frame.IsResponse)
+                {
+                    await channel.HandleResponseAsync(frame, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                ValidateFrame(frame, null, instance.InstanceId, sessionId);
+                switch (frame.MessageType)
+                {
+                    case "CredentialRequest":
+                        await AnswerCredentialAsync(channel, instance, sessionId, frame, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    case "HostKeyChallenge":
+                        await channel.WriteControlAsync(new ControlFrameEnvelope(1, "HostKeyDecision", frame.RequestId,
+                            instance.InstanceId, sessionId, true,
+                            JsonSerializer.SerializeToElement(new
+                            {
+                                sha256 = frame.Payload.GetProperty("sha256").GetString(),
+                                approved = false,
+                            })), cancellationToken).ConfigureAwait(false);
+                        break;
+                    case "Connected":
+                        await SetPhaseAsync(instance.InstanceId, "Connected", cancellationToken).ConfigureAwait(false);
+                        break;
+                    case "TransferProgress":
+                        await SaveTransferProgressAsync(instance.InstanceId, frame.Payload, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    case "RemoteBatch":
+                        if (_remoteBatch is null)
+                        {
+                            throw new InvalidDataException("The Host has no remote batch ingress configured.");
+                        }
+
+                        await _remoteBatch(instance.InstanceId, frame.Payload, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    case "Error":
+                        string code = frame.Payload.TryGetProperty("code", out JsonElement value)
+                            ? value.GetString() ?? "Unknown" : "Unknown";
+                        await SetPhaseAsync(instance.InstanceId, "Worker error", cancellationToken, code)
+                            .ConfigureAwait(false);
+                        return;
+                    default:
+                        throw new InvalidDataException("The Adapter sent an unexpected control message.");
+                }
             }
+        }
+        finally
+        {
+            _connected.TryRemove(instance.InstanceId, out _);
+            channel.Close();
         }
     }
 
     private async Task AnswerCredentialAsync(
-        Stream pipe,
+        AdapterWorkerReadRangeClient channel,
         AdapterInstance instance,
         WorkerSessionId sessionId,
         ControlFrameEnvelope request,
@@ -191,7 +224,7 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
         using SecureCredentialValue stored = await _credentials.TryGetAsync(reference, cancellationToken)
             .ConfigureAwait(false) ?? throw new KeyNotFoundException("The Adapter credential was not found.");
         string secret = Encoding.UTF8.GetString(stored.Value.Span);
-        await WriteAsync(pipe, new ControlFrameEnvelope(1, "CredentialResponse", request.RequestId,
+        await channel.WriteControlAsync(new ControlFrameEnvelope(1, "CredentialResponse", request.RequestId,
             instance.InstanceId, sessionId, true,
             JsonSerializer.SerializeToElement(new { referenceId, secret })), cancellationToken)
             .ConfigureAwait(false);

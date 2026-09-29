@@ -284,7 +284,9 @@ public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
                 return 0;
             }
 
-            int length = checked((int)Math.Min(buffer.Length, fileSize - _position));
+            int length = checked((int)Math.Min(
+                Math.Min(buffer.Length, fileSize - _position),
+                AdapterWorkerReadRangeLimit));
             var request = new MirrorPulseWorkerReadRangeRequest(
                 instanceId,
                 normalizedPath,
@@ -339,4 +341,6 @@ public sealed class MirrorPulseDemandProvider : ICloudDemandProvider
 
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
+
+    private const int AdapterWorkerReadRangeLimit = 1024 * 1024;
 }
