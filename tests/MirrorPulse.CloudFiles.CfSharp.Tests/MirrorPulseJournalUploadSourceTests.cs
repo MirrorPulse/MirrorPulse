@@ -5,6 +5,7 @@ using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
+using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
@@ -64,7 +65,11 @@ public sealed class MirrorPulseJournalUploadSourceTests
                 if (run == 0)
                 {
                     Assert.IsNotEmpty(batch.ReadyCommands);
-                    originalId = batch.ReadyCommands[0].OperationId;
+                    MirrorPulseWorkerChangeCommand command = batch.ReadyCommands[0];
+                    Assert.AreEqual(Path.Combine(paths.SyncRootPath, "Documents", "report.txt"),
+                        router.ResolveUploadPath(command.InstanceId, command.RootKey,
+                            command.RelativePath));
+                    originalId = command.OperationId;
                     Assert.AreNotEqual(Guid.Empty, originalId);
                 }
                 else if (run == 1)

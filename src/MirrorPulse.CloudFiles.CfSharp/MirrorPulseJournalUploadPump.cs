@@ -16,6 +16,7 @@ namespace MirrorPulse.CloudFiles.CfSharp;
 public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
 {
     private readonly CloudLocalChangeFeed _feed;
+    private readonly MirrorPulseRootRouter _router;
     private readonly MirrorPulseJournalUploadSource _source;
     private readonly MirrorPulseJournalUploadCompletion _completion;
     private readonly MirrorPulseCfSharpStateSession _state;
@@ -37,6 +38,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         MirrorPulseJournalUploadCompletion completion)
     {
         _feed = feed ?? throw new ArgumentNullException(nameof(feed));
+        _router = router ?? throw new ArgumentNullException(nameof(router));
         _uploads = uploads ?? throw new ArgumentNullException(nameof(uploads));
         _stats = stats ?? throw new ArgumentNullException(nameof(stats));
         _state = state ?? throw new ArgumentNullException(nameof(state));
@@ -108,17 +110,15 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             return false;
         }
 
-        string localPath = Path.GetFullPath(Path.Combine(_syncRootPath,
-            command.RelativePath.Replace('/', Path.DirectorySeparatorChar)));
-        string prefix = _syncRootPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
-            Path.DirectorySeparatorChar;
-        if (!localPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(localPath))
-        {
-            return false;
-        }
-
         try
         {
+            string localPath = _router.ResolveUploadPath(command.InstanceId,
+                command.RootKey, command.RelativePath);
+            if (!File.Exists(localPath))
+            {
+                return false;
+            }
+
             string relativePath = Path.GetRelativePath(_syncRootPath, localPath)
                 .Replace(Path.DirectorySeparatorChar, '/');
             string? revision = await MirrorPulseJournalUploadRevisionGuard.ResolveAsync(

@@ -84,6 +84,36 @@ public sealed class MirrorPulseRootRouter
         return new(root.InstanceId, root.UniquenessKey, innerPath);
     }
 
+    public string ResolveUploadPath(InstanceId instanceId, string rootKey, string adapterRelativePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(adapterRelativePath);
+        RootRegistration root = _roots.Values.SingleOrDefault(candidate =>
+            candidate.InstanceId == instanceId &&
+            string.Equals(candidate.UniquenessKey, rootKey, StringComparison.Ordinal))
+            ?? throw new FileNotFoundException("The Adapter root is not registered.");
+        if (root.State == RootRegistrationState.Disabled)
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
+        string relativePath = adapterRelativePath.Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(relativePath) || relativePath.Contains('\0'))
+        {
+            throw new InvalidDataException("The upload path must stay inside its Adapter root.");
+        }
+
+        string rootPath = Path.GetFullPath(Path.Combine(_syncRootPath, root.DirectoryName));
+        string path = Path.GetFullPath(Path.Combine(rootPath, relativePath));
+        string prefix = rootPath.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The upload path escaped its Adapter root.");
+        }
+
+        return path;
+    }
+
     private (RootRegistration Root, string InnerPath) FindRoot(string callbackPath)
     {
         string relative = GetRelativePath(callbackPath);

@@ -123,6 +123,32 @@ public sealed class MirrorPulseRootRouterTests
     }
 
     [TestMethod]
+    public void JournalUploadPathIncludesItsFirstLevelRootAndCannotEscapeIt()
+    {
+        string syncRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var first = InstanceId.New();
+        var second = InstanceId.New();
+        var router = new MirrorPulseRootRouter(syncRoot,
+            [CreateRoot(first, "Documents"), CreateRoot(second, "Backup")]);
+
+        Assert.AreEqual(Path.Combine(syncRoot, "Documents", "sub", "note.txt"),
+            router.ResolveUploadPath(first, "Documents", "sub/note.txt"));
+        Assert.ThrowsExactly<FileNotFoundException>(() =>
+            router.ResolveUploadPath(second, "Documents", "note.txt"));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            router.ResolveUploadPath(first, "Documents", "../Backup/note.txt"));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            router.ResolveUploadPath(first, "Documents", Path.Combine(syncRoot, "outside.txt")));
+
+        RootRegistration offline = AdapterRootRegistrationMapper.Map(
+            AdapterId.Parse("example.drive"), first,
+            new AdapterRootDefinition("offline", "Offline", "Offline", false),
+            RootRegistrationState.Disabled);
+        Assert.ThrowsExactly<IOException>(() => new MirrorPulseRootRouter(syncRoot, [offline])
+            .ResolveUploadPath(first, "offline", "queued.txt"));
+    }
+
+    [TestMethod]
     public void VolumeRootedNativeCallbackResolvesOnSyncRootVolume()
     {
         string syncRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
