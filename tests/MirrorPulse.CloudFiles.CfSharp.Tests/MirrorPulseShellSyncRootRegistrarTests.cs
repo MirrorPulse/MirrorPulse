@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
+using Windows.Storage.Provider;
 
 namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
@@ -25,5 +26,44 @@ public sealed class MirrorPulseShellSyncRootRegistrarTests
         Assert.AreEqual("MirrorPulse", first.DisplayName);
         Assert.AreEqual("0.1.0", first.ProviderVersion);
         Assert.IsFalse(string.IsNullOrWhiteSpace(first.IconResource));
+    }
+
+    [TestMethod]
+    public async Task NativeRegistrationPublishesCustomThenUnifiedDisplayName()
+    {
+        if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
+        {
+            return;
+        }
+
+        string rootPath = Path.Combine(Path.GetTempPath(), "MirrorPulse-native-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+        var definition = new MirrorPulseSyncRootDefinition(rootPath, "0.1.0",
+            Guid.Parse("89f1747b-62aa-48bd-a725-e33f20c271a5"), [1, 2, 3]);
+        MirrorPulseShellRegistrationProfile custom = MirrorPulseShellSyncRootRegistrar.CreateProfile(
+            definition, "S-1-5-21-123", "Personal drive");
+        MirrorPulseShellRegistrationProfile unified = MirrorPulseShellSyncRootRegistrar.CreateProfile(
+            definition, "S-1-5-21-123", "MirrorPulse");
+        try
+        {
+            await MirrorPulseShellSyncRootRegistrar.RegisterAsync(custom);
+            StorageProviderSyncRootInfo customInfo =
+                StorageProviderSyncRootManager.GetSyncRootInformationForId(custom.RegistrationId);
+            Assert.AreEqual("Personal drive", customInfo.DisplayNameResource);
+
+            await MirrorPulseShellSyncRootRegistrar.RegisterAsync(unified);
+            StorageProviderSyncRootInfo unifiedInfo =
+                StorageProviderSyncRootManager.GetSyncRootInformationForId(unified.RegistrationId);
+            Assert.AreEqual("MirrorPulse", unifiedInfo.DisplayNameResource);
+        }
+        finally
+        {
+            MirrorPulseShellSyncRootRegistrar.Unregister(unified);
+            if (Directory.Exists(rootPath))
+            {
+                Directory.Delete(rootPath, recursive: true);
+            }
+        }
     }
 }

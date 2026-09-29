@@ -48,6 +48,10 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: pwsh ./eng/verify-native.ps1
 
+      - name: Verify installed MSIX Cloud Files identity
+        if: github.event_name == 'workflow_dispatch'
+        run: pwsh ./eng/verify-msix-cloudfiles.ps1
+
   official-package-arm64:
     runs-on: windows-11-arm
     steps:
