@@ -110,6 +110,37 @@ public sealed class MirrorPulseRemoteConflictActionsTests
         }
     }
 
+    [TestMethod]
+    public async Task KeepLocalUsesCfSharpPreviewTwoDismissalAndPersistsResolution()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        try
+        {
+            await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
+            var center = new MirrorPulseConflictCenter();
+            var conflict = Create("Docs/keep-local.txt");
+            center.Upsert(conflict);
+            var actions = new MirrorPulseRemoteConflictActions(
+                (_, _, _) => ValueTask.FromResult(CloudRemoteApplyEntryStatus.Conflict),
+                new MirrorPulseConflictCopyStore(paths), catalog, center,
+                (_, _) => ValueTask.FromResult(CloudRemoteConflictDismissalStatus.Dismissed));
+            Guid commandId = Guid.NewGuid();
+
+            MirrorPulseRemoteConflictActionOutcome result = await actions.ApplyAsync(
+                commandId, conflict, MirrorPulseConflictAction.KeepLocal);
+
+            Assert.IsTrue(result.Resolved);
+            Assert.AreEqual(CloudRemoteConflictDismissalStatus.Dismissed, result.CfSharpDismissalStatus);
+            Assert.IsEmpty(center.Query());
+            Assert.AreEqual("resolved", (await catalog.ReadUserCommandAsync(commandId))?.State);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static MirrorPulseConflictRecord Create(string path) => new(
         Guid.NewGuid(), InstanceId.New(), "remote-change", path,
         MirrorPulseConflictReason.Content, MirrorPulseVersionComparison.Unknown,

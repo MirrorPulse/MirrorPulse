@@ -9,7 +9,8 @@ public sealed record MirrorPulseRemoteConflictActionOutcome(
     bool Resolved,
     bool CommandQueued,
     string? PreservedPath,
-    CloudRemoteApplyEntryStatus? CfSharpStatus);
+    CloudRemoteApplyEntryStatus? CfSharpStatus,
+    CloudRemoteConflictDismissalStatus? CfSharpDismissalStatus = null);
 
 /// <summary>Executes product conflict choices through CfSharp's public resolution API.</summary>
 [SupportedOSPlatform("windows10.0.16299")]
@@ -17,6 +18,7 @@ public sealed class MirrorPulseRemoteConflictActions
 {
     private readonly Func<Guid, CloudRemoteConflictDecision, CancellationToken,
         ValueTask<CloudRemoteApplyEntryStatus>> _resolve;
+    private readonly Func<Guid, CancellationToken, ValueTask<CloudRemoteConflictDismissalStatus>>? _dismiss;
     private readonly MirrorPulseConflictCopyStore _copies;
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly MirrorPulseConflictCenter _center;
@@ -26,9 +28,11 @@ public sealed class MirrorPulseRemoteConflictActions
             ValueTask<CloudRemoteApplyEntryStatus>> resolve,
         MirrorPulseConflictCopyStore copies,
         MirrorPulseProductCatalog catalog,
-        MirrorPulseConflictCenter center)
+        MirrorPulseConflictCenter center,
+        Func<Guid, CancellationToken, ValueTask<CloudRemoteConflictDismissalStatus>>? dismiss = null)
     {
         _resolve = resolve ?? throw new ArgumentNullException(nameof(resolve));
+        _dismiss = dismiss;
         _copies = copies ?? throw new ArgumentNullException(nameof(copies));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _center = center ?? throw new ArgumentNullException(nameof(center));
@@ -45,7 +49,8 @@ public sealed class MirrorPulseRemoteConflictActions
             (await fileSystem.ResolveRemoteConflictAsync(
                 id, new CloudRemoteConflictResolution(decision), cancellationToken)
                 .ConfigureAwait(false)).Status,
-            copies, catalog, center);
+            copies, catalog, center,
+            (id, cancellationToken) => fileSystem.DismissRemoteConflictAsync(id, cancellationToken));
     }
 
     public async Task<MirrorPulseRemoteConflictActionOutcome> ApplyAsync(
@@ -67,10 +72,10 @@ public sealed class MirrorPulseRemoteConflictActions
             throw new ArgumentException("This action requires a pending CfSharp remote conflict.", nameof(conflict));
         }
 
-        if (action == MirrorPulseConflictAction.KeepLocal)
+        if (action == MirrorPulseConflictAction.KeepLocal && _dismiss is null)
         {
             throw new NotSupportedException(
-                "CfSharp preview keeps KeepLocal unresolved; MP cannot report it as a completed choice.");
+                "This conflict action requires the CfSharp preview.2 dismissal API.");
         }
 
         if (action == MirrorPulseConflictAction.KeepBoth && preservedSide is null)
@@ -96,6 +101,23 @@ public sealed class MirrorPulseRemoteConflictActions
         await _catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(
             commandId, actionName, conflict.ConflictId.ToString("D"), "pending"), cancellationToken)
             .ConfigureAwait(false);
+
+        if (action == MirrorPulseConflictAction.KeepLocal)
+        {
+            CloudRemoteConflictDismissalStatus dismissal = await _dismiss!(
+                conflict.ConflictId, cancellationToken).ConfigureAwait(false);
+            bool dismissed = dismissal is CloudRemoteConflictDismissalStatus.Dismissed or
+                CloudRemoteConflictDismissalStatus.AlreadyDismissed;
+            if (dismissed)
+            {
+                _center.Remove(conflict.ConflictId);
+                await _catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(
+                    commandId, actionName, conflict.ConflictId.ToString("D"), "resolved"), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return new(dismissed, false, null, null, dismissal);
+        }
 
         if (action is MirrorPulseConflictAction.Retry or
             MirrorPulseConflictAction.DeleteLocal or MirrorPulseConflictAction.DeleteRemote)
