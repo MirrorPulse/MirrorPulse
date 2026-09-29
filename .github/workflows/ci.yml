@@ -120,11 +120,28 @@ jobs:
       - name: Install SFTP fixture dependencies
         run: "python -m pip install --only-binary=:all: -r eng/sftp-fixture/requirements.txt"
 
+      - name: Create local SMB test share
+        shell: pwsh
+        run: |
+          $backing = Join-Path $env:RUNNER_TEMP 'mirrorpulse-smb-test'
+          New-Item -ItemType Directory -Path $backing -Force | Out-Null
+          New-SmbShare -Name MirrorPulseCiTest -Path $backing -FullAccess $env:USERNAME -ErrorAction Stop | Out-Null
+          "MIRRORPULSE_SMB_TEST_SHARE=\\localhost\MirrorPulseCiTest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MIRRORPULSE_SMB_TEST_BACKING=$backing" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Install every signed official Adapter with the production verifier
         env:
           MIRRORPULSE_OFFICIAL_AGGREGATE: ${{ github.workspace }}/artifacts/official-adapters
           MIRRORPULSE_LOCAL_PREVIOUS_RELEASE: ${{ github.workspace }}/artifacts/local-previous
-        run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~OfficialAdapterAggregateProcessTests|FullyQualifiedName~SignedWebDavWorkerProcessTests|FullyQualifiedName~SignedLocalVersionSwitchProcessTests|FullyQualifiedName~SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp|FullyQualifiedName~SignedSftpHostProcessTests"
+        run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~OfficialAdapterAggregateProcessTests|FullyQualifiedName~SignedWebDavWorkerProcessTests|FullyQualifiedName~SignedLocalVersionSwitchProcessTests|FullyQualifiedName~SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp|FullyQualifiedName~SignedSftpHostProcessTests|FullyQualifiedName~SignedSmbHostProcessTests"
+
+      - name: Remove local SMB test share
+        if: always()
+        shell: pwsh
+        run: |
+          if (Get-SmbShare -Name MirrorPulseCiTest -ErrorAction SilentlyContinue) {
+            Remove-SmbShare -Name MirrorPulseCiTest -Force
+          }
 
       - name: Upload official Adapter aggregate
         uses: actions/upload-artifact@v4
