@@ -47,6 +47,10 @@ Evidence:
 - `OfficialAdapterAggregateProcessTests` installs all five signed releases;
   the Local case starts two independent installed Workers and routes
   CfSharp-compatible demand enumeration and range reads through their separate roots.
+- `SignedLocalVersionSwitchProcessTests` installs signed Local v0.1.3 alongside
+  the latest release, observes the selected Worker executable in each process
+  session, verifies reads, and confirms that a disabled instance starts no Worker
+  until it is reenabled after a catalog restart.
 - `SignedWebDavWorkerProcessTests` starts the signed WebDAV release against a
   loopback HTTP fixture and verifies directory ETag preservation, demand reads,
   stale upload rejection, and a successful conditional upload.
