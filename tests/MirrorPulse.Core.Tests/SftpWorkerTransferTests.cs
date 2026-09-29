@@ -147,7 +147,14 @@ public sealed class SftpWorkerTransferTests
             byte[] payload = BinaryChunkCodec.Encode(new BinaryChunkFrame(
                 requestId, Instance, Session, streamId, 0, content, true, Sha256Digest.Compute(content)));
             await WritePayloadAsync(payload);
-            return await ReadAsync();
+            while (true)
+            {
+                ControlFrameEnvelope response = await ReadAsync();
+                if (response.MessageType != "TransferProgress")
+                {
+                    return response;
+                }
+            }
         }
 
         public async Task<ControlFrameEnvelope> ReadAsync() =>

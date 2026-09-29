@@ -137,20 +137,28 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         };
         await using var connection = new SqliteConnection(settings.ToString());
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using SqliteCommand query = connection.CreateCommand();
-        query.CommandText = """
-            SELECT instance_id, phase, requires_full_rescan, last_successful_sync_utc, last_error_code
+            await using SqliteCommand query = connection.CreateCommand();
+            query.CommandText = """
+            SELECT instance_id, phase, requires_full_rescan, last_successful_sync_utc, last_error_code,
+                   transfer_operation, transfer_bytes, transfer_total, transfer_updated_utc
             FROM instance_runtime ORDER BY instance_id;
             """;
         await using SqliteDataReader reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var states = new List<MirrorPulseInstanceRuntimeState>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
+            MirrorPulseTransferProgress? progress = reader.IsDBNull(6) || reader.IsDBNull(7)
+                ? null
+                : new MirrorPulseTransferProgress(
+                    reader.GetString(6),
+                    reader.GetInt64(7),
+                    reader.IsDBNull(8) ? null : reader.GetInt64(8),
+                    DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture));
             states.Add(new MirrorPulseInstanceRuntimeState(
                 InstanceId.Parse(reader.GetString(0)), reader.GetString(1), reader.GetInt32(2) != 0,
                 reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3),
                     System.Globalization.CultureInfo.InvariantCulture),
-                reader.IsDBNull(4) ? null : reader.GetString(4)));
+                reader.IsDBNull(4) ? null : reader.GetString(4), progress));
         }
 
         return states;

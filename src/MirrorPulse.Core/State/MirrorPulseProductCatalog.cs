@@ -19,12 +19,19 @@ public sealed record MirrorPulseUserCommandRecord(
     string TargetId,
     string State);
 
+public sealed record MirrorPulseTransferProgress(
+    string Operation,
+    long BytesTransferred,
+    long? TotalBytes,
+    DateTimeOffset UpdatedAt);
+
 public sealed record MirrorPulseInstanceRuntimeState(
     InstanceId InstanceId,
     string Phase,
     bool RequiresFullRescan,
     DateTimeOffset? LastSuccessfulSync,
-    string? LastErrorCode = null);
+    string? LastErrorCode = null,
+    MirrorPulseTransferProgress? TransferProgress = null);
 
 /// <summary>
 /// MP's separate product catalog. CfSharp owns Cloud Files journal, batch, conflict and checkpoint
@@ -93,7 +100,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                 version.CommandText = "PRAGMA user_version;";
                 long currentVersion = (long)(await version.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false) ?? 0L);
-                if (currentVersion > 6)
+                if (currentVersion > 7)
                 {
                     throw new InvalidDataException("The MP product catalog schema is newer than this Host supports.");
                 }
@@ -130,7 +137,12 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                         instance_id TEXT PRIMARY KEY,
                         phase TEXT NOT NULL,
                         requires_full_rescan INTEGER NOT NULL,
-                        last_successful_sync_utc TEXT NULL
+                        last_successful_sync_utc TEXT NULL,
+                        last_error_code TEXT NULL,
+                        transfer_operation TEXT NULL,
+                        transfer_bytes INTEGER NULL,
+                        transfer_total INTEGER NULL,
+                        transfer_updated_utc TEXT NULL
                     );
                     CREATE TABLE IF NOT EXISTS adapter_topology (
                         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -155,9 +167,27 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                 }
             }
 
+            foreach ((string Name, string Definition) in new[]
+            {
+                ("transfer_operation", "TEXT NULL"),
+                ("transfer_bytes", "INTEGER NULL"),
+                ("transfer_total", "INTEGER NULL"),
+                ("transfer_updated_utc", "TEXT NULL"),
+            })
+            {
+                await using SqliteCommand column = connection.CreateCommand();
+                column.CommandText = $"SELECT 1 FROM pragma_table_info('instance_runtime') WHERE name = '{Name}';";
+                if (await column.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+                {
+                    await using SqliteCommand alter = connection.CreateCommand();
+                    alter.CommandText = $"ALTER TABLE instance_runtime ADD COLUMN {Name} {Definition};";
+                    await alter.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+
             await using (SqliteCommand version = connection.CreateCommand())
             {
-                version.CommandText = "PRAGMA user_version=6;";
+                version.CommandText = "PRAGMA user_version=7;";
                 await version.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -398,14 +428,20 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
             ThrowIfDisposed();
             await using SqliteCommand command = _connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO instance_runtime
-                    (instance_id, phase, requires_full_rescan, last_successful_sync_utc, last_error_code)
-                VALUES ($instance, $phase, $rescan, $last, $error)
+            INSERT INTO instance_runtime
+                    (instance_id, phase, requires_full_rescan, last_successful_sync_utc, last_error_code,
+                     transfer_operation, transfer_bytes, transfer_total, transfer_updated_utc)
+                VALUES ($instance, $phase, $rescan, $last, $error,
+                        $operation, $bytes, $total, $updated)
                 ON CONFLICT(instance_id) DO UPDATE SET
                     phase = excluded.phase,
                     requires_full_rescan = excluded.requires_full_rescan,
                     last_successful_sync_utc = excluded.last_successful_sync_utc,
-                    last_error_code = COALESCE(excluded.last_error_code, instance_runtime.last_error_code);
+                    last_error_code = COALESCE(excluded.last_error_code, instance_runtime.last_error_code),
+                    transfer_operation = COALESCE(excluded.transfer_operation, instance_runtime.transfer_operation),
+                    transfer_bytes = COALESCE(excluded.transfer_bytes, instance_runtime.transfer_bytes),
+                    transfer_total = COALESCE(excluded.transfer_total, instance_runtime.transfer_total),
+                    transfer_updated_utc = COALESCE(excluded.transfer_updated_utc, instance_runtime.transfer_updated_utc);
                 """;
             command.Parameters.AddWithValue("$instance", state.InstanceId.ToString());
             command.Parameters.AddWithValue("$phase", state.Phase);
@@ -415,6 +451,15 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                 : state.LastSuccessfulSync.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
             command.Parameters.AddWithValue("$error", state.LastErrorCode is null
                 ? DBNull.Value : state.LastErrorCode);
+            command.Parameters.AddWithValue("$operation", state.TransferProgress is null
+                ? DBNull.Value : state.TransferProgress.Operation);
+            command.Parameters.AddWithValue("$bytes", state.TransferProgress is null
+                ? DBNull.Value : state.TransferProgress.BytesTransferred);
+            command.Parameters.AddWithValue("$total", state.TransferProgress?.TotalBytes is null
+                ? DBNull.Value : state.TransferProgress.TotalBytes.Value);
+            command.Parameters.AddWithValue("$updated", state.TransferProgress is null
+                ? DBNull.Value
+                : state.TransferProgress.UpdatedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -433,20 +478,32 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
             ThrowIfDisposed();
             await using SqliteCommand query = _connection.CreateCommand();
             query.CommandText = """
-                SELECT phase, requires_full_rescan, last_successful_sync_utc, last_error_code
+                SELECT phase, requires_full_rescan, last_successful_sync_utc, last_error_code,
+                       transfer_operation, transfer_bytes, transfer_total, transfer_updated_utc
                 FROM instance_runtime WHERE instance_id = $instance;
                 """;
             query.Parameters.AddWithValue("$instance", instanceId.ToString());
             await using SqliteDataReader reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-                ? new MirrorPulseInstanceRuntimeState(
-                    instanceId,
-                    reader.GetString(0),
-                    reader.GetInt32(1) != 0,
-                    reader.IsDBNull(2) ? null : DateTimeOffset.Parse(
-                        reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture),
-                    reader.IsDBNull(3) ? null : reader.GetString(3))
-                : null;
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            MirrorPulseTransferProgress? progress = reader.IsDBNull(4) || reader.IsDBNull(5)
+                ? null
+                : new MirrorPulseTransferProgress(
+                    reader.GetString(4),
+                    reader.GetInt64(5),
+                    reader.IsDBNull(6) ? null : reader.GetInt64(6),
+                    DateTimeOffset.Parse(reader.GetString(7), System.Globalization.CultureInfo.InvariantCulture));
+            return new MirrorPulseInstanceRuntimeState(
+                instanceId,
+                reader.GetString(0),
+                reader.GetInt32(1) != 0,
+                reader.IsDBNull(2) ? null : DateTimeOffset.Parse(
+                    reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                progress);
         }
         finally
         {

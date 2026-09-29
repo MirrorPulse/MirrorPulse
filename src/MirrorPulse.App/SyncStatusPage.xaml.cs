@@ -34,7 +34,13 @@ public sealed partial class SyncStatusPage : Page
                     : "No remote cursor";
                 string error = instance.LastErrorCode is null
                     ? string.Empty : $"  ·  Last error: {instance.LastErrorCode}";
-                return $"{instance.DisplayName}  ·  {instance.Phase}  ·  {checkpoint}{error}";
+                string progress = instance.TransferProgress is null
+                    ? string.Empty
+                    : $"  ·  {instance.TransferProgress.Operation}: " +
+                      (instance.TransferProgress.TotalBytes is null
+                          ? $"{instance.TransferProgress.BytesTransferred} bytes"
+                          : $"{instance.TransferProgress.BytesTransferred}/{instance.TransferProgress.TotalBytes} bytes");
+                return $"{instance.DisplayName}  ·  {instance.Phase}  ·  {checkpoint}{progress}{error}";
             }).ToArray();
             StatusMessageText.Text = status.Instances.Count == 0
                 ? "No Adapter instances are configured."

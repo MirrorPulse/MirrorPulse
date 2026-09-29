@@ -147,6 +147,10 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
                 case "Connected":
                     await SetPhaseAsync(instance.InstanceId, "Connected", cancellationToken).ConfigureAwait(false);
                     break;
+                case "TransferProgress":
+                    await SaveTransferProgressAsync(instance.InstanceId, frame.Payload, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
                 case "RemoteBatch":
                     if (_remoteBatch is null)
                     {
@@ -199,6 +203,42 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
         CancellationToken cancellationToken,
         string? errorCode = null) =>
         _catalog.SaveInstanceRuntimeStateAsync(new(instanceId, phase, false, null, errorCode), cancellationToken);
+
+    private async Task SaveTransferProgressAsync(
+        InstanceId instanceId,
+        JsonElement payload,
+        CancellationToken cancellationToken)
+    {
+        string operation = payload.GetProperty("operation").GetString()
+            ?? throw new InvalidDataException("The transfer progress operation is missing.");
+        long bytesTransferred = payload.GetProperty("bytesTransferred").GetInt64();
+        long? totalBytes = payload.TryGetProperty("totalBytes", out JsonElement total)
+            && total.ValueKind is not JsonValueKind.Null
+            ? total.GetInt64()
+            : null;
+        if (string.IsNullOrWhiteSpace(operation) || bytesTransferred < 0 ||
+            (totalBytes is not null && totalBytes.Value < 0) ||
+            (totalBytes is not null && bytesTransferred > totalBytes.Value))
+        {
+            throw new InvalidDataException("The transfer progress values are invalid.");
+        }
+
+        string phase = payload.TryGetProperty("phase", out JsonElement phaseElement) &&
+            phaseElement.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(phaseElement.GetString())
+            ? phaseElement.GetString()!
+            : "Transferring";
+        MirrorPulseInstanceRuntimeState? current = await _catalog
+            .ReadInstanceRuntimeStateAsync(instanceId, cancellationToken).ConfigureAwait(false);
+        await _catalog.SaveInstanceRuntimeStateAsync(new(
+            instanceId,
+            phase,
+            current?.RequiresFullRescan ?? false,
+            current?.LastSuccessfulSync,
+            current?.LastErrorCode,
+            new MirrorPulseTransferProgress(operation, bytesTransferred, totalBytes, DateTimeOffset.UtcNow)),
+            cancellationToken).ConfigureAwait(false);
+    }
 
     private static void ValidateFrame(
         ControlFrameEnvelope frame,

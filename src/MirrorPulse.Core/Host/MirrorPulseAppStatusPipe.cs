@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text.Json;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.State;
 using MirrorPulse.Core.Transport;
 
 namespace MirrorPulse.Core.Host;
@@ -15,7 +16,8 @@ public sealed record MirrorPulseAppInstanceStatus(
     string? CursorFingerprint,
     DateTimeOffset? CursorUpdatedAt,
     DateTimeOffset? LastSuccessfulSync,
-    string? LastErrorCode = null);
+    string? LastErrorCode = null,
+    MirrorPulseTransferProgress? TransferProgress = null);
 
 public sealed record MirrorPulseAppNotification(
     string ConflictId,

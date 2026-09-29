@@ -316,6 +316,37 @@ public sealed class MirrorPulseProductCatalogTests
     }
 
     [TestMethod]
+    public async Task TransferProgressSurvivesCatalogRestartAndDoesNotClearOnPhaseUpdates()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        InstanceId instanceId = InstanceId.New();
+        try
+        {
+            var progress = new MirrorPulseTransferProgress("upload", 128, 512, DateTimeOffset.UtcNow);
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                await catalog.SaveInstanceRuntimeStateAsync(new(instanceId, "Transferring", false,
+                    null, null, progress));
+                await catalog.SaveInstanceRuntimeStateAsync(new(instanceId, "Connected", false, null));
+                MirrorPulseInstanceRuntimeState? current = await catalog.ReadInstanceRuntimeStateAsync(instanceId);
+                Assert.AreEqual("Connected", current?.Phase);
+                Assert.AreEqual(progress.Operation, current?.TransferProgress?.Operation);
+                Assert.AreEqual(progress.BytesTransferred, current?.TransferProgress?.BytesTransferred);
+            }
+
+            await using var reopened = await MirrorPulseProductCatalog.OpenAsync(paths);
+            MirrorPulseInstanceRuntimeState? restored = await reopened.ReadInstanceRuntimeStateAsync(instanceId);
+            Assert.AreEqual("upload", restored?.TransferProgress?.Operation);
+            Assert.AreEqual(512, restored?.TransferProgress?.TotalBytes);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task ProductMetadataReopensSeparatelyFromOfficialCfSharpState()
     {
         string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));

@@ -222,6 +222,14 @@ public sealed class SftpWorkerTransferProtocol(
 
                     await output.WriteAsync(chunk.Data, cancellationToken).ConfigureAwait(false);
                     received += chunk.Data.Length;
+                    await channel.SendAsync("TransferProgress", command.RequestId, false,
+                        new
+                        {
+                            operation = "upload",
+                            bytesTransferred = received,
+                            totalBytes = length,
+                            phase = "Transferring",
+                        }, cancellationToken).ConfigureAwait(false);
                     if (chunk.EndOfStream)
                     {
                         if (received != length)

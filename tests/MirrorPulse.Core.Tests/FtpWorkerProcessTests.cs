@@ -233,7 +233,14 @@ public sealed class FtpWorkerProcessTests
             requestId, instance, session, streamId, 0, content, true,
             Sha256Digest.Compute(content)));
         await WritePayloadAsync(pipe, encoded, cancellationToken);
-        return await ReadAsync(pipe, cancellationToken);
+        while (true)
+        {
+            ControlFrameEnvelope response = await ReadAsync(pipe, cancellationToken);
+            if (response.MessageType != "TransferProgress")
+            {
+                return response;
+            }
+        }
     }
 
     private static async Task VerifyModeAsync(FtpSecurityMode mode)

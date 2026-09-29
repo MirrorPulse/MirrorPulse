@@ -93,7 +93,7 @@ try
                         instance.DisplayName, instance.Enabled,
                         instance.Enabled ? runtime?.Phase ?? "Not running" : "Offline",
                         cursor?.CursorFingerprint, cursor?.UpdatedAt, runtime?.LastSuccessfulSync,
-                        runtime?.LastErrorCode));
+                        runtime?.LastErrorCode, runtime?.TransferProgress));
                 }
 
                 IReadOnlySet<Guid> snoozed = await catalog.ReadSnoozedRemoteConflictIdsAsync(cancellationToken);
