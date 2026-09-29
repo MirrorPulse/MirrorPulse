@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "adapters": [
+    {
+      "adapterId": "com.mirrorpulse.adapter.local",
+      "repository": "MirrorPulse/adapter-local"
+    },
+    {
+      "adapterId": "com.mirrorpulse.adapter.webdav",
+      "repository": "MirrorPulse/adapter-webdav"
+    },
+    {
+      "adapterId": "com.mirrorpulse.adapter.smb",
+      "repository": "MirrorPulse/adapter-smb"
+    },
+    {
+      "adapterId": "com.mirrorpulse.adapter.ftp",
+      "repository": "MirrorPulse/adapter-ftp"
+    },
+    {
+      "adapterId": "com.mirrorpulse.adapter.sftp",
+      "repository": "MirrorPulse/adapter-sftp"
+    }
+  ]
+}

@@ -67,3 +67,24 @@ jobs:
 
       - name: Verify signed official packages and native ARM64 Workers
         run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SignedPackageProcessTests
+
+  official-adapters:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Aggregate latest official Adapter releases
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pwsh ./eng/aggregate-official-adapters.ps1 -OutputDirectory "$env:GITHUB_WORKSPACE/artifacts/official-adapters"
+
+      - name: Upload official Adapter aggregate
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-adapters
+          path: artifacts/official-adapters
+          if-no-files-found: error
