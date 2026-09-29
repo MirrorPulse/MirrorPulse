@@ -41,10 +41,10 @@ public sealed class MirrorPulseShellSyncRootRegistrarTests
         Directory.CreateDirectory(rootPath);
         var definition = new MirrorPulseSyncRootDefinition(rootPath, "0.1.0",
             Guid.Parse("89f1747b-62aa-48bd-a725-e33f20c271a5"), [1, 2, 3]);
-        MirrorPulseShellRegistrationProfile custom = MirrorPulseShellSyncRootRegistrar.CreateProfile(
-            definition, "S-1-5-21-123", "Personal drive");
-        MirrorPulseShellRegistrationProfile unified = MirrorPulseShellSyncRootRegistrar.CreateProfile(
-            definition, "S-1-5-21-123", "MirrorPulse");
+        MirrorPulseShellRegistrationProfile custom = MirrorPulseShellSyncRootRegistrar.CreateCurrentUserProfile(
+            definition, "Personal drive");
+        MirrorPulseShellRegistrationProfile unified = MirrorPulseShellSyncRootRegistrar.CreateCurrentUserProfile(
+            definition, "MirrorPulse");
         try
         {
             await MirrorPulseShellSyncRootRegistrar.RegisterAsync(custom);

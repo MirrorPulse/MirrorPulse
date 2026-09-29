@@ -20,10 +20,12 @@ try {
     $certificate = New-SelfSignedCertificate -Type Custom -Subject "CN=AppPublisher" `
         -KeyUsage DigitalSignature -CertStoreLocation "Cert:\CurrentUser\My"
     $pfxPath = Join-Path $packageRoot "MirrorPulse.TestSigning.pfx"
+    $cerPath = Join-Path $packageRoot "MirrorPulse.TestSigning.cer"
     $passwordText = [guid]::NewGuid().ToString('N')
     $password = ConvertTo-SecureString -String $passwordText -AsPlainText -Force
     Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $password | Out-Null
-    Import-Certificate -FilePath $pfxPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
+    Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
+    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
 
     & dotnet build $project --configuration $Configuration --runtime win-x64 `
         -p:GenerateAppxPackageOnBuild=true `

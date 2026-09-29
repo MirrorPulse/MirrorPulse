@@ -100,7 +100,7 @@ foreach ($entry in @($lock.adapters)) {
         [string]::IsNullOrWhiteSpace([string]$signature.signature) -or @($signature.files).Count -eq 0) {
         throw "The detached signature envelope for '$adapterId' is invalid."
     }
-    $canonicalFiles = @($signature.files | Sort-Object path | ForEach-Object {
+    $canonicalFiles = @($signature.files | Sort-Object path -CaseSensitive | ForEach-Object {
         [ordered]@{ path = $_.path; length = $_.length; sha256 = $_.sha256 }
     }) | ConvertTo-Json -Compress -Depth 5
     $signatureBytes = [Convert]::FromBase64String($signature.signature)
