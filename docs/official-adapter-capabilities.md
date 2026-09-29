@@ -1,26 +1,23 @@
 # Official Adapter capability evidence
 
-This matrix records behavior observed in the current source tree. It is an
-input to package manifests and the UI; it does not imply that an official
-Adapter has been released. A capability is advertised only after a protocol
+This matrix records behavior observed in the current source tree and signed
+official releases. A capability is advertised only after a protocol
 or filesystem boundary test proves it. The Host must not infer a capability
 from the storage protocol's theoretical feature set.
 
 | Adapter | Read | Write | Move | Delete | Offline upload | Conflict detection |
 | --- | --- | --- | --- | --- | --- | --- |
-| Local directory | Verified in-process | Verified in-process | Verified in-process | Verified in-process | Host pipeline only | Host pipeline only |
-| WebDAV | HTTP handler test | HTTP handler test | PUT/MOVE handler test | Cleanup handler test only | Not verified | ETag handler test |
-| SMB | Not verified on a share | Not verified on a share | Not verified on a share | Not verified on a share | Not verified | Not verified |
+| Local directory | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Journal retry path only | Revision check |
+| WebDAV | Signed Worker; HTTP handler | Signed Worker; HTTP handler | Not exposed by Worker | Not exposed by Worker | Not verified end to end | ETag check |
+| SMB | Signed Worker; no live share fixture | Signed Worker; no live share fixture | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Revision check |
 | FTP / FTPS | Loopback Worker process | Loopback Worker process | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
 | SFTP | Loopback Worker process | Loopback Worker process | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
 
-“In-process” means real local filesystem operations but no packaged Worker
-process. “HTTP handler test” exercises HTTP method, header, and response
-handling with a test handler; it is not a packaged WebDAV server test.
-“Host pipeline only” and “transfer retry only” do not establish end-to-end
-offline queuing through Explorer and CfSharp. The SMB row is deliberately
-unadvertised because current tests use an injected entry source and do not
-mount a real UNC share.
+“HTTP handler test” exercises HTTP method, header, and response handling with
+a test handler; it is not a packaged WebDAV server test. “Journal retry path”
+and “transfer retry only” do not establish end-to-end offline queuing through
+Explorer and CfSharp. The SMB release contains a real Worker, but a live UNC
+share test is still needed before its transfer capability is fully verified.
 
 The current FTP and SFTP Workers expose `Stat`, `ReadRange`, and `Upload`.
 Their tests launch separate EXEs, pass credentials through the current-user
@@ -46,8 +43,10 @@ Evidence:
   fixtures through independent Workers.
 - `FtpSignedPackageProcessTests` and `SftpSignedPackageProcessTests` verify
   signed packages and start their installed Workers.
+- `OfficialAdapterAggregateProcessTests` installs all five signed releases;
+  the Local case starts two independent installed Workers and routes
+  CfSharp-compatible demand enumeration and range reads through their separate roots.
 
-The matrix must be revised when a Worker implements move/delete, when
-packaged Local/WebDAV/SMB Workers exist, or when end-to-end offline and
-conflict handling is proven. The package and UI may expose only the verified
-subset for a given installed version.
+The matrix must be revised when Workers implement move/delete or full offline
+and conflict handling is proven. The package and UI may expose only the
+verified subset for a given installed version.

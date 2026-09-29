@@ -1,6 +1,6 @@
 # CfSharp Preview Compatibility Report
 
-MirrorPulse pins `CfSharp` and `CfSharp.Storage.Sqlite` to `0.1.0-preview.1` from
+MirrorPulse pins `CfSharp` and `CfSharp.Storage.Sqlite` to `0.1.0-preview.2` from
 NuGet.org. The integration project owns CfSharp types and lifecycle; Core exposes
 MirrorPulse contracts to Adapters and the product UI.
 
@@ -16,10 +16,12 @@ MirrorPulse contracts to Adapters and the product UI.
 | Local changes | CfSharp's journal is the source for pending uploads, retry metadata, acknowledgement, and remote revision updates. |
 | Remote changes | Adapter batches map to `CloudRemoteChangeBatch`; CfSharp owns application, partial progress, conflict IDs, echo suppression, and named checkpoints. |
 
-The current Host starts with an empty Adapter provider. Independent Worker EXEs,
-Named Pipe sessions, and the UI are not yet connected to this native session.
-The directory and range integration tests use controlled sources to verify the
-CfSharp boundary; they do not claim a complete product sync loop.
+The Host starts independent Worker EXEs for enabled instances and routes
+directory pages, range reads, and supported local journal uploads through their
+current-user Named Pipes. A signed Local Adapter release has been installed and
+exercised with two simultaneous instances, separate first-level directories,
+the CfSharp demand-provider boundary, range reads, and an upload. Shell registration in an
+interactive installed MSIX session and full bidirectional polling remain open.
 
 ## Validation
 
@@ -37,20 +39,10 @@ an open SQLite transaction. The recovery test checks committed journal, partial
 remote batch, conflict, echo, and checkpoint records; it verifies the unfinished
 transaction rolled back and `PRAGMA integrity_check` returned `ok`.
 
-## Preview limitations
+## Preview status
 
-- **CF-001:** `DirectoryUpsert` for a new remote item with echo suppression
-  returns `RequiresRetry` because the SQLite suppression row references an item
-  that has not yet been inserted. The native test verifies the cursor does not
-  advance on failure; successful new-directory partial replay still needs a
-  corrected CfSharp preview.
-- **API-001:** CfSharp exposes durable conflict IDs and opaque state payloads,
-  but no public decoded conflict query. MirrorPulse keeps a non-authoritative UI
-  projection and reports IDs whose details cannot be recovered after a crash gap.
-- **API-002:** `KeepLocal` leaves a remote conflict unresolved in this preview.
-  MirrorPulse reports that product action as unsupported instead of marking it
-  resolved. A terminal keep-local decision requires a public CfSharp contract.
-
-These limitations must be retested against a newer pinned package before the
-affected workflows can be accepted. The integration does not read or mutate
-CfSharp's private SQLite tables or conflict payload format.
+The earlier `CF-001`, `API-001`, and `API-002` gaps were retested after pinning
+preview.2. MirrorPulse uses the public CfSharp batch and conflict contracts and
+does not read or mutate CfSharp's private SQLite tables or conflict payload
+format. Preview.2 remains a prerelease dependency until its final package is
+published and validated.

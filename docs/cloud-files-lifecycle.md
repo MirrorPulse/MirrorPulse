@@ -6,21 +6,28 @@ instance routing, user policy, and a separate product catalog.
 
 ## Startup and shutdown today
 
-1. The Host checks the Windows version, loads the display name from product
-   configuration, and derives separate sync-root and data-root paths.
+1. The Host checks the Windows version, loads product configuration and the
+   installed Adapter topology, then derives separate sync-root and data-root paths.
 2. `MirrorPulseCloudHostSession` obtains the current-user owner lock and ensures
    the Shell and CfSharp registrations agree with its stable root identity.
 3. The session starts one `CloudFileSystem` with the official
-   `CfSharp.Storage.Sqlite` factory. Without configured Adapters, its demand
-   provider exposes an empty root.
-4. Cancellation disposes the CfSharp session and releases the owner lock.
+   `CfSharp.Storage.Sqlite` factory. Its demand provider routes first-level
+   directories to installed, enabled Adapter instances. Without configured
+   Adapters, it exposes an empty root.
+4. The Host starts one isolated Worker process and current-user Named Pipe for
+   each enabled instance. Disabled instances retain visible offline directories.
+5. Cancellation stops the Workers, disposes the CfSharp session, and releases
+   the owner lock.
    Registration and the SQLite database remain for the next run. Explicit
    account removal has a separate unregister path.
 
-The Host does not yet launch installed Adapter Workers or connect its existing
-Named Pipe transport to this session. Those startup and shutdown steps belong
-to the forthcoming Worker integration, and their absence must not be inferred
-from the integration-layer tests.
+The WinUI install flow verifies and registers a signed `.mpadapter` package
+before creating an instance. The instance form supplies non-secret Worker
+settings and first-level folder names through the current-user Host Pipe;
+optional secrets are stored in Windows Credential Manager and only their
+references enter the product catalog. New instances and version or startup
+selection changes take effect after restarting MirrorPulse. Multiple instances
+of the same Adapter require distinct first-level folder names.
 
 ## Integrated data paths
 
@@ -50,11 +57,10 @@ an open SQLite transaction and verifies committed journal, partial batch,
 conflict, echo, and checkpoint data survive while the unfinished write does
 not. It also performs a SQLite integrity check.
 
-The current preview fails to apply a newly created remote directory with echo
-suppression because of a SQLite foreign-key error. A corrected CfSharp package
-must pass successful partial application and replay before that path is called
-complete. Durable conflict detail reads and a terminal keep-local decision also
-need public CfSharp APIs. See the compatibility report for the exact limits.
+CfSharp `0.1.0-preview.2` provides the remote conflict and keep-local APIs
+used here. The remaining product gates include Explorer Shell registration in
+an interactive installed MSIX session, live WinUI configuration, and continuous
+remote polling plus local move/delete dispatch.
 
 Run `pwsh ./eng/verify-native.ps1` for the opt-in native checks. The ordinary CI
 workflow runs the portable Release tests and both Host publish targets.
