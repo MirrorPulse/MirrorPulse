@@ -8,14 +8,15 @@ from the storage protocol's theoretical feature set.
 | Adapter | Read | Write | Move | Delete | Offline upload | Conflict detection |
 | --- | --- | --- | --- | --- | --- | --- |
 | Local directory | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Journal retry path only | Revision check |
-| WebDAV | Signed Worker; HTTP handler | Signed Worker; HTTP handler | Not exposed by Worker | Not exposed by Worker | Not verified end to end | ETag check |
+| WebDAV | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Conditional ETag check |
 | SMB | Signed Worker; no live share fixture | Signed Worker; no live share fixture | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Revision check |
 | FTP / FTPS | Loopback Worker process | Loopback Worker process | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
 | SFTP | Loopback Worker process | Loopback Worker process | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
 
-“HTTP handler test” exercises HTTP method, header, and response handling with
-a test handler; it is not a packaged WebDAV server test. “Journal retry path”
-and “transfer retry only” do not establish end-to-end offline queuing through
+The WebDAV loopback fixture exercises the installed signed Worker, Host pipe,
+CfSharp-compatible demand reads, and stale ETag upload rejection without a
+remote overwrite. It does not establish compatibility with every WebDAV server.
+“Journal retry path” and “transfer retry only” do not establish end-to-end offline queuing through
 Explorer and CfSharp. The SMB release contains a real Worker, but a live UNC
 share test is still needed before its transfer capability is fully verified.
 
@@ -46,6 +47,9 @@ Evidence:
 - `OfficialAdapterAggregateProcessTests` installs all five signed releases;
   the Local case starts two independent installed Workers and routes
   CfSharp-compatible demand enumeration and range reads through their separate roots.
+- `SignedWebDavWorkerProcessTests` starts the signed WebDAV release against a
+  loopback HTTP fixture and verifies directory ETag preservation, demand reads,
+  stale upload rejection, and a successful conditional upload.
 
 The matrix must be revised when Workers implement move/delete or full offline
 and conflict handling is proven. The package and UI may expose only the
