@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      verify_shell:
+        description: Run the Shell registration probe from the installed App process
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -50,7 +55,15 @@ jobs:
 
       - name: Verify installed MSIX Cloud Files identity
         if: github.event_name == 'workflow_dispatch'
-        run: pwsh ./eng/verify-msix-cloudfiles.ps1
+        shell: pwsh
+        env:
+          MIRRORPULSE_VERIFY_SHELL: ${{ inputs.verify_shell }}
+        run: |
+          if ($env:MIRRORPULSE_VERIFY_SHELL -eq 'true') {
+            pwsh ./eng/verify-msix-cloudfiles.ps1 -VerifyShell
+          } else {
+            pwsh ./eng/verify-msix-cloudfiles.ps1
+          }
 
   official-package-arm64:
     runs-on: windows-11-arm
