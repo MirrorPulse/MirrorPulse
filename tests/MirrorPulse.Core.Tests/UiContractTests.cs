@@ -12,7 +12,7 @@ public sealed class UiContractTests
             ["MainPage.xaml"] = ["Welcome to MirrorPulse", "GetStartedButton"],
             ["InstalledAdaptersPage.xaml"] = ["InstalledAdaptersList", "EmptyStateText"],
             ["AdapterInstallPage.xaml"] = [".mpadapter", "InstallButton"],
-            ["InstanceConfigurationPage.xaml"] = ["SourcePathTextBox", "CredentialReferenceTextBox"],
+            ["InstanceConfigurationPage.xaml"] = ["SourcePathTextBox", "RootLabelsPanel", "SecretBox"],
             ["StartupSettingsPage.xaml"] = ["StartWithWindowsToggle", "SyncRootNameText"],
             ["AdapterUpdatesPage.xaml"] = ["InstalledVersionText", "UpdateButton"],
             ["DeveloperModePage.xaml"] = ["DeveloperModeToggle", "UnsignedPackageWarning"]

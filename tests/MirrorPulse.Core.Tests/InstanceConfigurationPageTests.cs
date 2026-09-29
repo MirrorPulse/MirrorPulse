@@ -4,14 +4,15 @@ namespace MirrorPulse.Core.Tests;
 public sealed class InstanceConfigurationPageTests
 {
     [TestMethod]
-    public void InstanceConfigurationPageExposesSourceAndCredentialFields()
+    public void InstanceConfigurationPageExposesSourceFolderAndSecureCredentialInputs()
     {
         var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/MirrorPulse.App/InstanceConfigurationPage.xaml"));
         var content = File.ReadAllText(path);
 
         StringAssert.Contains(content, "x:Class=\"MirrorPulse.App.InstanceConfigurationPage\"");
         StringAssert.Contains(content, "SourcePathTextBox");
-        StringAssert.Contains(content, "CredentialReferenceTextBox");
-        StringAssert.Contains(content, "ConfigurationProgress");
+        StringAssert.Contains(content, "RootLabelsPanel");
+        StringAssert.Contains(content, "SecretBox");
+        StringAssert.Contains(content, "CreateButton");
     }
 }
