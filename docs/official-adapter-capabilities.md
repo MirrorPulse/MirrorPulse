@@ -10,8 +10,8 @@ from the storage protocol's theoretical feature set.
 | Local directory | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Journal retry path only | Revision check |
 | WebDAV | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Conditional ETag check |
 | SMB | Signed Worker; no live share fixture | Signed Worker; no live share fixture | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Revision check |
-| FTP / FTPS | Loopback Worker process | Loopback Worker process | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
-| SFTP | Loopback Worker process | Loopback Worker process | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
+| FTP / FTPS | Signed Worker + CfSharp demand (plain FTP fixture) | Signed Worker + Host upload (plain FTP fixture) | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
+| SFTP | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
 
 The WebDAV loopback fixture exercises the installed signed Worker, Host pipe,
 CfSharp-compatible demand reads, and stale ETag upload rejection without a
@@ -44,6 +44,10 @@ Evidence:
   fixtures through independent Workers.
 - `FtpSignedPackageProcessTests` and `SftpSignedPackageProcessTests` verify
   signed packages and start their installed Workers.
+- `FtpWorkerProcessTests.SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp`
+  and `SignedSftpHostProcessTests` install current signed releases, route range
+  hydration through the Host and CfSharp demand provider, upload through the
+  Host, and reject stale revisions against real loopback protocol servers.
 - `OfficialAdapterAggregateProcessTests` installs all five signed releases;
   the Local case starts two independent installed Workers and routes
   CfSharp-compatible demand enumeration and range reads through their separate roots.
