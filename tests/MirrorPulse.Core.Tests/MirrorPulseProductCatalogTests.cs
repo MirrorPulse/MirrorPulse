@@ -49,6 +49,51 @@ public sealed class MirrorPulseProductCatalogTests
     }
 
     [TestMethod]
+    public async Task CreatingAnInstanceAtomicallyRegistersManifestRootsAndCacheDirectories()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        AdapterId adapterId = AdapterId.Parse("example.instance");
+        var manifest = new AdapterManifest(1, adapterId, "Example", "1.0.0",
+            new ProtocolVersionRange(1, 1), new Dictionary<string, string>
+            {
+                ["win-x64"] = "worker/adapter.exe",
+                ["win-arm64"] = "worker/adapter.exe",
+            }, new AdapterInstallPolicy(null), new AdapterInstancePolicy(2, 2),
+            new AdapterCapabilities(true, false, true, true), ["en-US"], "1.0.0",
+            [new AdapterRootDefinition("documents", "Documents", "Documents", false),
+             new AdapterRootDefinition("archive", "Archive", "Archive", false)]);
+        var installation = new InstalledAdapter(manifest, InstallId.New(), Path.Combine(root, "installed"),
+            new Sha256Digest(new string('A', 64)), AdapterInstallSource.LocalFile, null,
+            true, DateTimeOffset.UtcNow, AdapterLifecycleState.Installed);
+        try
+        {
+            await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
+            await catalog.AddInstallationAsync(installation);
+            AdapterInstance instance = await catalog.CreateInstanceAsync(
+                installation.InstallId,
+                "Example storage",
+                new Dictionary<string, string> { ["endpoint"] = "https://example.test" },
+                ["credential-1"],
+                Path.Combine(root, "cache", "files"),
+                Path.Combine(root, "cache", "transfers"));
+
+            MirrorPulseAdapterTopology topology = await catalog.ReadAdapterTopologyAsync();
+            Assert.HasCount(1, topology.Instances);
+            Assert.HasCount(2, topology.Roots);
+            Assert.AreEqual(instance.InstanceId, topology.Roots[0].InstanceId);
+            Assert.AreEqual(RootRegistrationState.Active, topology.Roots[1].State);
+            Assert.IsTrue(Directory.Exists(instance.FileCacheDirectory));
+            Assert.IsTrue(Directory.Exists(instance.TransferCacheDirectory));
+            Assert.AreEqual("credential-1", instance.CredentialReferences.Single());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task SnoozedConflictNotificationSurvivesRestartAndCanBeRestored()
     {
         string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));

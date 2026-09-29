@@ -6,6 +6,7 @@ using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Host;
+using MirrorPulse.Core.Packaging;
 using MirrorPulse.Core.Security;
 using MirrorPulse.Core.State;
 using MirrorPulse.Host;
@@ -107,6 +108,50 @@ try
                     cloud.PendingRemoteConflictCount, entries, notifications);
             }
 
+            async Task<MirrorPulseAppStatusResponse> InstallAdapterAsync(
+                string packagePath,
+                CancellationToken cancellationToken)
+            {
+                string source = Path.GetFullPath(packagePath.Trim());
+                if (!string.Equals(Path.GetExtension(source), ".mpadapter", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ArgumentException("The Host install command accepts only .mpadapter files.", nameof(packagePath));
+                }
+
+                string signaturePath = source + ".signature.json";
+                if (!File.Exists(signaturePath))
+                {
+                    throw new FileNotFoundException(
+                        "The detached Adapter signature must be next to the .mpadapter file.", signaturePath);
+                }
+
+                string runtimeIdentifier = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+                {
+                    System.Runtime.InteropServices.Architecture.X64 => "win-x64",
+                    System.Runtime.InteropServices.Architecture.Arm64 => "win-arm64",
+                    _ => throw new PlatformNotSupportedException("The Adapter process architecture is unsupported."),
+                };
+                string installationRoot = Path.Combine(paths.DataRootPath, "adapters", "installed");
+                InstalledAdapter installed = await catalog.InstallSignedAdapterAsync(
+                    source, signaturePath, installationRoot, runtimeIdentifier, cancellationToken)
+                    .ConfigureAwait(false);
+                string displayName = installed.Manifest.LocaleMetadata.TryGetValue("en-US", out AdapterLocaleMetadata? locale)
+                    ? locale.DisplayName
+                    : installed.Manifest.AdapterId.ToString();
+                string instanceCacheRoot = Path.Combine(paths.DataRootPath, "adapters", "instances",
+                    Guid.NewGuid().ToString("D"));
+                await catalog.CreateInstanceAsync(
+                    installed.InstallId,
+                    displayName,
+                    new Dictionary<string, string>(StringComparer.Ordinal),
+                    Array.Empty<string>(),
+                    Path.Combine(instanceCacheRoot, "files"),
+                    Path.Combine(instanceCacheRoot, "transfers"),
+                    enabled: true,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             var statusPipe = new MirrorPulseAppStatusPipe(ReadStatusAsync,
                 async (conflictId, cancellationToken) =>
                 {
@@ -128,7 +173,8 @@ try
                 {
                     await catalog.SelectInstanceInstallationAsync(instanceId, installId, cancellationToken);
                     return await ReadStatusAsync(cancellationToken);
-                });
+                },
+                InstallAdapterAsync);
             await statusPipe.ServeAsync(shutdown.Token);
         }
 

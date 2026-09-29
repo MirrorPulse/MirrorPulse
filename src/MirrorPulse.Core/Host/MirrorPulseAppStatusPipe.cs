@@ -38,17 +38,20 @@ public sealed class MirrorPulseAppStatusPipe
     private readonly Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _snooze;
     private readonly Func<InstanceId, bool, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _setEnabled;
     private readonly Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _selectVersion;
+    private readonly Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _install;
 
     public MirrorPulseAppStatusPipe(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
         Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? snooze = null,
         Func<InstanceId, bool, CancellationToken, Task<MirrorPulseAppStatusResponse>>? setEnabled = null,
-        Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? selectVersion = null)
+        Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? selectVersion = null,
+        Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? install = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
         _setEnabled = setEnabled;
         _selectVersion = selectVersion;
+        _install = install;
     }
 
     public static string CurrentUserPipeName()
@@ -119,6 +122,19 @@ public sealed class MirrorPulseAppStatusPipe
                         response = new(0, 0, [], [], exception.Message);
                     }
                 }
+                else if (request.StartsWith("install:", StringComparison.Ordinal) && _install is not null &&
+                    request.Length > "install:".Length)
+                {
+                    try
+                    {
+                        response = await _install(request["install:".Length..], cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        response = new(0, 0, [], [], exception.Message);
+                    }
+                }
                 else
                 {
                     response = new(0, 0, [], [], "Unknown Host request.");
@@ -173,6 +189,14 @@ public sealed class MirrorPulseAppStatusPipe
         InstallId installId,
         CancellationToken cancellationToken = default) =>
         SendRequestAsync($"version:{instanceId}:{installId}", cancellationToken);
+
+    public static Task<MirrorPulseAppStatusResponse> InstallAsync(
+        string packagePath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packagePath);
+        return SendRequestAsync($"install:{Path.GetFullPath(packagePath)}", cancellationToken);
+    }
 
     private static bool TryParseEnable(string request, out InstanceId instanceId, out bool enabled)
     {
