@@ -18,6 +18,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
     private readonly CloudLocalChangeFeed _feed;
     private readonly MirrorPulseJournalUploadSource _source;
     private readonly MirrorPulseJournalUploadCompletion _completion;
+    private readonly MirrorPulseCfSharpStateSession _state;
     private readonly IMirrorPulseWorkerUploadTransport _uploads;
     private readonly IMirrorPulseWorkerStatTransport _stats;
     private readonly string _syncRootPath;
@@ -30,6 +31,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         MirrorPulseProductCatalog catalog,
         IMirrorPulseWorkerUploadTransport uploads,
         IMirrorPulseWorkerStatTransport stats,
+        MirrorPulseCfSharpStateSession state,
         string syncRootPath,
         Func<InstanceId, bool> mayDispatch,
         MirrorPulseJournalUploadCompletion completion)
@@ -37,6 +39,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         _feed = feed ?? throw new ArgumentNullException(nameof(feed));
         _uploads = uploads ?? throw new ArgumentNullException(nameof(uploads));
         _stats = stats ?? throw new ArgumentNullException(nameof(stats));
+        _state = state ?? throw new ArgumentNullException(nameof(state));
         ArgumentException.ThrowIfNullOrWhiteSpace(syncRootPath);
         ArgumentNullException.ThrowIfNull(mayDispatch);
         _syncRootPath = Path.GetFullPath(syncRootPath);
@@ -116,9 +119,11 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
 
         try
         {
-            string? revision = await _stats.StatAsync(
-                new MirrorPulseWorkerStatRequest(command.InstanceId, command.RelativePath),
-                cancellationToken).ConfigureAwait(false);
+            string relativePath = Path.GetRelativePath(_syncRootPath, localPath)
+                .Replace(Path.DirectorySeparatorChar, '/');
+            string? revision = await MirrorPulseJournalUploadRevisionGuard.ResolveAsync(
+                _state.OpenStore, _stats, command, relativePath, cancellationToken)
+                .ConfigureAwait(false);
             await using var content = new FileStream(localPath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, 64 * 1024, FileOptions.Asynchronous);
             string uploadedRevision = await _uploads.UploadAsync(

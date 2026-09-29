@@ -94,7 +94,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
                 CloudLocalChangeFeed feed = fileSystem.CreateLocalChangeFeed();
                 var completion = new MirrorPulseJournalUploadCompletion(
                     feed, state, new BackoffPolicy(TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(5)));
-                _uploadPump = new MirrorPulseJournalUploadPump(feed, router, catalog, uploads, stats,
+                _uploadPump = new MirrorPulseJournalUploadPump(feed, router, catalog, uploads, stats, state,
                     syncRootPath, mayDispatch, completion);
                 await _uploadPump.StartAsync(cancellationToken).ConfigureAwait(false);
             }
