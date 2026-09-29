@@ -1,6 +1,8 @@
 #if MIRRORPULSE_SHELL_PROBE
+using System.Security.Principal;
 using MirrorPulse.CloudFiles.CfSharp;
 using Windows.ApplicationModel;
+using Windows.Storage;
 using Windows.Storage.Provider;
 
 namespace MirrorPulse.App;
@@ -44,8 +46,10 @@ internal static class MirrorPulsePackagedShellProbe
         }
         catch (Exception exception)
         {
+            string minimalResult = await TryMinimalRegistrationAsync(root);
             await File.WriteAllTextAsync(resultPath,
-                $"failure: 0x{exception.HResult:X8} {exception.GetType().Name}: {exception.Message}");
+                $"failure: 0x{exception.HResult:X8} {exception.GetType().Name}: {exception.Message}; " +
+                $"minimal registration: {minimalResult}");
         }
         finally
         {
@@ -66,6 +70,60 @@ internal static class MirrorPulsePackagedShellProbe
             }
 
             app.Exit();
+        }
+    }
+
+    private static async Task<string> TryMinimalRegistrationAsync(string root)
+    {
+        string path = Path.Combine(root, "minimal");
+        string? registrationId = null;
+        bool registered = false;
+        try
+        {
+            Directory.CreateDirectory(path);
+            string sid = WindowsIdentity.GetCurrent().User?.Value
+                ?? throw new InvalidOperationException("The Shell probe user has no SID.");
+            registrationId = $"MirrorPulseProbe!{sid}!Minimum";
+            StorageFolder folder = await StorageFolder.GetFolderFromPathAsync(path);
+            var info = new StorageProviderSyncRootInfo
+            {
+                Id = registrationId,
+                Path = folder,
+                DisplayNameResource = "MirrorPulse probe",
+                IconResource = "%SystemRoot%\\system32\\charmap.exe,0",
+                HydrationPolicy = StorageProviderHydrationPolicy.Full,
+                HydrationPolicyModifier = StorageProviderHydrationPolicyModifier.None,
+                PopulationPolicy = StorageProviderPopulationPolicy.AlwaysFull,
+                InSyncPolicy = StorageProviderInSyncPolicy.FileCreationTime |
+                    StorageProviderInSyncPolicy.DirectoryCreationTime,
+                HardlinkPolicy = StorageProviderHardlinkPolicy.None,
+                Version = "0.1.0",
+                ShowSiblingsAsGroup = false,
+            };
+            StorageProviderSyncRootManager.Register(info);
+            registered = true;
+            StorageProviderSyncRootInfo actual = StorageProviderSyncRootManager
+                .GetSyncRootInformationForId(registrationId);
+            return actual.DisplayNameResource == info.DisplayNameResource
+                ? "success"
+                : "registered but display name differs";
+        }
+        catch (Exception exception)
+        {
+            return $"0x{exception.HResult:X8} {exception.GetType().Name}: {exception.Message}";
+        }
+        finally
+        {
+            if (registered && registrationId is not null)
+            {
+                try
+                {
+                    StorageProviderSyncRootManager.Unregister(registrationId);
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
     }
 }
