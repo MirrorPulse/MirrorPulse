@@ -43,6 +43,14 @@ public partial class App : Application
     /// <param name="args">Details about the launch request and process.</param>
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
+#if MIRRORPULSE_SHELL_PROBE
+        string? probeResult = Environment.GetEnvironmentVariable("MIRRORPULSE_PACKAGED_SHELL_PROBE_RESULT");
+        if (!string.IsNullOrWhiteSpace(probeResult))
+        {
+            _ = MirrorPulsePackagedShellProbe.RunAsync(probeResult, this);
+            return;
+        }
+#endif
         _window = new MainWindow();
         _window.Activate();
         _notificationTimer = _window.DispatcherQueue.CreateTimer();

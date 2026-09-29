@@ -14,6 +14,7 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants Condition="'$(MirrorPulseShellProbe)'=='true'">$(DefineConstants);MIRRORPULSE_SHELL_PROBE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

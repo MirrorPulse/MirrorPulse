@@ -34,6 +34,7 @@ try {
         -p:PackageCertificateKeyFile=$pfxPath `
         -p:PackageCertificatePassword=$passwordText `
         -p:AppxPackageDir="$packageRoot\" `
+        -p:MirrorPulseShellProbe=$($VerifyShell.IsPresent.ToString().ToLowerInvariant()) `
         --no-restore
     if ($LASTEXITCODE -ne 0) {
         throw "The packaged MirrorPulse.App build failed with exit code $LASTEXITCODE."
@@ -64,33 +65,35 @@ try {
     }
 
     if ($VerifyShell) {
-    $nativeProject = Join-Path $PSScriptRoot "..\tests\MirrorPulse.CloudFiles.CfSharp.Tests\MirrorPulse.CloudFiles.CfSharp.Tests.csproj"
-    $probePath = Join-Path $packageRoot "run-packaged-shell-probe.ps1"
-    $resultPath = Join-Path $packageRoot "packaged-shell-probe.exitcode"
-    @'
-param([string]$TestProject, [string]$ResultPath)
-$env:MIRRORPULSE_PACKAGED_SHELL_TEST = '1'
-$logPath = "$ResultPath.log"
-& dotnet test $TestProject --configuration Release --no-build --filter 'FullyQualifiedName~PackagedRegistrationPublishesCustomThenUnifiedDisplayName|FullyQualifiedName~PackagedSessionReopensOfficialSqliteDatabase' *> $logPath
-Set-Content -LiteralPath $ResultPath -Value $LASTEXITCODE -NoNewline
-'@ | Set-Content -LiteralPath $probePath -Encoding utf8
-    $probeArgs = "-NoProfile -NonInteractive -File `"$probePath`" -TestProject `"$nativeProject`" -ResultPath `"$resultPath`""
-    Invoke-CommandInDesktopPackage -PackageFamilyName $installed.PackageFamilyName `
-        -AppId "App" -Command "pwsh.exe" -Args $probeArgs -PreventBreakaway
-    $deadline = [DateTime]::UtcNow.AddMinutes(2)
-    while (-not (Test-Path -LiteralPath $resultPath) -and [DateTime]::UtcNow -lt $deadline) {
-        Start-Sleep -Milliseconds 500
-    }
-    if (-not (Test-Path -LiteralPath $resultPath)) {
-        throw "The packaged Shell probe did not report a result within two minutes."
-    }
+        $resultPath = Join-Path $packageRoot "packaged-shell-probe.result"
+        $appExe = Join-Path $installed.InstallLocation "MirrorPulse.App.exe"
+        if (-not (Test-Path -LiteralPath $appExe)) {
+            throw "The installed MirrorPulse app executable was not found."
+        }
 
-    Get-Content -LiteralPath "$resultPath.log"
-    if ((Get-Content -LiteralPath $resultPath -Raw).Trim() -ne "0") {
-        throw "The packaged Shell probe failed."
-    }
+        $env:MIRRORPULSE_PACKAGED_SHELL_PROBE_RESULT = $resultPath
+        try {
+            $probeProcess = Start-Process -FilePath $appExe -WindowStyle Hidden -PassThru
+            $deadline = [DateTime]::UtcNow.AddMinutes(2)
+            while (-not (Test-Path -LiteralPath $resultPath) -and [DateTime]::UtcNow -lt $deadline) {
+                if ($probeProcess.HasExited) { break }
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        finally {
+            Remove-Item Env:\MIRRORPULSE_PACKAGED_SHELL_PROBE_RESULT -ErrorAction SilentlyContinue
+        }
 
-    Write-Output "Verified packaged Shell registration for $($installed.PackageFullName)."
+        if (-not (Test-Path -LiteralPath $resultPath)) {
+            throw "The packaged App process did not report a Shell probe result."
+        }
+
+        $probeResult = (Get-Content -LiteralPath $resultPath -Raw).Trim()
+        if ($probeResult -ne "success") {
+            throw "The packaged App Shell probe failed: $probeResult"
+        }
+
+        Write-Output "Verified packaged Shell registration for $($installed.PackageFullName)."
     }
 
     Write-Output "Verified installed MSIX $($installed.PackageFullName) Cloud Files extension identity."
