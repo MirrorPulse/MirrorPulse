@@ -175,4 +175,19 @@ public sealed partial class InstalledAdaptersPage : Page
 
     private void SyncStatusButton_Click(object sender, RoutedEventArgs e) =>
         Frame.Navigate(typeof(SyncStatusPage));
+
+    private void InstallAdapterButton_Click(object sender, RoutedEventArgs e) =>
+        Frame.Navigate(typeof(AdapterInstallPage));
+
+    private void CreateInstanceButton_Click(object sender, RoutedEventArgs e)
+    {
+        int index = InstalledAdaptersList.SelectedIndex;
+        if (index < 0 || index >= _topology.Installations.Count)
+        {
+            ActionStatusText.Text = "Select an installed Adapter first.";
+            return;
+        }
+
+        Frame.Navigate(typeof(InstanceConfigurationPage), _topology.Installations[index].InstallId.ToString());
+    }
 }

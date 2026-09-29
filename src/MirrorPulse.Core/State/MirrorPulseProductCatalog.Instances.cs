@@ -19,6 +19,7 @@ public sealed partial class MirrorPulseProductCatalog
         string fileCacheDirectory,
         string transferCacheDirectory,
         bool enabled = true,
+        IReadOnlyDictionary<string, string>? rootLabels = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
@@ -69,12 +70,31 @@ public sealed partial class MirrorPulseProductCatalog
                 installation.AdapterId,
                 instanceId,
                 installation.Manifest.RootDefinitions,
-                enabled ? RootRegistrationState.Active : RootRegistrationState.Disabled).ToArray();
+                enabled ? RootRegistrationState.Active : RootRegistrationState.Disabled)
+                .Select(root =>
+                {
+                    if (rootLabels is null || !rootLabels.TryGetValue(root.UniquenessKey, out string? label))
+                    {
+                        return root;
+                    }
+
+                    return new RootRegistration(root.AdapterId, root.InstanceId, root.RootId,
+                        root.UniquenessKey, label, label, root.CustomEntry, root.State, root.RegisteredAt);
+                }).ToArray();
+            if (rootLabels is not null && rootLabels.Keys.Any(key =>
+                !installation.Manifest.RootDefinitions.Any(definition =>
+                    string.Equals(definition.Key, key, StringComparison.Ordinal))))
+            {
+                throw new InvalidDataException("An instance root label refers to an undeclared Adapter root.");
+            }
             var next = new MirrorPulseAdapterTopology(
                 [.. current.Installations],
                 [.. current.Instances, instance],
                 [.. current.Roots, .. roots]);
             ValidateTopology(next);
+
+            Directory.CreateDirectory(instance.FileCacheDirectory);
+            Directory.CreateDirectory(instance.TransferCacheDirectory);
 
             await using SqliteCommand update = _connection.CreateCommand();
             update.CommandText = """
@@ -83,8 +103,6 @@ public sealed partial class MirrorPulseProductCatalog
                 """;
             update.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(next, TopologyJsonOptions));
             await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            Directory.CreateDirectory(instance.FileCacheDirectory);
-            Directory.CreateDirectory(instance.TransferCacheDirectory);
             return instance;
         }
         finally

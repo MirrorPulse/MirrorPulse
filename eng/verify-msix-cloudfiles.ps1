@@ -57,11 +57,18 @@ try {
     $namespace = New-Object System.Xml.XmlNamespaceManager($manifest.NameTable)
     $namespace.AddNamespace("f", "http://schemas.microsoft.com/appx/manifest/foundation/windows10")
     $namespace.AddNamespace("desktop3", "http://schemas.microsoft.com/appx/manifest/desktop/windows10/3")
+    $namespace.AddNamespace("uap", "http://schemas.microsoft.com/appx/manifest/uap/windows10")
     $cloudFiles = $manifest.SelectSingleNode(
         "/f:Package/f:Applications/f:Application/f:Extensions/desktop3:Extension[@Category='windows.cloudFiles']",
         $namespace)
     if ($null -eq $cloudFiles) {
         throw "The installed MSIX identity does not expose the windows.cloudFiles extension."
+    }
+    $adapterAssociation = $manifest.SelectSingleNode(
+        "/f:Package/f:Applications/f:Application/f:Extensions/uap:Extension[@Category='windows.fileTypeAssociation']/uap:FileTypeAssociation[uap:SupportedFileTypes/uap:FileType='.mpadapter']",
+        $namespace)
+    if ($null -eq $adapterAssociation) {
+        throw "The installed MSIX does not associate .mpadapter files."
     }
 
     if ($VerifyShell) {
@@ -96,7 +103,7 @@ try {
         Write-Output "Verified packaged Shell registration for $($installed.PackageFullName)."
     }
 
-    Write-Output "Verified installed MSIX $($installed.PackageFullName) Cloud Files extension identity."
+    Write-Output "Verified installed MSIX $($installed.PackageFullName) Cloud Files and .mpadapter identities."
 }
 finally {
     if ($null -ne $installed) {

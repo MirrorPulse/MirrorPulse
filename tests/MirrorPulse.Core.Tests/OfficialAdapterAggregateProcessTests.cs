@@ -78,22 +78,35 @@ public sealed class OfficialAdapterAggregateProcessTests
         string signaturePath = Path.Combine(packageDirectory, local.GetProperty("signature").GetString()!);
         string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-official-local", Guid.NewGuid().ToString("N"));
         string sourceDirectory = Path.Combine(root, "source");
+        string secondSourceDirectory = Path.Combine(root, "second-source");
         string syncRoot = Path.Combine(root, "sync");
         var paths = new MirrorPulseStoragePaths(syncRoot, Path.Combine(root, "data"));
         byte[] expected = Encoding.UTF8.GetBytes("signed-local-adapter-content");
         try
         {
             Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(secondSourceDirectory);
             await File.WriteAllBytesAsync(Path.Combine(sourceDirectory, "note.txt"), expected);
+            byte[] secondContent = Encoding.UTF8.GetBytes("independent-local-instance");
+            await File.WriteAllBytesAsync(Path.Combine(secondSourceDirectory, "second.txt"), secondContent);
             await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
             InstalledAdapter installation = await catalog.InstallSignedAdapterAsync(packagePath,
                 signaturePath, Path.Combine(root, "installed"), "win-x64");
             AdapterInstance instance = await catalog.CreateInstanceAsync(installation.InstallId,
                 "Local source", new Dictionary<string, string> { ["sourceDirectory"] = sourceDirectory },
                 [], Path.Combine(root, "cache", "files"), Path.Combine(root, "cache", "transfers"));
+            string rootKey = installation.Manifest.RootDefinitions.Single().Key;
+            AdapterInstance secondInstance = await catalog.CreateInstanceAsync(installation.InstallId,
+                "Second local source",
+                new Dictionary<string, string> { ["sourceDirectory"] = secondSourceDirectory },
+                [], Path.Combine(root, "second-cache", "files"),
+                Path.Combine(root, "second-cache", "transfers"),
+                rootLabels: new Dictionary<string, string> { [rootKey] = "Local 2" });
             MirrorPulseAdapterTopology topology = await catalog.ReadAdapterTopologyAsync();
-            Assert.HasCount(1, topology.Roots);
-            RootRegistration registration = topology.Roots.Single();
+            Assert.HasCount(2, topology.Roots);
+            RootRegistration registration = topology.Roots.Single(item => item.InstanceId == instance.InstanceId);
+            RootRegistration secondRegistration = topology.Roots.Single(item =>
+                item.InstanceId == secondInstance.InstanceId);
             await using var supervisor = new AdapterInstanceProcessSupervisor(catalog,
                 new WindowsCredentialManagerStore());
             await supervisor.StartAsync(topology);
@@ -102,14 +115,18 @@ public sealed class OfficialAdapterAggregateProcessTests
             {
                 MirrorPulseInstanceRuntimeState? state = await catalog.ReadInstanceRuntimeStateAsync(
                     instance.InstanceId, timeout.Token);
-                if (state?.Phase == "Connected")
+                MirrorPulseInstanceRuntimeState? secondState = await catalog.ReadInstanceRuntimeStateAsync(
+                    secondInstance.InstanceId, timeout.Token);
+                if (state?.Phase == "Connected" && secondState?.Phase == "Connected")
                 {
                     break;
                 }
 
-                if (state?.Phase is "Worker failed" or "Worker error")
+                if (state?.Phase is "Worker failed" or "Worker error" ||
+                    secondState?.Phase is "Worker failed" or "Worker error")
                 {
-                    Assert.Fail($"The signed Local Worker failed: {state.LastErrorCode}.");
+                    Assert.Fail($"A signed Local Worker failed: {state?.LastErrorCode}; " +
+                        $"{secondState?.LastErrorCode}.");
                 }
 
                 await Task.Delay(50, timeout.Token);
@@ -120,8 +137,9 @@ public sealed class OfficialAdapterAggregateProcessTests
                 new MirrorPulseAdapterDirectoryPageSource(supervisor));
             CloudProviderDirectoryPage top = await provider.FetchChildrenAsync(syncRoot,
                 ReadOnlyMemory<byte>.Empty, null, timeout.Token);
-            Assert.HasCount(1, top.Children);
-            CloudPlaceholderSpec adapterRoot = top.Children.Single();
+            Assert.HasCount(2, top.Children);
+            CloudPlaceholderSpec adapterRoot = top.Children.Single(item =>
+                item.Name == registration.DirectoryName);
             Assert.AreEqual(registration.DirectoryName, adapterRoot.Name);
             CloudProviderDirectoryPage page = await provider.FetchChildrenAsync(
                 Path.Combine(syncRoot, registration.DirectoryName),
@@ -136,6 +154,20 @@ public sealed class OfficialAdapterAggregateProcessTests
             byte[] actual = new byte[expected.Length];
             await read.ReadExactlyAsync(actual, timeout.Token);
             CollectionAssert.AreEqual(expected, actual);
+
+            CloudPlaceholderSpec secondRoot = top.Children.Single(item =>
+                item.Name == secondRegistration.DirectoryName);
+            CloudProviderDirectoryPage secondPage = await provider.FetchChildrenAsync(
+                Path.Combine(syncRoot, secondRegistration.DirectoryName),
+                secondRoot.Identity.Encode(), null, timeout.Token);
+            CloudFilePlaceholderSpec secondNote = secondPage.Children.OfType<CloudFilePlaceholderSpec>()
+                .Single(item => item.Name == "second.txt");
+            await using Stream secondRead = await provider.OpenReadAsync(
+                Path.Combine(syncRoot, secondRegistration.DirectoryName, "second.txt"),
+                secondNote.Identity.Encode(), secondNote.Length, 0, secondNote.Length, timeout.Token);
+            byte[] secondActual = new byte[secondContent.Length];
+            await secondRead.ReadExactlyAsync(secondActual, timeout.Token);
+            CollectionAssert.AreEqual(secondContent, secondActual);
 
             byte[] upload = Encoding.UTF8.GetBytes("uploaded-through-signed-worker");
             await using var content = new MemoryStream(upload, writable: false);

@@ -52,6 +52,15 @@
         <desktop3:Extension Category="windows.cloudFiles">
           <desktop3:CloudFiles IconResource="Assets\StoreLogo.png" />
         </desktop3:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="mpadapter">
+            <uap:DisplayName>MirrorPulse Adapter package</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.mpadapter</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
       </Extensions>
     </Application>
   </Applications>

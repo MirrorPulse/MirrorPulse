@@ -72,8 +72,9 @@ try
             }
         }
 
+        var credentialStore = new WindowsCredentialManagerStore();
         await using var workers = new AdapterInstanceProcessSupervisor(catalog,
-            new WindowsCredentialManagerStore(), ApplyRemoteBatchAsync);
+            credentialStore, ApplyRemoteBatchAsync);
         var rootRouter = new MirrorPulseRootRouter(paths.SyncRootPath, topology.Roots);
         var provider = new MirrorPulseDemandProvider(rootRouter, workers,
             new MirrorPulseAdapterDirectoryPageSource(workers));
@@ -145,21 +146,24 @@ try
                 InstalledAdapter installed = await catalog.InstallSignedAdapterAsync(
                     source, signaturePath, installationRoot, runtimeIdentifier, cancellationToken)
                     .ConfigureAwait(false);
-                string displayName = installed.Manifest.LocaleMetadata.TryGetValue("en-US", out AdapterLocaleMetadata? locale)
-                    ? locale.DisplayName
-                    : installed.Manifest.AdapterId.ToString();
-                string instanceCacheRoot = Path.Combine(paths.DataRootPath, "adapters", "instances",
-                    Guid.NewGuid().ToString("D"));
-                await catalog.CreateInstanceAsync(
-                    installed.InstallId,
-                    displayName,
-                    new Dictionary<string, string>(StringComparer.Ordinal),
-                    Array.Empty<string>(),
-                    Path.Combine(instanceCacheRoot, "files"),
-                    Path.Combine(instanceCacheRoot, "transfers"),
-                    enabled: true,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-                return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                return (await ReadStatusAsync(cancellationToken).ConfigureAwait(false)) with
+                {
+                    InstalledAdapterId = installed.InstallId.ToString(),
+                };
+            }
+
+            var provisioner = new MirrorPulseAdapterInstanceProvisioner(catalog,
+                credentialStore, paths.DataRootPath);
+            async Task<MirrorPulseAppStatusResponse> CreateInstanceAsync(
+                MirrorPulseCreateInstanceRequest request,
+                CancellationToken cancellationToken)
+            {
+                AdapterInstance instance = await provisioner.CreateAsync(request, cancellationToken)
+                    .ConfigureAwait(false);
+                return (await ReadStatusAsync(cancellationToken).ConfigureAwait(false)) with
+                {
+                    CreatedInstanceId = instance.InstanceId.ToString(),
+                };
             }
 
             var statusPipe = new MirrorPulseAppStatusPipe(ReadStatusAsync,
@@ -184,7 +188,7 @@ try
                     await catalog.SelectInstanceInstallationAsync(instanceId, installId, cancellationToken);
                     return await ReadStatusAsync(cancellationToken);
                 },
-                InstallAdapterAsync);
+                InstallAdapterAsync, CreateInstanceAsync);
             await statusPipe.ServeAsync(shutdown.Token);
         }
 

@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
+using Microsoft.Windows.AppLifecycle;
 using MirrorPulse.Core.Host;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
@@ -24,6 +25,8 @@ namespace MirrorPulse.App;
 public partial class App : Application
 {
     private MainWindow? _window;
+    internal MainWindow CurrentWindow => _window ?? throw new InvalidOperationException(
+        "The MirrorPulse window has not been created.");
     private DispatcherQueueTimer? _notificationTimer;
     private readonly HashSet<string> _shownNotifications = new(StringComparer.Ordinal);
     private bool _checkingNotifications;
@@ -53,6 +56,19 @@ public partial class App : Application
 #endif
         _window = new MainWindow();
         _window.Activate();
+        AppActivationArguments activation = Microsoft.Windows.AppLifecycle.AppInstance
+            .GetCurrent().GetActivatedEventArgs();
+        if (activation.Kind == ExtendedActivationKind.File &&
+            activation.Data is IFileActivatedEventArgs files)
+        {
+            string? packagePath = files.Files.Select(file => file.Path).FirstOrDefault(path =>
+                string.Equals(System.IO.Path.GetExtension(path), ".mpadapter",
+                    StringComparison.OrdinalIgnoreCase));
+            if (packagePath is not null)
+            {
+                _window.NavigateToAdapterInstall(packagePath);
+            }
+        }
         _notificationTimer = _window.DispatcherQueue.CreateTimer();
         _notificationTimer.Interval = TimeSpan.FromSeconds(2);
         _notificationTimer.Tick += NotificationTimer_Tick;

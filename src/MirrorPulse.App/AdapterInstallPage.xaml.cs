@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
+using Microsoft.Windows.Storage.Pickers;
 using MirrorPulse.Core.Host;
 
 namespace MirrorPulse.App;
@@ -14,11 +16,41 @@ public sealed partial class AdapterInstallPage : Page
         InitializeComponent();
     }
 
-    private void BrowseButton_Click(object sender, RoutedEventArgs e)
+    protected override void OnNavigatedTo(NavigationEventArgs e)
     {
-        InstallStatusBar.IsOpen = true;
-        InstallStatusBar.Message = "Select a .mpadapter package to continue.";
+        base.OnNavigatedTo(e);
+        if (e.Parameter is string packagePath &&
+            string.Equals(Path.GetExtension(packagePath), ".mpadapter", StringComparison.OrdinalIgnoreCase))
+        {
+            PackagePathTextBox.Text = packagePath;
+        }
     }
+
+    private async void BrowseButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FileOpenPicker(((App)Application.Current).CurrentWindow.AppWindow.Id)
+            {
+                FileTypeFilter = { ".mpadapter" },
+                CommitButtonText = "Select Adapter package",
+            };
+            PickFileResult? result = await picker.PickSingleFileAsync();
+            if (result is not null)
+            {
+                PackagePathTextBox.Text = result.Path;
+            }
+        }
+        catch (Exception exception)
+        {
+            InstallStatusBar.Severity = InfoBarSeverity.Error;
+            InstallStatusBar.Message = $"Could not open the file picker: {exception.Message}";
+            InstallStatusBar.IsOpen = true;
+        }
+    }
+
+    private void CancelButton_Click(object sender, RoutedEventArgs e) =>
+        Frame.Navigate(typeof(InstalledAdaptersPage));
 
     private async void InstallButton_Click(object sender, RoutedEventArgs e)
     {
@@ -32,10 +64,15 @@ public sealed partial class AdapterInstallPage : Page
         InstallButton.IsEnabled = false;
         try
         {
-            await MirrorPulseAppStatusPipe.InstallAsync(PackagePathTextBox.Text.Trim());
+            MirrorPulseAppStatusResponse result = await MirrorPulseAppStatusPipe.InstallAsync(
+                PackagePathTextBox.Text.Trim());
+            if (string.IsNullOrWhiteSpace(result.InstalledAdapterId))
+            {
+                throw new InvalidDataException("The Host did not return the new installation ID.");
+            }
             InstallStatusBar.Severity = InfoBarSeverity.Success;
-            InstallStatusBar.Message = "The Adapter was verified, installed, and added as a new instance.";
-            Frame.Navigate(typeof(InstalledAdaptersPage));
+            InstallStatusBar.Message = "The signed Adapter is installed. Configure its first instance.";
+            Frame.Navigate(typeof(InstanceConfigurationPage), result.InstalledAdapterId);
         }
         catch (Exception exception)
         {

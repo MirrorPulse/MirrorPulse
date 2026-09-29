@@ -1,27 +1,188 @@
+using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
+using MirrorPulse.Core;
+using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Host;
+using MirrorPulse.Core.State;
 
 namespace MirrorPulse.App;
 
-/// <summary>
-/// Collects the user-owned settings required to create one Adapter instance.
-/// </summary>
+/// <summary>Collects non-secret Worker settings and stores secrets through the owner Host.</summary>
 public sealed partial class InstanceConfigurationPage : Page
 {
+    private InstalledAdapter? _installation;
+    private readonly Dictionary<string, TextBox> _rootLabels = new(StringComparer.Ordinal);
+
     public InstanceConfigurationPage()
     {
         InitializeComponent();
     }
 
-    private void BackButton_Click(object sender, RoutedEventArgs e)
+    protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
-        StepText.Text = "Step 1 of 3: Choose a source";
-        ConfigurationProgress.Value = 1;
+        base.OnNavigatedTo(e);
+        try
+        {
+            InstallId installId = InstallId.Parse(e.Parameter as string ?? string.Empty);
+            string dataRoot = Path.Combine(Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData), ProductInfo.Name);
+            string syncRoot = Path.Combine(Environment.GetFolderPath(
+                Environment.SpecialFolder.UserProfile), ProductInfo.Name);
+            MirrorPulseAdapterTopology topology = await MirrorPulseProductCatalog
+                .ReadAdapterTopologySnapshotAsync(new MirrorPulseStoragePaths(syncRoot, dataRoot));
+            _installation = topology.Installations.SingleOrDefault(item => item.InstallId == installId)
+                ?? throw new FileNotFoundException("The selected Adapter installation was not found.");
+
+            string adapterId = _installation.AdapterId.ToString();
+            bool isLocal = adapterId == "com.mirrorpulse.adapter.local";
+            bool isSmb = adapterId == "com.mirrorpulse.adapter.smb";
+            bool isOfficialNetwork = adapterId is "com.mirrorpulse.adapter.webdav" or
+                "com.mirrorpulse.adapter.ftp" or "com.mirrorpulse.adapter.sftp";
+            bool needsPassword = adapterId is "com.mirrorpulse.adapter.ftp" or
+                "com.mirrorpulse.adapter.sftp";
+            bool showCredentialInputs = !isLocal && !isSmb;
+            bool hasOfficialSource = isLocal || isSmb || isOfficialNetwork;
+            AdapterNameText.Text = adapterId + " · " + _installation.Version;
+            AdapterLabelTextBox.Text = _installation.Manifest.LocaleMetadata.TryGetValue("en-US",
+                out AdapterLocaleMetadata? locale) ? locale.DisplayName : adapterId;
+            SourcePathTextBox.Header = isLocal ? "Local source directory" : isSmb
+                ? "Network share path" : "Server endpoint";
+            SourcePathTextBox.PlaceholderText = isLocal ? @"C:\Users\You\Documents" : isSmb
+                ? @"\\server\share" : "https://server.example/path/";
+            SourcePathTextBox.Visibility = hasOfficialSource ? Visibility.Visible : Visibility.Collapsed;
+            UsernameTextBox.Visibility = showCredentialInputs ? Visibility.Visible : Visibility.Collapsed;
+            SecretBox.Visibility = showCredentialInputs ? Visibility.Visible : Visibility.Collapsed;
+            SecretHintText.Visibility = showCredentialInputs ? Visibility.Visible : Visibility.Collapsed;
+            SecretHintText.Text = needsPassword
+                ? "A password is required. MirrorPulse stores it in Windows Credential Manager."
+                : "Optional password or token. MirrorPulse stores it in Windows Credential Manager.";
+
+            HashSet<string> usedLabels = topology.Roots.Select(root => root.Label)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (AdapterRootDefinition definition in _installation.Manifest.RootDefinitions)
+            {
+                string suggested = definition.DirectoryName;
+                for (int suffix = 2; usedLabels.Contains(suggested); suffix++)
+                {
+                    suggested = $"{definition.DirectoryName} {suffix}";
+                }
+
+                usedLabels.Add(suggested);
+                var box = new TextBox { Header = $"MirrorPulse folder · {definition.Label}", Text = suggested };
+                _rootLabels.Add(definition.Key, box);
+                RootLabelsPanel.Children.Add(box);
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.Message);
+            CreateButton.IsEnabled = false;
+        }
     }
 
-    private void NextButton_Click(object sender, RoutedEventArgs e)
+    private async void CreateButton_Click(object sender, RoutedEventArgs e)
     {
-        StepText.Text = "Step 2 of 3: Confirm settings";
-        ConfigurationProgress.Value = 2;
+        if (_installation is null)
+        {
+            return;
+        }
+
+        CreateButton.IsEnabled = false;
+        try
+        {
+            string adapterId = _installation.AdapterId.ToString();
+            string? sourceKey = adapterId switch
+            {
+                "com.mirrorpulse.adapter.local" => "sourceDirectory",
+                "com.mirrorpulse.adapter.smb" => "networkPath",
+                "com.mirrorpulse.adapter.webdav" or "com.mirrorpulse.adapter.ftp" or
+                    "com.mirrorpulse.adapter.sftp" => "endpoint",
+                _ => null,
+            };
+            string source = SourcePathTextBox.Text.Trim();
+            if (sourceKey is not null && source.Length == 0)
+            {
+                throw new InvalidDataException("Enter a source path or endpoint.");
+            }
+
+            if (adapterId == "com.mirrorpulse.adapter.local" && !Directory.Exists(source))
+            {
+                throw new DirectoryNotFoundException("The local source directory does not exist.");
+            }
+
+            var configuration = string.IsNullOrWhiteSpace(AdditionalConfigurationTextBox.Text)
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                : JsonSerializer.Deserialize<Dictionary<string, string>>(
+                    AdditionalConfigurationTextBox.Text) ?? throw new InvalidDataException(
+                        "Additional settings must be a JSON object of string values.");
+            if (configuration.ContainsKey("credentialReference"))
+            {
+                throw new InvalidDataException("Credential references are managed by MirrorPulse.");
+            }
+
+            if (sourceKey is not null)
+            {
+                configuration[sourceKey] = source;
+            }
+            if (UsernameTextBox.Visibility == Visibility.Visible)
+            {
+                string username = UsernameTextBox.Text.Trim();
+                if (username.Length > 0)
+                {
+                    configuration["username"] = username;
+                }
+            }
+
+            if (adapterId == "com.mirrorpulse.adapter.ftp" &&
+                !configuration.ContainsKey("securityMode"))
+            {
+                configuration["securityMode"] = "ExplicitTls";
+            }
+
+            string? secret = SecretBox.Visibility == Visibility.Visible ? SecretBox.Password : null;
+            if (adapterId is "com.mirrorpulse.adapter.ftp" or "com.mirrorpulse.adapter.sftp" &&
+                (!configuration.TryGetValue("username", out string? usernameValue) ||
+                 string.IsNullOrWhiteSpace(usernameValue)))
+            {
+                throw new InvalidDataException("This Adapter requires a username.");
+            }
+            if (adapterId is "com.mirrorpulse.adapter.ftp" or "com.mirrorpulse.adapter.sftp" &&
+                string.IsNullOrEmpty(secret))
+            {
+                throw new InvalidDataException("This Adapter requires a password.");
+            }
+
+            var rootLabels = _rootLabels.ToDictionary(item => item.Key,
+                item => item.Value.Text.Trim(), StringComparer.Ordinal);
+            var request = new MirrorPulseCreateInstanceRequest(
+                _installation.InstallId.ToString(), AdapterLabelTextBox.Text.Trim(),
+                configuration, rootLabels, secret, StartWithMirrorPulseToggle.IsOn);
+            MirrorPulseAppStatusResponse result = await MirrorPulseAppStatusPipe.CreateInstanceAsync(request);
+            if (string.IsNullOrWhiteSpace(result.CreatedInstanceId))
+            {
+                throw new InvalidDataException("The Host did not return the new instance ID.");
+            }
+
+            SecretBox.Password = string.Empty;
+            Frame.Navigate(typeof(InstalledAdaptersPage));
+        }
+        catch (Exception exception)
+        {
+            ShowError(exception.Message);
+            CreateButton.IsEnabled = true;
+        }
+    }
+
+    private void CancelButton_Click(object sender, RoutedEventArgs e) =>
+        Frame.Navigate(typeof(InstalledAdaptersPage));
+
+    private void ShowError(string message)
+    {
+        ConfigurationStatusBar.Severity = InfoBarSeverity.Error;
+        ConfigurationStatusBar.Message = message;
+        ConfigurationStatusBar.IsOpen = true;
     }
 }

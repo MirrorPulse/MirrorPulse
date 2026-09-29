@@ -30,7 +30,17 @@ public sealed record MirrorPulseAppStatusResponse(
     int PendingRemoteConflicts,
     IReadOnlyList<MirrorPulseAppInstanceStatus> Instances,
     IReadOnlyList<MirrorPulseAppNotification> Notifications,
-    string? Error = null);
+    string? Error = null,
+    string? InstalledAdapterId = null,
+    string? CreatedInstanceId = null);
+
+public sealed record MirrorPulseCreateInstanceRequest(
+    string InstallId,
+    string DisplayName,
+    IReadOnlyDictionary<string, string> Configuration,
+    IReadOnlyDictionary<string, string> RootLabels,
+    string? Secret,
+    bool Enabled);
 
 /// <summary>Current-user, bounded request/response channel from WinUI to the owner Host.</summary>
 public sealed class MirrorPulseAppStatusPipe
@@ -41,19 +51,24 @@ public sealed class MirrorPulseAppStatusPipe
     private readonly Func<InstanceId, bool, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _setEnabled;
     private readonly Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _selectVersion;
     private readonly Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _install;
+    private readonly Func<MirrorPulseCreateInstanceRequest, CancellationToken,
+        Task<MirrorPulseAppStatusResponse>>? _createInstance;
 
     public MirrorPulseAppStatusPipe(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
         Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? snooze = null,
         Func<InstanceId, bool, CancellationToken, Task<MirrorPulseAppStatusResponse>>? setEnabled = null,
         Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? selectVersion = null,
-        Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? install = null)
+        Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? install = null,
+        Func<MirrorPulseCreateInstanceRequest, CancellationToken,
+            Task<MirrorPulseAppStatusResponse>>? createInstance = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
         _setEnabled = setEnabled;
         _selectVersion = selectVersion;
         _install = install;
+        _createInstance = createInstance;
     }
 
     public static string CurrentUserPipeName()
@@ -137,6 +152,20 @@ public sealed class MirrorPulseAppStatusPipe
                         response = new(0, 0, [], [], exception.Message);
                     }
                 }
+                else if (request.StartsWith("create:", StringComparison.Ordinal) && _createInstance is not null)
+                {
+                    try
+                    {
+                        MirrorPulseCreateInstanceRequest create = JsonSerializer.Deserialize<MirrorPulseCreateInstanceRequest>(
+                            request["create:".Length..]) ?? throw new InvalidDataException(
+                                "The instance configuration is empty.");
+                        response = await _createInstance(create, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        response = new(0, 0, [], [], exception.Message);
+                    }
+                }
                 else
                 {
                     response = new(0, 0, [], [], "Unknown Host request.");
@@ -197,7 +226,17 @@ public sealed class MirrorPulseAppStatusPipe
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packagePath);
-        return SendRequestAsync($"install:{Path.GetFullPath(packagePath)}", cancellationToken);
+        return SendRequestAsync($"install:{Path.GetFullPath(packagePath)}",
+            TimeSpan.FromMinutes(2), cancellationToken);
+    }
+
+    public static Task<MirrorPulseAppStatusResponse> CreateInstanceAsync(
+        MirrorPulseCreateInstanceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return SendRequestAsync("create:" + JsonSerializer.Serialize(request),
+            TimeSpan.FromSeconds(30), cancellationToken);
     }
 
     private static bool TryParseEnable(string request, out InstanceId instanceId, out bool enabled)
@@ -223,12 +262,18 @@ public sealed class MirrorPulseAppStatusPipe
         return false;
     }
 
+    private static Task<MirrorPulseAppStatusResponse> SendRequestAsync(
+        string request,
+        CancellationToken cancellationToken) =>
+        SendRequestAsync(request, TimeSpan.FromSeconds(5), cancellationToken);
+
     private static async Task<MirrorPulseAppStatusResponse> SendRequestAsync(
         string request,
-        CancellationToken cancellationToken = default)
+        TimeSpan operationTimeout,
+        CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        timeout.CancelAfter(operationTimeout);
         await using NamedPipeClientStream pipe = await NamedPipeWorkerClient.ConnectAsync(
             CurrentUserPipeName(), TimeSpan.FromSeconds(5), timeout.Token).ConfigureAwait(false);
         await WriteFrameAsync(pipe, JsonSerializer.SerializeToUtf8Bytes(request), timeout.Token)

@@ -11,8 +11,10 @@
         <StackPanel Spacing="16" Padding="32">
             <TextBlock Text="Installed Adapters" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock Text="Manage the adapters that provide your MirrorPulse locations." TextWrapping="Wrap" />
+            <Button Content="Install Adapter package" Click="InstallAdapterButton_Click" HorizontalAlignment="Left" />
             <Button Content="Sync status" Click="SyncStatusButton_Click" HorizontalAlignment="Left" />
-            <ListView x:Name="InstalledAdaptersList" SelectionMode="None" />
+            <ListView x:Name="InstalledAdaptersList" SelectionMode="Single" />
+            <Button Content="Create instance from selected installation" Click="CreateInstanceButton_Click" HorizontalAlignment="Left" />
             <ComboBox x:Name="InstanceSelector" Header="Adapter instance" MinWidth="320" HorizontalAlignment="Left" SelectionChanged="InstanceSelector_SelectionChanged" />
             <ComboBox x:Name="VersionSelector" Header="Installed version for this instance" MinWidth="320" HorizontalAlignment="Left" SelectionChanged="VersionSelector_SelectionChanged" />
             <Button x:Name="UseVersionButton" Content="Use selected version" IsEnabled="False" HorizontalAlignment="Left" Click="UseVersionButton_Click" />

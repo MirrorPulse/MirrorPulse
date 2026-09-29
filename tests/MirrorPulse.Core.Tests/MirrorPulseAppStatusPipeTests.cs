@@ -16,6 +16,7 @@ public sealed class MirrorPulseAppStatusPipeTests
         bool? selectedEnabled = null;
         InstallId? selectedInstallation = null;
         string? installedPackage = null;
+        MirrorPulseCreateInstanceRequest? created = null;
         var expected = new MirrorPulseAppStatusResponse(3, 1,
             [new("instance-1", "Personal drive", true, "Healthy", "ABCDEF012345", null, null)],
             [new(conflictId.ToString("D"), "note.txt", DateTimeOffset.UtcNow, false)]);
@@ -39,7 +40,12 @@ public sealed class MirrorPulseAppStatusPipeTests
             (path, _) =>
             {
                 installedPackage = path;
-                return Task.FromResult(expected);
+                return Task.FromResult(expected with { InstalledAdapterId = installId.ToString() });
+            },
+            (request, _) =>
+            {
+                created = request;
+                return Task.FromResult(expected with { CreatedInstanceId = instanceId.ToString() });
             });
         Task serving = server.ServeAsync(shutdown.Token);
         try
@@ -55,7 +61,18 @@ public sealed class MirrorPulseAppStatusPipeTests
             await MirrorPulseAppStatusPipe.SetInstanceEnabledAsync(instanceId, false, shutdown.Token);
             await MirrorPulseAppStatusPipe.SelectInstallationAsync(instanceId, installId, shutdown.Token);
             string packagePath = Path.Combine(Path.GetTempPath(), "MirrorPulse-status-test.mpadapter");
-            await MirrorPulseAppStatusPipe.InstallAsync(packagePath, shutdown.Token);
+            MirrorPulseAppStatusResponse installed = await MirrorPulseAppStatusPipe.InstallAsync(
+                packagePath, shutdown.Token);
+            Assert.AreEqual(installId.ToString(), installed.InstalledAdapterId);
+            var request = new MirrorPulseCreateInstanceRequest(installId.ToString(), "My source",
+                new Dictionary<string, string> { ["sourceDirectory"] = @"C:\source" },
+                new Dictionary<string, string> { ["local"] = "My source" }, null, true);
+            MirrorPulseAppStatusResponse createdResponse = await MirrorPulseAppStatusPipe
+                .CreateInstanceAsync(request, shutdown.Token);
+            Assert.AreEqual(instanceId.ToString(), createdResponse.CreatedInstanceId);
+            Assert.IsNotNull(created);
+            Assert.AreEqual(@"C:\source", created.Configuration["sourceDirectory"]);
+            Assert.AreEqual("My source", created.RootLabels["local"]);
             Assert.IsNotNull(selectedEnabled);
             Assert.IsFalse(selectedEnabled.Value);
             Assert.AreEqual(installId, selectedInstallation);

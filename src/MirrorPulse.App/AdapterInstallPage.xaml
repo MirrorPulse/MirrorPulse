@@ -15,6 +15,7 @@
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button x:Name="BrowseButton" Content="Browse" Click="BrowseButton_Click" />
                 <Button x:Name="InstallButton" Content="Install" Click="InstallButton_Click" />
+                <Button Content="Cancel" Click="CancelButton_Click" />
             </StackPanel>
             <InfoBar x:Name="InstallStatusBar" IsOpen="False" Severity="Informational" />
         </StackPanel>

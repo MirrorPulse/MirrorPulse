@@ -27,6 +27,12 @@ public sealed partial class MainWindow : Window
         RootFrame.Navigate(typeof(MainPage));
     }
 
+    public void NavigateToAdapterInstall(string packagePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packagePath);
+        RootFrame.Navigate(typeof(AdapterInstallPage), packagePath);
+    }
+
     public async Task<bool> ShowConflictNotificationAsync(MirrorPulseAppNotification notification)
     {
         ArgumentNullException.ThrowIfNull(notification);

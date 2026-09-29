@@ -86,6 +86,20 @@ public sealed class MirrorPulseProductCatalogTests
             Assert.IsTrue(Directory.Exists(instance.FileCacheDirectory));
             Assert.IsTrue(Directory.Exists(instance.TransferCacheDirectory));
             Assert.AreEqual("credential-1", instance.CredentialReferences.Single());
+
+            AdapterInstance second = await catalog.CreateInstanceAsync(
+                installation.InstallId, "Second storage", new Dictionary<string, string>(), [],
+                Path.Combine(root, "cache-2", "files"), Path.Combine(root, "cache-2", "transfers"),
+                rootLabels: new Dictionary<string, string>
+                {
+                    ["documents"] = "Documents 2",
+                    ["archive"] = "Archive 2",
+                });
+            MirrorPulseAdapterTopology withSecond = await catalog.ReadAdapterTopologyAsync();
+            Assert.HasCount(2, withSecond.Instances);
+            Assert.HasCount(4, withSecond.Roots);
+            Assert.IsTrue(withSecond.Roots.Where(item => item.InstanceId == second.InstanceId)
+                .Select(item => item.Label).SequenceEqual(["Documents 2", "Archive 2"]));
         }
         finally
         {
