@@ -36,6 +36,7 @@ public sealed class WindowsMirrorPulseShellRootRegistry : IMirrorPulseShellRootR
 public sealed class CfSharpMirrorPulseCloudRootRegistry : IMirrorPulseCloudRootRegistry
 {
     private const int RootNotRegisteredHResult = unchecked((int)0x80070186);
+    private const int RootHasNoCloudFilesMetadataHResult = unchecked((int)0x80070001);
 
     public void EnsureCompatible(MirrorPulseSyncRootDefinition definition)
     {
@@ -45,7 +46,8 @@ public sealed class CfSharpMirrorPulseCloudRootRegistry : IMirrorPulseCloudRootR
         {
             info = CloudSyncRoot.Open(definition.Path).GetInfo();
         }
-        catch (CloudFilesException exception) when (exception.HResult == RootNotRegisteredHResult)
+        catch (CloudFilesException exception) when (exception.HResult is
+            RootNotRegisteredHResult or RootHasNoCloudFilesMetadataHResult)
         {
             return;
         }
