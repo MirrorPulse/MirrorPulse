@@ -67,30 +67,27 @@ public sealed class MirrorPulseCloudHostSessionTests
     }
 
     [TestMethod]
-    public async Task NativeSessionReopensOfficialSqliteDatabase()
+    public async Task PackagedSessionReopensOfficialSqliteDatabase()
     {
-        if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
+        if (Environment.GetEnvironmentVariable("MIRRORPULSE_PACKAGED_SHELL_TEST") != "1")
         {
             return;
         }
 
         var root = Path.Combine(Path.GetTempPath(), "MirrorPulse-native-tests", Guid.NewGuid().ToString("N"));
         var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
-        var cloud = new CfSharpMirrorPulseCloudRootRegistry();
         MirrorPulseSyncRootDefinition? definition = null;
+        MirrorPulseShellRegistrationProfile? profile = null;
+        bool registered = false;
         try
         {
             for (int run = 0; run < 2; run++)
             {
-                await using var session = new MirrorPulseCloudHostSession(
-                    paths,
-                    new MirrorPulseSyncRootRegistrationCoordinator(new RecordingShellRegistry(), cloud),
-                    new CfSharpMirrorPulseCloudRuntimeFactory(),
-                    new MirrorPulseSyncRootOwner(new RecordingOwnerLock()),
-                    "S-1-5-21-123",
-                    "MirrorPulse");
+                await using var session = MirrorPulseCloudHostSession.CreateDefault(paths, "MirrorPulse");
                 definition = session.Definition;
+                profile = session.ShellProfile;
                 await session.StartAsync();
+                registered = true;
                 Assert.AreEqual("MirrorPulse", CloudSyncRoot.Open(paths.SyncRootPath).GetInfo().ProviderName);
                 Assert.IsTrue(File.Exists(paths.CfSharpStateDatabasePath));
                 MirrorPulseCloudStatusSnapshot status = await session.ReadStatusAsync([]);
@@ -99,9 +96,10 @@ public sealed class MirrorPulseCloudHostSessionTests
         }
         finally
         {
-            if (definition is not null)
+            if (registered && definition is not null && profile is not null)
             {
-                cloud.Unregister(definition.Path);
+                MirrorPulseSyncRootRegistrationCoordinator.CreateDefault()
+                    .UnregisterForRemoval(definition, profile);
             }
 
             if (Directory.Exists(root))
