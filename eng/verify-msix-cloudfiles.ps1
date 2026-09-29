@@ -25,7 +25,7 @@ try {
     $password = ConvertTo-SecureString -String $passwordText -AsPlainText -Force
     Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $password | Out-Null
     Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
-    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
+    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\LocalMachine\TrustedPeople" | Out-Null
 
     & dotnet build $project --configuration $Configuration --runtime win-x64 `
         -p:GenerateAppxPackageOnBuild=true `
@@ -70,7 +70,7 @@ finally {
     }
     if ($null -ne $certificate) {
         Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath "Cert:\CurrentUser\TrustedPeople\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "Cert:\LocalMachine\TrustedPeople\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $packageRoot) {
         Remove-Item -LiteralPath $packageRoot -Recurse -Force -ErrorAction SilentlyContinue
