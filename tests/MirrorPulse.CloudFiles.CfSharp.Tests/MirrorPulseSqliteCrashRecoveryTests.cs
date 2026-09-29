@@ -13,6 +13,7 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 public sealed class MirrorPulseSqliteCrashRecoveryTests
 {
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeOfficialStoreRecoversCommittedRepositoriesAndRollsBackInterruptedWrite()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")

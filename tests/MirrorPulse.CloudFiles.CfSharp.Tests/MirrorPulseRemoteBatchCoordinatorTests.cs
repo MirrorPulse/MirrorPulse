@@ -12,6 +12,7 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 public sealed class MirrorPulseRemoteBatchCoordinatorTests
 {
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeBatchCursorSurvivesCrashGapAndRejectsFingerprintReuse()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")

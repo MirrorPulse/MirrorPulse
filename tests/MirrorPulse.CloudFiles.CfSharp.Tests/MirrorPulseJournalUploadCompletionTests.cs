@@ -13,6 +13,7 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 public sealed class MirrorPulseJournalUploadCompletionTests
 {
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeFailureRetryAndSuccessUseCfSharpJournalAcrossRestart()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")

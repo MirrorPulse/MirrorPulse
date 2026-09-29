@@ -13,6 +13,7 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 public sealed class MirrorPulseLocalBatchMapperTests
 {
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeJournalBatchRetainsOperationIdentityWithoutContentPayload()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")

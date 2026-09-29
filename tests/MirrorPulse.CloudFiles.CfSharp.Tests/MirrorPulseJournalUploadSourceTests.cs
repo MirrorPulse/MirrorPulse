@@ -13,6 +13,7 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 public sealed class MirrorPulseJournalUploadSourceTests
 {
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeUnacknowledgedJournalSurvivesRestartAndDisabledInstance()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")

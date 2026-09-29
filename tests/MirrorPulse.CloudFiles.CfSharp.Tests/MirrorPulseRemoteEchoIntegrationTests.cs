@@ -12,6 +12,7 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 public sealed class MirrorPulseRemoteEchoIntegrationTests
 {
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeRemoteMetadataApplicationDoesNotEnterLocalUploadJournal()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")

@@ -18,6 +18,7 @@ public sealed class MirrorPulseExternalConsumerTests
     private static readonly string[] ExpectedRootNames = ["Backup", "Documents", "Photos"];
 
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeOneSyncRootRetainsMultipleInstancesAndDirectoriesAcrossRestart()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
@@ -75,6 +76,7 @@ public sealed class MirrorPulseExternalConsumerTests
     }
 
     [TestMethod]
+    [DoNotParallelize]
     public async Task NativeExternalConsumerEnumeratesAndHydratesAcrossRestart()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
