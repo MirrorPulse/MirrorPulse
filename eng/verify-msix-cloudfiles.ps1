@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [switch]$VerifyShell
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,6 +63,7 @@ try {
         throw "The installed MSIX identity does not expose the windows.cloudFiles extension."
     }
 
+    if ($VerifyShell) {
     $nativeProject = Join-Path $PSScriptRoot "..\tests\MirrorPulse.CloudFiles.CfSharp.Tests\MirrorPulse.CloudFiles.CfSharp.Tests.csproj"
     $probePath = Join-Path $packageRoot "run-packaged-shell-probe.ps1"
     $resultPath = Join-Path $packageRoot "packaged-shell-probe.exitcode"
@@ -88,7 +90,10 @@ Set-Content -LiteralPath $ResultPath -Value $LASTEXITCODE -NoNewline
         throw "The packaged Shell probe failed."
     }
 
-    Write-Output "Verified installed MSIX $($installed.PackageFullName), Cloud Files extension and packaged Shell registration."
+    Write-Output "Verified packaged Shell registration for $($installed.PackageFullName)."
+    }
+
+    Write-Output "Verified installed MSIX $($installed.PackageFullName) Cloud Files extension identity."
 }
 finally {
     if ($null -ne $installed) {
