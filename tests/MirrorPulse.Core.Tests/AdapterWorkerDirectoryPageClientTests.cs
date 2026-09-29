@@ -28,12 +28,12 @@ public sealed class AdapterWorkerDirectoryPageClientTests
         var pages = new AdapterWorkerDirectoryPageClient(channel, instanceId, sessionId);
         byte[] cursor = [1, 2, 3];
         Task<MirrorPulseWorkerDirectoryPage> pending = pages.ReadDirectoryPageAsync(
-            new MirrorPulseWorkerDirectoryPageRequest(instanceId, "Folder", cursor, 32),
+            new MirrorPulseWorkerDirectoryPageRequest(instanceId, string.Empty, cursor, 32),
             timeout.Token).AsTask();
 
         AdapterControlFrame command = await worker.ReadAsync(timeout.Token);
         Assert.AreEqual("List", command.MessageType);
-        Assert.AreEqual("Folder", command.Payload.GetProperty("path").GetString());
+        Assert.AreEqual(string.Empty, command.Payload.GetProperty("path").GetString());
         Assert.AreEqual(Convert.ToBase64String(cursor), command.Payload.GetProperty("cursor").GetString());
         Assert.AreEqual(32, command.Payload.GetProperty("pageSize").GetInt32());
         Task<byte[]> responseBytes = LengthPrefixedFrameReader.ReadAsync(server, timeout.Token).AsTask();

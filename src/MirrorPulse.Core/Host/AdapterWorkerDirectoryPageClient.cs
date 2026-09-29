@@ -36,7 +36,7 @@ public sealed class AdapterWorkerDirectoryPageClient
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.NormalizedPath);
+        ArgumentNullException.ThrowIfNull(request.NormalizedPath);
         if (request.InstanceId != _instanceId || request.PageSize is < 1 or > MaximumPageSize ||
             request.ContinuationCursor.Length > 4096)
         {
