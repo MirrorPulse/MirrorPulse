@@ -59,10 +59,13 @@ The current FTP transfer subset accepts `Stat`, `ReadRange`, and `Upload` contro
 messages. The product Host now routes CfSharp hydration through the active
 instance's `ReadRange` command, validates the response identity, offset, length,
 end marker, and SHA-256 digest, and limits each request to 1 MiB. A disconnected
-instance fails the read. Directory enumeration and local-journal upload dispatch
-still require Host connections. `StatResult` supplies the FTP size and
-modification-time revision when available. `ReadRangeReady` precedes one bounded
-binary chunk. `UploadReady`
+instance fails the read. The Host also continuously consumes CfSharp's durable
+local journal for file create/content-update operations: it requests `Stat`, sends
+a conditional `Upload` with bounded hashed chunks, and acknowledges the CfSharp
+operation only after `UploadComplete`. Directory enumeration and delete/move
+dispatch still require the next protocol slice. `StatResult` supplies the FTP
+size and modification-time revision when available. `ReadRangeReady` precedes
+one bounded binary chunk. `UploadReady`
 precedes binary chunks whose offset, session IDs, stream ID, and SHA-256 digest
 are validated before data is written to the transfer cache. `UploadComplete`
 returns the resulting revision. `OperationError` distinguishes invalid requests,

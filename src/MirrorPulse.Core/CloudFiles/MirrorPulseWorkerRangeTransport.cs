@@ -16,3 +16,26 @@ public interface IMirrorPulseWorkerRangeTransport
         MirrorPulseWorkerReadRangeRequest request,
         CancellationToken cancellationToken);
 }
+
+public sealed record MirrorPulseWorkerUploadRequest(
+    InstanceId InstanceId,
+    string NormalizedPath,
+    string? ExpectedRevision,
+    Stream Content,
+    long Length);
+
+public interface IMirrorPulseWorkerUploadTransport
+{
+    ValueTask<string> UploadAsync(
+        MirrorPulseWorkerUploadRequest request,
+        CancellationToken cancellationToken);
+}
+
+public sealed record MirrorPulseWorkerStatRequest(InstanceId InstanceId, string NormalizedPath);
+
+public interface IMirrorPulseWorkerStatTransport
+{
+    ValueTask<string?> StatAsync(
+        MirrorPulseWorkerStatRequest request,
+        CancellationToken cancellationToken);
+}

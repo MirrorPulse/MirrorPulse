@@ -77,7 +77,9 @@ try
         var rootRouter = new MirrorPulseRootRouter(paths.SyncRootPath, topology.Roots);
         var provider = new MirrorPulseDemandProvider(rootRouter, workers);
         await using var session = MirrorPulseCloudHostSession.CreateDefault(
-            paths, topology.Instances, topology.Roots, provider);
+            paths, topology.Instances, topology.Roots, provider, workers, workers,
+            rootRouter, catalog, instanceId => topology.Instances.Any(instance =>
+                instance.InstanceId == instanceId && instance.Enabled));
         currentSession = session;
         await session.StartAsync(shutdown.Token);
         await workers.StartAsync(topology);

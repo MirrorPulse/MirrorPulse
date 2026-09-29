@@ -110,6 +110,41 @@ public sealed class AdapterWorkerReadRangeClient
         }
     }
 
+    public async ValueTask WriteChunkAsync(
+        BinaryChunkFrame chunk,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chunk);
+        if (chunk.InstanceId != _instanceId || chunk.WorkerSessionId != _sessionId)
+        {
+            throw new InvalidDataException("The binary chunk belongs to another Worker session.");
+        }
+
+        byte[] payload = BinaryChunkCodec.Encode(chunk);
+        byte[] prefix = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(prefix, checked((uint)payload.Length));
+        await _writes.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _pipe.WriteAsync(prefix, cancellationToken).ConfigureAwait(false);
+            await _pipe.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            await _pipe.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writes.Release();
+        }
+    }
+
+    public bool CanHandle(ControlFrameEnvelope frame)
+    {
+        lock (_pendingLock)
+        {
+            return !_closed && _pending is not null && frame.RequestId == _requestId &&
+                frame.InstanceId == _instanceId && frame.WorkerSessionId == _sessionId;
+        }
+    }
+
     /// <summary>Called only by the session's single pipe reader.</summary>
     public async ValueTask HandleResponseAsync(
         ControlFrameEnvelope frame,

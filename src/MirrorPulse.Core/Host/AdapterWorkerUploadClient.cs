@@ -1,0 +1,183 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
+using System.Text.Json;
+using MirrorPulse.Core.CloudFiles;
+using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Transport;
+
+namespace MirrorPulse.Core.Host;
+
+/// <summary>Streams one CfSharp local journal file to an Adapter Worker.</summary>
+[SuppressMessage("Design", "CA1001", Justification =
+    "The owning Supervisor disposes the per-instance operation gate after the pipe closes.")]
+public sealed class AdapterWorkerUploadClient
+{
+    private const int MaximumChunkBytes = 1024 * 1024;
+    private readonly AdapterWorkerReadRangeClient _channel;
+    private readonly InstanceId _instanceId;
+    private readonly WorkerSessionId _sessionId;
+    private readonly SemaphoreSlim _operation = new(1, 1);
+    private readonly object _pendingLock = new();
+    private TaskCompletionSource<string>? _completion;
+    private TaskCompletionSource<Guid>? _ready;
+    private Guid _requestId;
+    private Guid _streamId;
+    private bool _closed;
+
+    public AdapterWorkerUploadClient(
+        AdapterWorkerReadRangeClient channel,
+        InstanceId instanceId,
+        WorkerSessionId sessionId)
+    {
+        _channel = channel ?? throw new ArgumentNullException(nameof(channel));
+        _instanceId = instanceId;
+        _sessionId = sessionId;
+    }
+
+    public async ValueTask<string> UploadAsync(
+        MirrorPulseWorkerUploadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Content);
+        if (request.InstanceId != _instanceId || request.Length < 0 ||
+            !request.Content.CanRead || request.Content.Length - request.Content.Position < request.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "The Worker upload is invalid.");
+        }
+
+        await _operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        Guid requestId = Guid.NewGuid();
+        var ready = new TaskCompletionSource<Guid>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            lock (_pendingLock)
+            {
+                ObjectDisposedException.ThrowIf(_closed, this);
+                _requestId = requestId;
+                _ready = ready;
+                _completion = completion;
+            }
+
+            Guid streamId = Guid.NewGuid();
+            await _channel.WriteControlAsync(new ControlFrameEnvelope(1, "Upload", requestId,
+                _instanceId, _sessionId, false, JsonSerializer.SerializeToElement(new
+                {
+                    path = request.NormalizedPath,
+                    expectedRevision = request.ExpectedRevision,
+                    length = request.Length,
+                    streamId,
+                })), cancellationToken).ConfigureAwait(false);
+            Guid acceptedStream = await ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (acceptedStream != streamId)
+            {
+                throw new InvalidDataException("The Worker accepted a different upload stream.");
+            }
+
+            long offset = 0;
+            while (offset < request.Length)
+            {
+                int count = checked((int)Math.Min(MaximumChunkBytes, request.Length - offset));
+                byte[] buffer = new byte[count];
+                await request.Content.ReadExactlyAsync(buffer, cancellationToken).ConfigureAwait(false);
+                await _channel.WriteChunkAsync(new BinaryChunkFrame(requestId, _instanceId, _sessionId,
+                    streamId, offset, buffer, offset + count == request.Length,
+                    Sha256Digest.Parse(Convert.ToHexString(SHA256.HashData(buffer)))), cancellationToken)
+                    .ConfigureAwait(false);
+                offset += count;
+            }
+
+            if (request.Length == 0)
+            {
+                await _channel.WriteChunkAsync(new BinaryChunkFrame(requestId, _instanceId, _sessionId,
+                    streamId, 0, ReadOnlyMemory<byte>.Empty, true,
+                    Sha256Digest.Parse(Convert.ToHexString(SHA256.HashData(ReadOnlySpan<byte>.Empty)))), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_pendingLock)
+            {
+                if (ReferenceEquals(_completion, completion))
+                {
+                    _completion = null;
+                    _ready = null;
+                    if (!completion.Task.IsCompleted)
+                    {
+                        _closed = true;
+                    }
+                }
+            }
+
+            _operation.Release();
+        }
+    }
+
+    public bool CanHandle(ControlFrameEnvelope frame)
+    {
+        lock (_pendingLock)
+        {
+            return !_closed && _completion is not null && frame.RequestId == _requestId &&
+                frame.InstanceId == _instanceId && frame.WorkerSessionId == _sessionId;
+        }
+    }
+
+    public ValueTask HandleResponseAsync(ControlFrameEnvelope frame)
+    {
+        TaskCompletionSource<Guid>? ready;
+        TaskCompletionSource<string>? completion;
+        lock (_pendingLock)
+        {
+            if (!CanHandle(frame))
+            {
+                throw new InvalidDataException("The Worker response has no matching upload request.");
+            }
+
+            ready = _ready;
+            completion = _completion;
+        }
+
+        if (frame.MessageType == "UploadReady")
+        {
+            Guid streamId = frame.Payload.GetProperty("streamId").GetGuid();
+            _streamId = streamId;
+            ready!.TrySetResult(streamId);
+            return ValueTask.CompletedTask;
+        }
+
+        if (frame.MessageType == "UploadComplete")
+        {
+            string revision = frame.Payload.GetProperty("revision").GetString()
+                ?? throw new InvalidDataException("The Worker upload revision is missing.");
+            completion!.TrySetResult(revision);
+            return ValueTask.CompletedTask;
+        }
+
+        if (frame.MessageType == "OperationError")
+        {
+            string code = frame.Payload.GetProperty("code").GetString() ?? "Unknown";
+            Exception exception = code == "RemoteConflict"
+                ? new IOException("The Adapter Worker rejected the upload because the remote file changed.")
+                : new IOException($"The Adapter Worker upload failed: {code}.");
+            ready!.TrySetException(exception);
+            completion!.TrySetException(exception);
+            return ValueTask.CompletedTask;
+        }
+
+        throw new InvalidDataException("The Worker returned an unexpected upload response.");
+    }
+
+    public void Close()
+    {
+        lock (_pendingLock)
+        {
+            _closed = true;
+            _ready?.TrySetException(new IOException("The Adapter Worker disconnected."));
+            _completion?.TrySetException(new IOException("The Adapter Worker disconnected."));
+        }
+    }
+}

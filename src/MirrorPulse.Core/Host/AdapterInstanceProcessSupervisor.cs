@@ -13,13 +13,18 @@ using MirrorPulse.Core.Workers;
 namespace MirrorPulse.Core.Host;
 
 /// <summary>Owns one isolated process and current-user control pipe per enabled Adapter instance.</summary>
-public sealed class AdapterInstanceProcessSupervisor : IMirrorPulseWorkerRangeTransport, IAsyncDisposable
+public sealed class AdapterInstanceProcessSupervisor :
+    IMirrorPulseWorkerRangeTransport, IMirrorPulseWorkerUploadTransport,
+    IMirrorPulseWorkerStatTransport, IAsyncDisposable
 {
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly ISecureCredentialStore _credentials;
     private readonly Func<InstanceId, JsonElement, CancellationToken, ValueTask>? _remoteBatch;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentDictionary<InstanceId, AdapterWorkerReadRangeClient> _connected = new();
+    private readonly ConcurrentDictionary<InstanceId, AdapterWorkerUploadClient> _uploads = new();
+    private readonly ConcurrentDictionary<InstanceId, AdapterWorkerStatClient> _stats = new();
+    private readonly ConcurrentDictionary<InstanceId, SemaphoreSlim> _instanceOperations = new();
     private Task[] _workers = [];
     private bool _started;
 
@@ -56,9 +61,86 @@ public sealed class AdapterInstanceProcessSupervisor : IMirrorPulseWorkerRangeTr
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return _connected.TryGetValue(request.InstanceId, out AdapterWorkerReadRangeClient? client)
-            ? client.ReadRangeAsync(request, cancellationToken)
-            : ValueTask.FromException<Stream>(new IOException("The Adapter instance is offline."));
+        return ReadRangeCoreAsync(request, cancellationToken);
+    }
+
+    public ValueTask<string> UploadAsync(
+        MirrorPulseWorkerUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return UploadCoreAsync(request, cancellationToken);
+    }
+
+    public ValueTask<string?> StatAsync(
+        MirrorPulseWorkerStatRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return StatCoreAsync(request, cancellationToken);
+    }
+
+    private async ValueTask<Stream> ReadRangeCoreAsync(
+        MirrorPulseWorkerReadRangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_connected.TryGetValue(request.InstanceId, out AdapterWorkerReadRangeClient? client) ||
+            !_instanceOperations.TryGetValue(request.InstanceId, out SemaphoreSlim? operation))
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
+        await operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await client.ReadRangeAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Release();
+        }
+    }
+
+    private async ValueTask<string> UploadCoreAsync(
+        MirrorPulseWorkerUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_uploads.TryGetValue(request.InstanceId, out AdapterWorkerUploadClient? client) ||
+            !_instanceOperations.TryGetValue(request.InstanceId, out SemaphoreSlim? operation))
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
+        await operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await client.UploadAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Release();
+        }
+    }
+
+    private async ValueTask<string?> StatCoreAsync(
+        MirrorPulseWorkerStatRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_stats.TryGetValue(request.InstanceId, out AdapterWorkerStatClient? client) ||
+            !_instanceOperations.TryGetValue(request.InstanceId, out SemaphoreSlim? operation))
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
+        await operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await client.StatAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Release();
+        }
     }
 
     private async Task RunInstanceAsync(
@@ -136,6 +218,9 @@ public sealed class AdapterInstanceProcessSupervisor : IMirrorPulseWorkerRangeTr
         ControlFrameEnvelope hello = await ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
         ValidateFrame(hello, "Hello", instance.InstanceId, sessionId);
         var channel = new AdapterWorkerReadRangeClient(pipe, instance.InstanceId, sessionId);
+        var upload = new AdapterWorkerUploadClient(channel, instance.InstanceId, sessionId);
+        var stat = new AdapterWorkerStatClient(channel, instance.InstanceId, sessionId);
+        var instanceOperations = new SemaphoreSlim(1, 1);
         await channel.WriteControlAsync(new ControlFrameEnvelope(1, "Ready", hello.RequestId,
             instance.InstanceId, sessionId, true, JsonSerializer.SerializeToElement(instance.Configuration)),
             cancellationToken).ConfigureAwait(false);
@@ -144,6 +229,10 @@ public sealed class AdapterInstanceProcessSupervisor : IMirrorPulseWorkerRangeTr
             throw new InvalidOperationException("The Adapter instance already has a connected Worker.");
         }
 
+        _uploads[instance.InstanceId] = upload;
+        _stats[instance.InstanceId] = stat;
+        _instanceOperations[instance.InstanceId] = instanceOperations;
+
         try
         {
             while (true)
@@ -151,7 +240,22 @@ public sealed class AdapterInstanceProcessSupervisor : IMirrorPulseWorkerRangeTr
                 ControlFrameEnvelope frame = await ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
                 if (frame.IsResponse)
                 {
-                    await channel.HandleResponseAsync(frame, cancellationToken).ConfigureAwait(false);
+                    if (channel.CanHandle(frame))
+                    {
+                        await channel.HandleResponseAsync(frame, cancellationToken).ConfigureAwait(false);
+                    }
+                    else if (upload.CanHandle(frame))
+                    {
+                        await upload.HandleResponseAsync(frame).ConfigureAwait(false);
+                    }
+                    else if (stat.CanHandle(frame))
+                    {
+                        await stat.HandleResponseAsync(frame).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        throw new InvalidDataException("The Adapter sent an uncorrelated response.");
+                    }
                     continue;
                 }
 
@@ -201,7 +305,13 @@ public sealed class AdapterInstanceProcessSupervisor : IMirrorPulseWorkerRangeTr
         finally
         {
             _connected.TryRemove(instance.InstanceId, out _);
+            _uploads.TryRemove(instance.InstanceId, out _);
+            _stats.TryRemove(instance.InstanceId, out _);
+            _instanceOperations.TryRemove(instance.InstanceId, out _);
             channel.Close();
+            upload.Close();
+            stat.Close();
+            instanceOperations.Dispose();
         }
     }
 
