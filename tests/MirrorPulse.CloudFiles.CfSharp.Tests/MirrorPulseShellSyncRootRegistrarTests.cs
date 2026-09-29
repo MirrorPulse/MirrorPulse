@@ -29,12 +29,16 @@ public sealed class MirrorPulseShellSyncRootRegistrarTests
     }
 
     [TestMethod]
+    [DoNotParallelize]
     public async Task PackagedRegistrationPublishesCustomThenUnifiedDisplayName()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_PACKAGED_SHELL_TEST") != "1")
         {
             return;
         }
+
+        Assert.AreEqual("0B72358D-6DC9-479D-8C28-F0232B42A0B3",
+            Windows.ApplicationModel.Package.Current.Id.Name);
 
         string rootPath = Path.Combine(Path.GetTempPath(), "MirrorPulse-native-tests",
             Guid.NewGuid().ToString("N"));

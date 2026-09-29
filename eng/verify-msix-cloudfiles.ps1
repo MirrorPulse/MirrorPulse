@@ -62,7 +62,33 @@ try {
         throw "The installed MSIX identity does not expose the windows.cloudFiles extension."
     }
 
-    Write-Output "Verified installed MSIX $($installed.PackageFullName) Cloud Files extension identity."
+    $nativeProject = Join-Path $PSScriptRoot "..\tests\MirrorPulse.CloudFiles.CfSharp.Tests\MirrorPulse.CloudFiles.CfSharp.Tests.csproj"
+    $probePath = Join-Path $packageRoot "run-packaged-shell-probe.ps1"
+    $resultPath = Join-Path $packageRoot "packaged-shell-probe.exitcode"
+    @'
+param([string]$TestProject, [string]$ResultPath)
+$env:MIRRORPULSE_PACKAGED_SHELL_TEST = '1'
+$logPath = "$ResultPath.log"
+& dotnet test $TestProject --configuration Release --no-build --filter 'FullyQualifiedName~PackagedRegistrationPublishesCustomThenUnifiedDisplayName|FullyQualifiedName~PackagedSessionReopensOfficialSqliteDatabase' *> $logPath
+Set-Content -LiteralPath $ResultPath -Value $LASTEXITCODE -NoNewline
+'@ | Set-Content -LiteralPath $probePath -Encoding utf8
+    $probeArgs = "-NoProfile -NonInteractive -File `"$probePath`" -TestProject `"$nativeProject`" -ResultPath `"$resultPath`""
+    Invoke-CommandInDesktopPackage -PackageFamilyName $installed.PackageFamilyName `
+        -AppId "App" -Command "pwsh.exe" -Args $probeArgs -PreventBreakaway
+    $deadline = [DateTime]::UtcNow.AddMinutes(2)
+    while (-not (Test-Path -LiteralPath $resultPath) -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not (Test-Path -LiteralPath $resultPath)) {
+        throw "The packaged Shell probe did not report a result within two minutes."
+    }
+
+    Get-Content -LiteralPath "$resultPath.log"
+    if ((Get-Content -LiteralPath $resultPath -Raw).Trim() -ne "0") {
+        throw "The packaged Shell probe failed."
+    }
+
+    Write-Output "Verified installed MSIX $($installed.PackageFullName), Cloud Files extension and packaged Shell registration."
 }
 finally {
     if ($null -ne $installed) {
