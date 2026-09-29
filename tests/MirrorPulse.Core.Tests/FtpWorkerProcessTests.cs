@@ -8,7 +8,12 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using MirrorPulse.Adapter.Ftp.Worker;
+using MirrorPulse.CloudFiles.CfSharp;
+using MirrorPulse.Core.CloudFiles;
+using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Host;
+using MirrorPulse.Core.State;
 using MirrorPulse.Core.Transport;
 using MirrorPulse.Core.Workers;
 
@@ -17,6 +22,105 @@ namespace MirrorPulse.Core.Tests;
 [TestClass]
 public sealed class FtpWorkerProcessTests
 {
+    [TestMethod]
+    public async Task SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp()
+    {
+        string? aggregateDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_OFFICIAL_AGGREGATE");
+        if (string.IsNullOrWhiteSpace(aggregateDirectory))
+        {
+            return;
+        }
+
+        using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(
+            Path.Combine(aggregateDirectory, "official-adapters.manifest.json")));
+        JsonElement ftp = manifest.RootElement.EnumerateArray().Single(item =>
+            item.GetProperty("adapterId").GetString() == "com.mirrorpulse.adapter.ftp");
+        string packageDirectory = Path.Combine(aggregateDirectory, "com.mirrorpulse.adapter.ftp");
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-signed-ftp", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        await using var fixture = new LoopbackFtpFixture(FtpSecurityMode.Plain);
+        try
+        {
+            await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
+            InstalledAdapter installation = await catalog.InstallSignedAdapterAsync(
+                Path.Combine(packageDirectory, ftp.GetProperty("package").GetString()!),
+                Path.Combine(packageDirectory, ftp.GetProperty("signature").GetString()!),
+                Path.Combine(root, "installed"), "win-x64");
+            AdapterInstance instance = await catalog.CreateInstanceAsync(installation.InstallId,
+                "FTP fixture", new Dictionary<string, string>
+                {
+                    ["endpoint"] = $"ftp://127.0.0.1:{fixture.Port}/",
+                    ["username"] = "user",
+                    ["securityMode"] = "Plain",
+                    ["credentialReference"] = "ftp-password",
+                }, ["ftp-password"], Path.Combine(root, "cache", "files"),
+                Path.Combine(root, "cache", "transfers"));
+            MirrorPulseAdapterTopology topology = await catalog.ReadAdapterTopologyAsync();
+            await using var supervisor = new AdapterInstanceProcessSupervisor(catalog,
+                new FixedCredentialStore("ftp-password", "correct-secret"));
+            await supervisor.StartAsync(topology);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            while (true)
+            {
+                MirrorPulseInstanceRuntimeState? state = await catalog.ReadInstanceRuntimeStateAsync(
+                    instance.InstanceId, timeout.Token);
+                if (state?.Phase == "Connected")
+                {
+                    break;
+                }
+
+                if (state?.Phase is "Worker failed" or "Worker error")
+                {
+                    Assert.Fail($"The signed FTP Worker failed: {state.LastErrorCode}.");
+                }
+
+                await Task.Delay(50, timeout.Token);
+            }
+
+            string revision = (await supervisor.StatAsync(new MirrorPulseWorkerStatRequest(
+                instance.InstanceId, "report.bin"), timeout.Token))!;
+            Assert.IsFalse(string.IsNullOrWhiteSpace(revision));
+            var router = new MirrorPulseRootRouter(paths.SyncRootPath, topology.Roots);
+            var provider = new MirrorPulseDemandProvider(router, supervisor,
+                new MirrorPulseAdapterDirectoryPageSource(supervisor));
+            string filePath = Path.Combine(paths.SyncRootPath, topology.Roots.Single().DirectoryName,
+                "report.bin");
+            byte[] identity = MirrorPulsePlaceholderIdentity.Create(instance.InstanceId,
+                "report.bin", revision).Encode();
+            await using Stream read = await provider.OpenReadAsync(filePath, identity,
+                8, 2, 3, timeout.Token);
+            read.Seek(2, SeekOrigin.Begin);
+            byte[] range = new byte[3];
+            await read.ReadExactlyAsync(range, timeout.Token);
+            CollectionAssert.AreEqual(new byte[] { 5, 7, 11 }, range);
+
+            byte[] replacement = [1, 4, 9, 16];
+            await using (var content = new MemoryStream(replacement, writable: false))
+            {
+                string updated = await supervisor.UploadAsync(new MirrorPulseWorkerUploadRequest(
+                    instance.InstanceId, "report.bin", revision, content, replacement.Length), timeout.Token);
+                Assert.IsFalse(string.IsNullOrWhiteSpace(updated));
+            }
+
+            CollectionAssert.AreEqual(replacement, fixture.ReadStoredFile("/report.bin"));
+            await using (var stale = new MemoryStream([8, 8, 8], writable: false))
+            {
+                await Assert.ThrowsExactlyAsync<IOException>(async () => await supervisor.UploadAsync(
+                    new MirrorPulseWorkerUploadRequest(instance.InstanceId, "report.bin", revision,
+                        stale, 3), timeout.Token));
+            }
+
+            CollectionAssert.AreEqual(replacement, fixture.ReadStoredFile("/report.bin"));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     [TestMethod]
     public async Task IndependentWorkerAuthenticatesPlainExplicitAndImplicitFtpOverCurrentUserPipe()
     {
