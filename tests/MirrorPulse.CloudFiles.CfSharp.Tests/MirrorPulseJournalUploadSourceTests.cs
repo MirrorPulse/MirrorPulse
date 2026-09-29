@@ -34,7 +34,7 @@ public sealed class MirrorPulseJournalUploadSourceTests
         {
             cloud.Register(definition);
             Guid originalId = Guid.Empty;
-            for (int run = 0; run < 2; run++)
+            for (int run = 0; run < 3; run++)
             {
                 await using var fileSystem = new MirrorPulseCloudFileSystemBuilder(paths)
                     .WithContentProvider(MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath))
@@ -54,7 +54,7 @@ public sealed class MirrorPulseJournalUploadSourceTests
                 }
 
                 var source = new MirrorPulseJournalUploadSource(
-                    feed, router, catalog, _ => run == 0);
+                    feed, router, catalog, _ => run != 1);
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 MirrorPulseJournalUploadBatch batch = await source.ReadPendingAsync(timeout.Token);
                 CloudLocalChangeBatch raw = await feed.ReadBatchAsync(timeout.Token);
@@ -66,13 +66,19 @@ public sealed class MirrorPulseJournalUploadSourceTests
                     originalId = batch.ReadyCommands[0].OperationId;
                     Assert.AreNotEqual(Guid.Empty, originalId);
                 }
-                else
+                else if (run == 1)
                 {
                     Assert.IsEmpty(batch.ReadyCommands);
                     Assert.IsGreaterThan(0, batch.DeferredCount);
                     MirrorPulseWorkerRequestRecord? recorded = await catalog.ReadWorkerRequestAsync(originalId);
                     Assert.IsNotNull(recorded);
                     Assert.AreEqual(instance, recorded.InstanceId);
+                }
+                else
+                {
+                    Assert.IsNotEmpty(batch.ReadyCommands);
+                    Assert.AreEqual(originalId, batch.ReadyCommands[0].OperationId);
+                    Assert.AreEqual(0, batch.DeferredCount);
                 }
             }
         }
