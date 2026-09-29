@@ -39,3 +39,34 @@ public interface IMirrorPulseWorkerStatTransport
         MirrorPulseWorkerStatRequest request,
         CancellationToken cancellationToken);
 }
+
+/// <summary>Carries one bounded remote-directory page request to an Adapter Worker.</summary>
+public sealed record MirrorPulseWorkerDirectoryPageRequest(
+    InstanceId InstanceId,
+    string NormalizedPath,
+    ReadOnlyMemory<byte> ContinuationCursor,
+    int PageSize);
+
+/// <summary>Represents one remote entry returned by an Adapter Worker directory page.</summary>
+public sealed record MirrorPulseWorkerDirectoryEntry(
+    string RemoteId,
+    string RemoteRevision,
+    string ItemKind,
+    string RelativePath,
+    long? Length,
+    DateTimeOffset? CreationTime,
+    DateTimeOffset? LastWriteTime,
+    bool IsDeleted);
+
+/// <summary>One opaque-cursor directory page returned by an Adapter Worker.</summary>
+public sealed record MirrorPulseWorkerDirectoryPage(
+    IReadOnlyList<MirrorPulseWorkerDirectoryEntry> Entries,
+    ReadOnlyMemory<byte> ContinuationCursor,
+    bool IsComplete);
+
+public interface IMirrorPulseWorkerDirectoryPageSource
+{
+    ValueTask<MirrorPulseWorkerDirectoryPage> ReadDirectoryPageAsync(
+        MirrorPulseWorkerDirectoryPageRequest request,
+        CancellationToken cancellationToken);
+}

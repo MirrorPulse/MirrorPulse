@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using FluentFTP;
 using MirrorPulse.Adapter.Sdk;
 
@@ -124,7 +126,77 @@ public sealed class FtpWorkerTransfer(AsyncFtpClient client, FtpWorkerConfigurat
         string root = configuration.Endpoint.AbsolutePath.TrimEnd('/');
         return root + "/" + string.Join('/', parts);
     }
+
+    public string ResolveDirectoryPath(string relativePath) =>
+        string.IsNullOrEmpty(relativePath)
+            ? configuration.Endpoint.AbsolutePath.TrimEnd('/')
+            : ResolvePath(relativePath);
+
+    public async Task<FtpWorkerDirectoryPage> ReadDirectoryPageAsync(
+        string relativePath,
+        ReadOnlyMemory<byte> cursor,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        if (pageSize is < 1 or > 512)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        int offset = ParseCursor(cursor);
+        FtpListItem[] items = await client.GetListing(ResolveDirectoryPath(relativePath),
+            FtpListOption.Size | FtpListOption.Modify, cancellationToken).ConfigureAwait(false);
+        FtpListItem[] children = items
+            .Where(item => item.Type is FtpObjectType.File or FtpObjectType.Directory)
+            .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Name, StringComparer.Ordinal)
+            .ToArray();
+        if (offset > children.Length)
+        {
+            throw new InvalidDataException("The FTP directory cursor is past the directory.");
+        }
+
+        var entries = new List<FtpWorkerDirectoryEntry>(Math.Min(pageSize, children.Length - offset));
+        string parent = relativePath.Trim('/');
+        foreach (FtpListItem item in children.Skip(offset).Take(pageSize))
+        {
+            string childPath = parent.Length == 0 ? item.Name : parent + "/" + item.Name;
+            DateTimeOffset? modified = item.Modified == DateTime.MinValue
+                ? null : new DateTimeOffset(item.Modified.ToUniversalTime(), TimeSpan.Zero);
+            string revision = $"{item.Size}:{modified?.Ticks.ToString(CultureInfo.InvariantCulture) ?? "unknown"}";
+            entries.Add(new(item.FullName, revision,
+                item.Type == FtpObjectType.Directory ? "Directory" : "File", childPath,
+                item.Type == FtpObjectType.Directory ? null : item.Size, modified, modified, false));
+        }
+
+        int next = offset + entries.Count;
+        bool complete = next >= children.Length;
+        return new(entries, complete ? [] : Encoding.UTF8.GetBytes(next.ToString(CultureInfo.InvariantCulture)), complete);
+    }
+
+    private static int ParseCursor(ReadOnlyMemory<byte> cursor)
+    {
+        if (cursor.IsEmpty) return 0;
+        return int.TryParse(Encoding.UTF8.GetString(cursor.Span), NumberStyles.None,
+            CultureInfo.InvariantCulture, out int offset) && offset >= 0
+            ? offset : throw new InvalidDataException("The FTP directory cursor is invalid.");
+    }
 }
+
+public sealed record FtpWorkerDirectoryPage(
+    IReadOnlyList<FtpWorkerDirectoryEntry> Entries,
+    ReadOnlyMemory<byte> ContinuationCursor,
+    bool IsComplete);
+
+public sealed record FtpWorkerDirectoryEntry(
+    string RemoteId,
+    string RemoteRevision,
+    string ItemKind,
+    string RelativePath,
+    long? Length,
+    DateTimeOffset? CreationTime,
+    DateTimeOffset? LastWriteTime,
+    bool IsDeleted);
 
 public sealed class FtpRevisionConflictException : IOException
 {
@@ -176,6 +248,9 @@ public sealed class FtpWorkerTransferProtocol(
                     }
                 case "Upload":
                     await HandleUploadAsync(command, cancellationToken).ConfigureAwait(false);
+                    break;
+                case "List":
+                    await HandleListAsync(command, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
                     throw new InvalidDataException("The FTP Worker received an unsupported command.");
@@ -263,5 +338,23 @@ public sealed class FtpWorkerTransferProtocol(
 
         await channel.SendAsync("UploadComplete", command.RequestId, true,
             new { revision }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleListAsync(AdapterControlFrame command, CancellationToken cancellationToken)
+    {
+        string path = command.Payload.GetProperty("path").GetString() ?? string.Empty;
+        int pageSize = command.Payload.GetProperty("pageSize").GetInt32();
+        byte[] cursor = command.Payload.TryGetProperty("cursor", out var cursorElement) &&
+            cursorElement.ValueKind is not System.Text.Json.JsonValueKind.Null &&
+            !string.IsNullOrEmpty(cursorElement.GetString())
+            ? Convert.FromBase64String(cursorElement.GetString()!) : [];
+        FtpWorkerDirectoryPage page = await _transfer.ReadDirectoryPageAsync(path, cursor,
+            pageSize, cancellationToken).ConfigureAwait(false);
+        await channel.SendAsync("DirectoryPage", command.RequestId, true, new
+        {
+            entries = page.Entries,
+            cursor = page.IsComplete ? null : Convert.ToBase64String(page.ContinuationCursor.Span),
+            isComplete = page.IsComplete,
+        }, cancellationToken).ConfigureAwait(false);
     }
 }

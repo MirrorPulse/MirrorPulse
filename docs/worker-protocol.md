@@ -55,17 +55,23 @@ returns `CredentialResponse` over the pipe. Neither the secret nor the CfSharp
 database path is placed on the process command line. The Worker reports
 `Connected` or a stable `Error` code and accepts `Stop`/`Stopped`.
 
-The current FTP transfer subset accepts `Stat`, `ReadRange`, and `Upload` control
-messages. The product Host now routes CfSharp hydration through the active
-instance's `ReadRange` command, validates the response identity, offset, length,
-end marker, and SHA-256 digest, and limits each request to 1 MiB. A disconnected
-instance fails the read. The Host also continuously consumes CfSharp's durable
-local journal for file create/content-update operations: it requests `Stat`, sends
-a conditional `Upload` with bounded hashed chunks, and acknowledges the CfSharp
-operation only after `UploadComplete`. Directory enumeration and delete/move
-dispatch still require the next protocol slice. `StatResult` supplies the FTP
-size and modification-time revision when available. `ReadRangeReady` precedes
-one bounded binary chunk. `UploadReady`
+The current transfer subset accepts `Stat`, `List`, `ReadRange`, and `Upload`
+control messages. The product Host now routes CfSharp hydration through the
+active instance's `ReadRange` command, validates the response identity, offset,
+length, end marker, and SHA-256 digest, and limits each request to 1 MiB. A
+disconnected instance fails the read. `List` carries a relative directory path,
+an opaque base64 continuation cursor, and a bounded page size; `DirectoryPage`
+returns stable remote IDs, revisions, item kinds, paths, optional lengths and
+timestamps, and the next cursor. The CfSharp anti-corruption layer maps these
+pages to its native remote directory catalog contract.
+
+The Host also continuously consumes CfSharp's durable local journal for file
+create/content-update operations: it requests `Stat`, sends a conditional
+`Upload` with bounded hashed chunks, and acknowledges the CfSharp operation
+only after `UploadComplete`. Delete/move dispatch still requires the next
+protocol slice. `StatResult` supplies the FTP size and modification-time
+revision when available. `ReadRangeReady` precedes one bounded binary chunk.
+`UploadReady`
 precedes binary chunks whose offset, session IDs, stream ID, and SHA-256 digest
 are validated before data is written to the transfer cache. `UploadComplete`
 returns the resulting revision. `OperationError` distinguishes invalid requests,

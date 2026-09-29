@@ -75,7 +75,8 @@ try
         await using var workers = new AdapterInstanceProcessSupervisor(catalog,
             new WindowsCredentialManagerStore(), ApplyRemoteBatchAsync);
         var rootRouter = new MirrorPulseRootRouter(paths.SyncRootPath, topology.Roots);
-        var provider = new MirrorPulseDemandProvider(rootRouter, workers);
+        var provider = new MirrorPulseDemandProvider(rootRouter, workers,
+            new MirrorPulseAdapterDirectoryPageSource(workers));
         await using var session = MirrorPulseCloudHostSession.CreateDefault(
             paths, topology.Instances, topology.Roots, provider, workers, workers,
             rootRouter, catalog, instanceId => topology.Instances.Any(instance =>

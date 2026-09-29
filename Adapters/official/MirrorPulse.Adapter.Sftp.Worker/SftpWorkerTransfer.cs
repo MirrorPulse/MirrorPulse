@@ -1,6 +1,9 @@
+using System.Globalization;
+using System.Text;
 using MirrorPulse.Adapter.Sdk;
 using Renci.SshNet;
 using Renci.SshNet.Common;
+using Renci.SshNet.Sftp;
 
 namespace MirrorPulse.Adapter.Sftp.Worker;
 
@@ -118,7 +121,72 @@ public sealed class SftpWorkerTransfer(SftpClient client, SftpWorkerConfiguratio
         string root = configuration.Endpoint.AbsolutePath.TrimEnd('/');
         return root + "/" + string.Join('/', parts);
     }
+
+    public async Task<SftpWorkerDirectoryPage> ReadDirectoryPageAsync(
+        string relativePath,
+        ReadOnlyMemory<byte> cursor,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        if (pageSize is < 1 or > 512)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        int offset = ParseCursor(cursor);
+        string directory = string.IsNullOrEmpty(relativePath)
+            ? configuration.Endpoint.AbsolutePath.TrimEnd('/')
+            : ResolvePath(relativePath);
+        ISftpFile[] children = client.ListDirectory(directory)
+            .Where(item => item.Name is not "." and not "..")
+            .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Name, StringComparer.Ordinal)
+            .ToArray();
+        if (offset > children.Length)
+        {
+            throw new InvalidDataException("The SFTP directory cursor is past the directory.");
+        }
+
+        var entries = new List<SftpWorkerDirectoryEntry>(Math.Min(pageSize, children.Length - offset));
+        string parent = relativePath.Trim('/');
+        foreach (ISftpFile item in children.Skip(offset).Take(pageSize))
+        {
+            string childPath = parent.Length == 0 ? item.Name : parent + "/" + item.Name;
+            DateTimeOffset modified = new(item.LastWriteTimeUtc, TimeSpan.Zero);
+            string revision = $"{item.Length}:{modified.Ticks.ToString(CultureInfo.InvariantCulture)}";
+            entries.Add(new(item.FullName, revision, item.IsDirectory ? "Directory" : "File", childPath,
+                item.IsDirectory ? null : item.Length, new DateTimeOffset(item.LastWriteTimeUtc, TimeSpan.Zero),
+                modified, false));
+        }
+
+        int next = offset + entries.Count;
+        bool complete = next >= children.Length;
+        return new(entries, complete ? [] : Encoding.UTF8.GetBytes(next.ToString(CultureInfo.InvariantCulture)), complete);
+    }
+
+    private static int ParseCursor(ReadOnlyMemory<byte> cursor)
+    {
+        if (cursor.IsEmpty) return 0;
+        return int.TryParse(Encoding.UTF8.GetString(cursor.Span), NumberStyles.None,
+            CultureInfo.InvariantCulture, out int offset) && offset >= 0
+            ? offset : throw new InvalidDataException("The SFTP directory cursor is invalid.");
+    }
 }
+
+public sealed record SftpWorkerDirectoryPage(
+    IReadOnlyList<SftpWorkerDirectoryEntry> Entries,
+    ReadOnlyMemory<byte> ContinuationCursor,
+    bool IsComplete);
+
+public sealed record SftpWorkerDirectoryEntry(
+    string RemoteId,
+    string RemoteRevision,
+    string ItemKind,
+    string RelativePath,
+    long? Length,
+    DateTimeOffset? CreationTime,
+    DateTimeOffset? LastWriteTime,
+    bool IsDeleted);
 
 public sealed class SftpRevisionConflictException : IOException
 {
@@ -167,6 +235,9 @@ public sealed class SftpWorkerTransferProtocol(
                     }
                 case "Upload":
                     await HandleUploadAsync(command, cancellationToken).ConfigureAwait(false);
+                    break;
+                case "List":
+                    await HandleListAsync(command, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
                     throw new InvalidDataException("The SFTP Worker received an unsupported command.");
@@ -254,5 +325,23 @@ public sealed class SftpWorkerTransferProtocol(
 
         await channel.SendAsync("UploadComplete", command.RequestId, true,
             new { revision }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleListAsync(AdapterControlFrame command, CancellationToken cancellationToken)
+    {
+        string path = command.Payload.GetProperty("path").GetString() ?? string.Empty;
+        int pageSize = command.Payload.GetProperty("pageSize").GetInt32();
+        byte[] cursor = command.Payload.TryGetProperty("cursor", out var cursorElement) &&
+            cursorElement.ValueKind is not System.Text.Json.JsonValueKind.Null &&
+            !string.IsNullOrEmpty(cursorElement.GetString())
+            ? Convert.FromBase64String(cursorElement.GetString()!) : [];
+        SftpWorkerDirectoryPage page = await _transfer.ReadDirectoryPageAsync(path, cursor,
+            pageSize, cancellationToken).ConfigureAwait(false);
+        await channel.SendAsync("DirectoryPage", command.RequestId, true, new
+        {
+            entries = page.Entries,
+            cursor = page.IsComplete ? null : Convert.ToBase64String(page.ContinuationCursor.Span),
+            isComplete = page.IsComplete,
+        }, cancellationToken).ConfigureAwait(false);
     }
 }

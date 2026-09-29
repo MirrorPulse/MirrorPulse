@@ -15,7 +15,7 @@ namespace MirrorPulse.Core.Host;
 /// <summary>Owns one isolated process and current-user control pipe per enabled Adapter instance.</summary>
 public sealed class AdapterInstanceProcessSupervisor :
     IMirrorPulseWorkerRangeTransport, IMirrorPulseWorkerUploadTransport,
-    IMirrorPulseWorkerStatTransport, IAsyncDisposable
+    IMirrorPulseWorkerStatTransport, IMirrorPulseWorkerDirectoryPageSource, IAsyncDisposable
 {
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly ISecureCredentialStore _credentials;
@@ -24,6 +24,7 @@ public sealed class AdapterInstanceProcessSupervisor :
     private readonly ConcurrentDictionary<InstanceId, AdapterWorkerReadRangeClient> _connected = new();
     private readonly ConcurrentDictionary<InstanceId, AdapterWorkerUploadClient> _uploads = new();
     private readonly ConcurrentDictionary<InstanceId, AdapterWorkerStatClient> _stats = new();
+    private readonly ConcurrentDictionary<InstanceId, AdapterWorkerDirectoryPageClient> _directories = new();
     private readonly ConcurrentDictionary<InstanceId, SemaphoreSlim> _instanceOperations = new();
     private Task[] _workers = [];
     private bool _started;
@@ -78,6 +79,14 @@ public sealed class AdapterInstanceProcessSupervisor :
     {
         ArgumentNullException.ThrowIfNull(request);
         return StatCoreAsync(request, cancellationToken);
+    }
+
+    public ValueTask<MirrorPulseWorkerDirectoryPage> ReadDirectoryPageAsync(
+        MirrorPulseWorkerDirectoryPageRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return ReadDirectoryPageCoreAsync(request, cancellationToken);
     }
 
     private async ValueTask<Stream> ReadRangeCoreAsync(
@@ -136,6 +145,27 @@ public sealed class AdapterInstanceProcessSupervisor :
         try
         {
             return await client.StatAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Release();
+        }
+    }
+
+    private async ValueTask<MirrorPulseWorkerDirectoryPage> ReadDirectoryPageCoreAsync(
+        MirrorPulseWorkerDirectoryPageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_directories.TryGetValue(request.InstanceId, out AdapterWorkerDirectoryPageClient? client) ||
+            !_instanceOperations.TryGetValue(request.InstanceId, out SemaphoreSlim? operation))
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
+        await operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await client.ReadDirectoryPageAsync(request, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -220,6 +250,7 @@ public sealed class AdapterInstanceProcessSupervisor :
         var channel = new AdapterWorkerReadRangeClient(pipe, instance.InstanceId, sessionId);
         var upload = new AdapterWorkerUploadClient(channel, instance.InstanceId, sessionId);
         var stat = new AdapterWorkerStatClient(channel, instance.InstanceId, sessionId);
+        var directory = new AdapterWorkerDirectoryPageClient(channel, instance.InstanceId, sessionId);
         var instanceOperations = new SemaphoreSlim(1, 1);
         await channel.WriteControlAsync(new ControlFrameEnvelope(1, "Ready", hello.RequestId,
             instance.InstanceId, sessionId, true, JsonSerializer.SerializeToElement(instance.Configuration)),
@@ -231,6 +262,7 @@ public sealed class AdapterInstanceProcessSupervisor :
 
         _uploads[instance.InstanceId] = upload;
         _stats[instance.InstanceId] = stat;
+        _directories[instance.InstanceId] = directory;
         _instanceOperations[instance.InstanceId] = instanceOperations;
 
         try
@@ -251,6 +283,10 @@ public sealed class AdapterInstanceProcessSupervisor :
                     else if (stat.CanHandle(frame))
                     {
                         await stat.HandleResponseAsync(frame).ConfigureAwait(false);
+                    }
+                    else if (directory.CanHandle(frame))
+                    {
+                        await directory.HandleResponseAsync(frame).ConfigureAwait(false);
                     }
                     else
                     {
@@ -307,10 +343,12 @@ public sealed class AdapterInstanceProcessSupervisor :
             _connected.TryRemove(instance.InstanceId, out _);
             _uploads.TryRemove(instance.InstanceId, out _);
             _stats.TryRemove(instance.InstanceId, out _);
+            _directories.TryRemove(instance.InstanceId, out _);
             _instanceOperations.TryRemove(instance.InstanceId, out _);
             channel.Close();
             upload.Close();
             stat.Close();
+            directory.Close();
             instanceOperations.Dispose();
         }
     }
