@@ -110,7 +110,7 @@ jobs:
       - name: Install every signed official Adapter with the production verifier
         env:
           MIRRORPULSE_OFFICIAL_AGGREGATE: ${{ github.workspace }}/artifacts/official-adapters
-        run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~OfficialAdapterAggregateProcessTests
+        run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~OfficialAdapterAggregateProcessTests|FullyQualifiedName~SignedWebDavWorkerProcessTests"
 
       - name: Upload official Adapter aggregate
         uses: actions/upload-artifact@v4
