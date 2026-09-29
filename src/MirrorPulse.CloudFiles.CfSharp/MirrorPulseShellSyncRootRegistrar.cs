@@ -101,7 +101,16 @@ public static class MirrorPulseShellSyncRootRegistrar
             ShowSiblingsAsGroup = false,
             Context = CryptographicBuffer.ConvertStringToBinary(path, BinaryStringEncoding.Utf8),
         };
-        StorageProviderSyncRootManager.Register(registration);
+        try
+        {
+            StorageProviderSyncRootManager.Register(registration);
+        }
+        catch (COMException exception)
+        {
+            throw new InvalidOperationException(
+                $"Shell sync-root registration failed with HRESULT 0x{exception.HResult:X8}.",
+                exception);
+        }
         return alreadyRegistered;
     }
 
