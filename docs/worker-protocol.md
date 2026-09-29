@@ -78,6 +78,13 @@ returns the resulting revision. `OperationError` distinguishes invalid requests,
 remote conflicts, unavailable server capabilities, and retryable transfer
 failures.
 
+The Local, WebDAV, SMB, FTP, and SFTP official Workers publish this directory
+page contract in their signed packages. Local and SMB enumerate the confined
+filesystem root, WebDAV uses a bounded `PROPFIND` depth-one response, and FTP
+and SFTP map their native directory listings. Every implementation sorts pages
+deterministically and encodes its page offset as an opaque cursor; the Host
+never interprets a cursor returned by a different Worker instance.
+
 FTP uploads stage a temporary remote file, compare the destination's revision
 before transfer and again before rename, then rename the staged file. Standard
 FTP offers no atomic compare-and-swap operation. This is an optimistic check,
