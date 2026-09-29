@@ -442,7 +442,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                     transfer_bytes = COALESCE(excluded.transfer_bytes, instance_runtime.transfer_bytes),
                     transfer_total = COALESCE(excluded.transfer_total, instance_runtime.transfer_total),
                     transfer_updated_utc = COALESCE(excluded.transfer_updated_utc, instance_runtime.transfer_updated_utc);
-                """;
+            """;
             command.Parameters.AddWithValue("$instance", state.InstanceId.ToString());
             command.Parameters.AddWithValue("$phase", state.Phase);
             command.Parameters.AddWithValue("$rescan", state.RequiresFullRescan ? 1 : 0);
@@ -481,7 +481,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                 SELECT phase, requires_full_rescan, last_successful_sync_utc, last_error_code,
                        transfer_operation, transfer_bytes, transfer_total, transfer_updated_utc
                 FROM instance_runtime WHERE instance_id = $instance;
-                """;
+            """;
             query.Parameters.AddWithValue("$instance", instanceId.ToString());
             await using SqliteDataReader reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
