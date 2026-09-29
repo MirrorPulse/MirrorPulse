@@ -3,11 +3,26 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Packaging;
+using MirrorPulse.Core.Security;
 
 namespace MirrorPulse.Core.State;
 
 public sealed partial class MirrorPulseProductCatalog
 {
+    /// <summary>Verifies and installs an official Adapter with MP's built-in trust anchor.</summary>
+    public async Task<InstalledAdapter> InstallSignedAdapterAsync(
+        string packagePath,
+        string signaturePath,
+        string installationRoot,
+        string runtimeIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        using RSA trustedKey = MirrorPulseOfficialAdapterTrust.CreatePublicKey();
+        return await InstallSignedAdapterAsync(packagePath, signaturePath, installationRoot,
+            runtimeIdentifier, trustedKey, MirrorPulseOfficialAdapterTrust.Signer,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Verifies a signed package, then atomically records its installed payload in the Host catalog.</summary>
     public async Task<InstalledAdapter> InstallSignedAdapterAsync(
         string packagePath,
