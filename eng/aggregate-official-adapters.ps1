@@ -41,6 +41,14 @@ if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+$trustSourcePath = Join-Path $PSScriptRoot '..' 'src' 'MirrorPulse.Core' 'Security' 'MirrorPulseOfficialAdapterTrust.cs'
+$trustSource = Get-Content -LiteralPath $trustSourcePath -Raw
+$publicKeyMatch = [regex]::Match($trustSource, '(?s)-----BEGIN PUBLIC KEY-----.*?-----END PUBLIC KEY-----')
+if (-not $publicKeyMatch.Success) {
+    throw 'The built-in official Adapter trust anchor is missing its public key.'
+}
+$trustedKey = [Security.Cryptography.RSA]::Create()
+$trustedKey.ImportFromPem($publicKeyMatch.Value)
 $records = [System.Collections.Generic.List[object]]::new()
 foreach ($entry in @($lock.adapters)) {
     $adapterId = Get-RequiredString $entry 'adapterId' 'Aggregation entry'
@@ -91,6 +99,17 @@ foreach ($entry in @($lock.adapters)) {
     if ($signature.algorithm -ne 'RSA-SHA256' -or $signature.signer -ne 'MirrorPulse Team' -or
         [string]::IsNullOrWhiteSpace([string]$signature.signature) -or @($signature.files).Count -eq 0) {
         throw "The detached signature envelope for '$adapterId' is invalid."
+    }
+    $canonicalFiles = @($signature.files | Sort-Object path | ForEach-Object {
+        [ordered]@{ path = $_.path; length = $_.length; sha256 = $_.sha256 }
+    }) | ConvertTo-Json -Compress -Depth 5
+    $signatureBytes = [Convert]::FromBase64String($signature.signature)
+    if (-not $trustedKey.VerifyData(
+            [Text.Encoding]::UTF8.GetBytes($canonicalFiles),
+            $signatureBytes,
+            [Security.Cryptography.HashAlgorithmName]::SHA256,
+            [Security.Cryptography.RSASignaturePadding]::Pkcs1)) {
+        throw "The detached signature for '$adapterId' is not trusted by MirrorPulse."
     }
 
     $archive = [IO.Compression.ZipFile]::OpenRead($packagePath)
