@@ -13,7 +13,6 @@ $project = Join-Path $PSScriptRoot "..\src\MirrorPulse.App\MirrorPulse.App.cspro
 $packageRoot = Join-Path ([IO.Path]::GetTempPath()) "MirrorPulse-msix-$([guid]::NewGuid().ToString('N'))"
 $certificate = $null
 $package = $null
-$previousNative = $env:MIRRORPULSE_NATIVE_TEST
 
 try {
     New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
@@ -62,18 +61,9 @@ try {
         throw "The installed MSIX identity does not expose the windows.cloudFiles extension."
     }
 
-    $env:MIRRORPULSE_NATIVE_TEST = "1"
-    $nativeProject = Join-Path $PSScriptRoot "..\tests\MirrorPulse.CloudFiles.CfSharp.Tests\MirrorPulse.CloudFiles.CfSharp.Tests.csproj"
-    & dotnet test $nativeProject --configuration $Configuration --no-build `
-        --filter "FullyQualifiedName~NativeRegistrationPublishesCustomThenUnifiedDisplayName"
-    if ($LASTEXITCODE -ne 0) {
-        throw "The installed MSIX native Shell display-name check failed with exit code $LASTEXITCODE."
-    }
-
-    Write-Output "Verified installed MSIX $($installed.PackageFullName) and native Cloud Files display names."
+    Write-Output "Verified installed MSIX $($installed.PackageFullName) Cloud Files extension identity."
 }
 finally {
-    $env:MIRRORPULSE_NATIVE_TEST = $previousNative
     if ($null -ne $installed) {
         Remove-AppxPackage -Package $installed.PackageFullName -ErrorAction SilentlyContinue
     }

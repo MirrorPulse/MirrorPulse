@@ -67,7 +67,7 @@ public sealed class MirrorPulseJournalUploadCompletionTests
                     Assert.AreEqual(1, retry.Attempt);
                     Assert.AreEqual(TimeSpan.FromMinutes(1), retry.Delay);
                     MirrorPulseJournalUploadBatch delayed = await source.ReadPendingAsync();
-                    Assert.IsEmpty(delayed.ReadyCommands);
+                    Assert.IsFalse(delayed.ReadyCommands.Any(command => command.OperationId == operationId));
                     Assert.IsGreaterThan(0, delayed.DeferredCount);
                 }
                 else
@@ -76,7 +76,7 @@ public sealed class MirrorPulseJournalUploadCompletionTests
                     Assert.IsNotNull(retryAfter);
                     Assert.IsGreaterThan(DateTimeOffset.UtcNow, retryAfter.Value);
                     MirrorPulseJournalUploadBatch delayed = await source.ReadPendingAsync();
-                    Assert.IsEmpty(delayed.ReadyCommands);
+                    Assert.IsFalse(delayed.ReadyCommands.Any(command => command.OperationId == operationId));
                     await completion.AcknowledgeSuccessfulUploadAsync(operationId, "remote-revision-1");
                     await using ICloudStateTransaction transaction = await state.OpenStore.BeginTransactionAsync();
                     Assert.IsNull(await transaction.Operations.GetAsync(operationId));

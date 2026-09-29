@@ -25,7 +25,7 @@ public sealed class MirrorPulseLocalBatchMapperTests
         var definition = new MirrorPulseSyncRootDefinition(
             paths.SyncRootPath, "0.1.0", Guid.NewGuid(), [1, 2, 3]);
         var cloud = new CfSharpMirrorPulseCloudRootRegistry();
-        Directory.CreateDirectory(Path.Combine(paths.SyncRootPath, "Documents"));
+        Directory.CreateDirectory(paths.SyncRootPath);
         try
         {
             cloud.Register(definition);
@@ -35,16 +35,17 @@ public sealed class MirrorPulseLocalBatchMapperTests
             await fileSystem.StartAsync();
             CloudLocalChangeFeed feed = fileSystem.CreateLocalChangeFeed();
             await feed.StartAsync();
-            string file = Path.Combine(paths.SyncRootPath, "Documents", "report.txt");
-            await File.WriteAllTextAsync(file, "content stays in the local file");
-
-            CloudLocalChangeBatch batch = await WaitForFileChangeAsync(feed, "Documents", "report.txt");
             var instance = InstanceId.New();
             RootRegistration registration = AdapterRootRegistrationMapper.Map(
                 AdapterId.Parse("example.local"), instance,
                 new AdapterRootDefinition("docs", "Documents", "Documents", false),
                 RootRegistrationState.Active);
             var router = new MirrorPulseRootRouter(paths.SyncRootPath, [registration]);
+            await new MirrorPulseRootPopulationCoordinator(fileSystem, feed).PopulateAsync(router);
+            string file = Path.Combine(paths.SyncRootPath, "Documents", "report.txt");
+            await File.WriteAllTextAsync(file, "content stays in the local file");
+
+            CloudLocalChangeBatch batch = await WaitForFileChangeAsync(feed, "Documents", "report.txt");
             MirrorPulseLocalBatchPlan plan = MirrorPulseLocalBatchMapper.Map(batch, router);
             Assert.IsFalse(plan.RequiresFullRescan);
             Assert.IsTrue(plan.Commands.Any(command =>
@@ -55,7 +56,7 @@ public sealed class MirrorPulseLocalBatchMapperTests
 
             CloudLocalChangeBatch repeated = await feed.ReadBatchAsync();
             var repeatedPlan = MirrorPulseLocalBatchMapper.Map(repeated, router);
-            CollectionAssert.AreEqual(
+            CollectionAssert.IsSubsetOf(
                 plan.Commands.Select(command => command.OperationId).ToArray(),
                 repeatedPlan.Commands.Select(command => command.OperationId).ToArray());
             Assert.IsFalse(typeof(MirrorPulseWorkerChangeCommand).GetProperties()

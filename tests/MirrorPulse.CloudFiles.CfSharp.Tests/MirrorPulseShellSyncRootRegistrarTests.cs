@@ -29,9 +29,9 @@ public sealed class MirrorPulseShellSyncRootRegistrarTests
     }
 
     [TestMethod]
-    public async Task NativeRegistrationPublishesCustomThenUnifiedDisplayName()
+    public async Task PackagedRegistrationPublishesCustomThenUnifiedDisplayName()
     {
-        if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
+        if (Environment.GetEnvironmentVariable("MIRRORPULSE_PACKAGED_SHELL_TEST") != "1")
         {
             return;
         }
