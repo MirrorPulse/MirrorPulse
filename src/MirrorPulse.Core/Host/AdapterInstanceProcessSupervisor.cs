@@ -15,14 +15,19 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
 {
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly ISecureCredentialStore _credentials;
+    private readonly Func<InstanceId, JsonElement, CancellationToken, ValueTask>? _remoteBatch;
     private readonly CancellationTokenSource _shutdown = new();
     private Task[] _workers = [];
     private bool _started;
 
-    public AdapterInstanceProcessSupervisor(MirrorPulseProductCatalog catalog, ISecureCredentialStore credentials)
+    public AdapterInstanceProcessSupervisor(
+        MirrorPulseProductCatalog catalog,
+        ISecureCredentialStore credentials,
+        Func<InstanceId, JsonElement, CancellationToken, ValueTask>? remoteBatch = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+        _remoteBatch = remoteBatch;
     }
 
     public async Task StartAsync(MirrorPulseAdapterTopology topology)
@@ -141,6 +146,15 @@ public sealed class AdapterInstanceProcessSupervisor : IAsyncDisposable
                     break;
                 case "Connected":
                     await SetPhaseAsync(instance.InstanceId, "Connected", cancellationToken).ConfigureAwait(false);
+                    break;
+                case "RemoteBatch":
+                    if (_remoteBatch is null)
+                    {
+                        throw new InvalidDataException("The Host has no remote batch ingress configured.");
+                    }
+
+                    await _remoteBatch(instance.InstanceId, frame.Payload, cancellationToken)
+                        .ConfigureAwait(false);
                     break;
                 case "Error":
                     string code = frame.Payload.TryGetProperty("code", out JsonElement value)

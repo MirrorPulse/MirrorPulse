@@ -1,9 +1,14 @@
+using System.Text.Json;
+using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Conflicts;
+using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Host;
 using MirrorPulse.Core.Security;
 using MirrorPulse.Core.State;
+using MirrorPulse.Host;
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
 {
@@ -31,6 +36,10 @@ try
         Path.Combine(paths.DataRootPath, "config.json")).LoadAsync();
     await using var catalog = await MirrorPulseProductCatalog.OpenAsync(paths);
     MirrorPulseAdapterTopology topology = await catalog.ReadAdapterTopologyAsync();
+    var conflictCenter = new MirrorPulseConflictCenter();
+    using var systemNotifications = new MirrorPulseSystemNotificationPublisher();
+    var conflictNotifications = new MirrorPulseConflictNotificationBridge(
+        systemNotifications.PublishAsync);
     using var shutdown = new CancellationTokenSource();
     ConsoleCancelEventHandler cancel = (_, eventArgs) =>
     {
@@ -43,8 +52,26 @@ try
         await using var session = MirrorPulseCloudHostSession.CreateDefault(
             paths, topology.Instances, topology.Roots);
         await session.StartAsync(shutdown.Token);
+        async ValueTask ApplyRemoteBatchAsync(
+            InstanceId instanceId,
+            JsonElement payload,
+            CancellationToken cancellationToken)
+        {
+            CloudRemoteChangeBatch batch = payload.Deserialize<CloudRemoteChangeBatch>()
+                ?? throw new InvalidDataException("The Adapter remote batch payload is empty.");
+            CloudRemoteApplyResult result = await session.ApplyRemoteBatchAsync(
+                instanceId, batch, catalog, conflictCenter, conflictNotifications,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (result.RequiresRetry)
+            {
+                await catalog.SaveInstanceRuntimeStateAsync(
+                    new(instanceId, "Remote retry", false, null, "RemoteBatchRetry"), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         await using var workers = new AdapterInstanceProcessSupervisor(catalog,
-            new WindowsCredentialManagerStore());
+            new WindowsCredentialManagerStore(), ApplyRemoteBatchAsync);
         await workers.StartAsync(topology);
         Console.WriteLine($"{ProductInfo.Name} Cloud Files session started at {paths.SyncRootPath}.");
         if (args.Length == 0)

@@ -3,7 +3,9 @@ using System.Text;
 using CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.State;
 
 namespace MirrorPulse.CloudFiles.CfSharp;
 
@@ -16,6 +18,17 @@ public interface IMirrorPulseCloudRuntime : IAsyncDisposable
         CancellationToken cancellationToken) =>
         ValueTask.FromException<MirrorPulseCloudStatusSnapshot>(
             new NotSupportedException("This Cloud Files runtime does not expose status."));
+
+    ValueTask<CloudRemoteApplyResult> ApplyRemoteBatchAsync(
+        InstanceId instanceId,
+        CloudRemoteChangeBatch batch,
+        MirrorPulseProductCatalog catalog,
+        MirrorPulseConflictCenter center,
+        MirrorPulseConflictNotificationBridge notifications,
+        CloudRemoteApplyOptions? options,
+        CancellationToken cancellationToken) =>
+        ValueTask.FromException<CloudRemoteApplyResult>(
+            new NotSupportedException("This Cloud Files runtime does not apply remote batches."));
 }
 
 public interface IMirrorPulseCloudRuntimeFactory
@@ -53,6 +66,21 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
             CancellationToken cancellationToken) =>
             await MirrorPulseCloudStatusReader.ReadAsync(state.OpenStore, instanceIds, cancellationToken)
                 .ConfigureAwait(false);
+
+        public ValueTask<CloudRemoteApplyResult> ApplyRemoteBatchAsync(
+            InstanceId instanceId,
+            CloudRemoteChangeBatch batch,
+            MirrorPulseProductCatalog catalog,
+            MirrorPulseConflictCenter center,
+            MirrorPulseConflictNotificationBridge notifications,
+            CloudRemoteApplyOptions? options,
+            CancellationToken cancellationToken)
+        {
+            var projector = new MirrorPulseRemoteConflictProjector(
+                fileSystem, catalog, center, notifications);
+            var coordinator = new MirrorPulseRemoteBatchCoordinator(fileSystem, state, projector);
+            return coordinator.ApplyAsync(instanceId, batch, options, cancellationToken);
+        }
 
         public ValueTask DisposeAsync() => fileSystem.DisposeAsync();
     }
@@ -190,6 +218,24 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
         }
 
         return _runtime.ReadStatusAsync(instanceIds, cancellationToken);
+    }
+
+    public ValueTask<CloudRemoteApplyResult> ApplyRemoteBatchAsync(
+        InstanceId instanceId,
+        CloudRemoteChangeBatch batch,
+        MirrorPulseProductCatalog catalog,
+        MirrorPulseConflictCenter center,
+        MirrorPulseConflictNotificationBridge notifications,
+        CloudRemoteApplyOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_started || _runtime is null)
+        {
+            throw new InvalidOperationException("The Cloud Files Host session has not started.");
+        }
+
+        return _runtime.ApplyRemoteBatchAsync(instanceId, batch, catalog, center, notifications,
+            options, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
