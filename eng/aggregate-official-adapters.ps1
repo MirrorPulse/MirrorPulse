@@ -20,6 +20,36 @@ function Get-RequiredString {
     return [string]$value
 }
 
+function Download-ReleaseAsset {
+    param(
+        [Parameter(Mandatory)] [string]$Tag,
+        [Parameter(Mandatory)] [string]$Repository,
+        [Parameter(Mandatory)] [string]$Pattern,
+        [Parameter(Mandatory)] [string]$Directory
+    )
+
+    $destination = Join-Path $Directory $Pattern
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 4; $attempt++) {
+        if (Test-Path -LiteralPath $destination) {
+            Remove-Item -LiteralPath $destination -Force
+        }
+
+        & gh release download $Tag --repo $Repository --pattern $Pattern --dir $Directory --clobber
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $destination) -and
+            (Get-Item -LiteralPath $destination).Length -gt 0) {
+            return
+        }
+
+        $lastError = "gh release download exited with code $LASTEXITCODE"
+        if ($attempt -lt 4) {
+            Start-Sleep -Seconds ([int]([math]::Pow(2, $attempt)))
+        }
+    }
+
+    throw "Unable to download '$Pattern' from '$Repository' after four attempts ($lastError)."
+}
+
 $lockPath = Join-Path $PSScriptRoot 'official-adapters.json'
 $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
 if ($lock.schemaVersion -ne 1 -or @($lock.adapters).Count -eq 0) {
@@ -84,14 +114,8 @@ foreach ($entry in @($lock.adapters)) {
     New-Item -ItemType Directory -Path $adapterDirectory -Force | Out-Null
     $packagePath = Join-Path $adapterDirectory $packageAsset.name
     $signaturePath = Join-Path $adapterDirectory $signatureAsset[0].name
-    & gh release download $tag --repo $repository --pattern $packageAsset.name --dir $adapterDirectory --clobber | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to download '$($packageAsset.name)' from '$repository'."
-    }
-    & gh release download $tag --repo $repository --pattern $signatureAsset[0].name --dir $adapterDirectory --clobber | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to download '$($signatureAsset[0].name)' from '$repository'."
-    }
+    Download-ReleaseAsset -Tag $tag -Repository $repository -Pattern $packageAsset.name -Directory $adapterDirectory
+    Download-ReleaseAsset -Tag $tag -Repository $repository -Pattern $signatureAsset[0].name -Directory $adapterDirectory
 
     $packageHash = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()
     $packageLength = (Get-Item -LiteralPath $packagePath).Length
