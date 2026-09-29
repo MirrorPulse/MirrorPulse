@@ -5,6 +5,15 @@ namespace MirrorPulse.Core.Tests;
 [TestClass]
 public sealed class OfficialAdapterAggregationTests
 {
+    private static readonly string[] ExpectedAdapterIds =
+    [
+        "com.mirrorpulse.adapter.local",
+        "com.mirrorpulse.adapter.webdav",
+        "com.mirrorpulse.adapter.smb",
+        "com.mirrorpulse.adapter.ftp",
+        "com.mirrorpulse.adapter.sftp",
+    ];
+
     [TestMethod]
     public void AggregationLockListsEveryOfficialAdapterAndTheBuildGateChecksBothArchitectures()
     {
@@ -16,14 +25,7 @@ public sealed class OfficialAdapterAggregationTests
             .Select(item => item.GetProperty("adapterId").GetString()!)
             .ToArray();
 
-        CollectionAssert.AreEquivalent(new[]
-        {
-            "com.mirrorpulse.adapter.local",
-            "com.mirrorpulse.adapter.webdav",
-            "com.mirrorpulse.adapter.smb",
-            "com.mirrorpulse.adapter.ftp",
-            "com.mirrorpulse.adapter.sftp",
-        }, adapterIds);
+        CollectionAssert.AreEquivalent(ExpectedAdapterIds, adapterIds);
 
         string script = File.ReadAllText(Path.Combine(repository, "eng", "aggregate-official-adapters.ps1"));
         StringAssert.Contains(script, "releases/latest");
