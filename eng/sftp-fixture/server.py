@@ -80,6 +80,13 @@ class Storage(paramiko.SFTPServerInterface):
         except OSError as error:
             return paramiko.SFTPServer.convert_errno(error.errno)
 
+    def rmdir(self, path):
+        try:
+            os.rmdir(self._local(path))
+            return paramiko.SFTP_OK
+        except OSError as error:
+            return paramiko.SFTPServer.convert_errno(error.errno)
+
     def rename(self, oldpath, newpath):
         try:
             os.replace(self._local(oldpath), self._local(newpath))
