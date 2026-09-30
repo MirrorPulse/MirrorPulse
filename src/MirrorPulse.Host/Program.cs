@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MirrorPulse.Adapter.Sdk;
 using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core;
@@ -52,18 +53,16 @@ try
     try
     {
         MirrorPulseCloudHostSession? currentSession = null;
-        async ValueTask ApplyRemoteBatchAsync(
+        async ValueTask ApplyCloudRemoteBatchAsync(
             InstanceId instanceId,
-            JsonElement payload,
+            CloudRemoteChangeBatch batch,
             CancellationToken cancellationToken)
         {
-            CloudRemoteChangeBatch batch = payload.Deserialize<CloudRemoteChangeBatch>()
-                ?? throw new InvalidDataException("The Adapter remote batch payload is empty.");
             CloudRemoteApplyResult result = await (currentSession ??
                 throw new InvalidOperationException("The Cloud Files session has not started."))
                 .ApplyRemoteBatchAsync(
-                instanceId, batch, catalog, conflictCenter, conflictNotifications,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                    instanceId, batch, catalog, conflictCenter, conflictNotifications,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             if (result.RequiresRetry)
             {
                 await catalog.SaveInstanceRuntimeStateAsync(
@@ -72,12 +71,24 @@ try
             }
         }
 
+        async ValueTask ApplyRemoteBatchAsync(
+            InstanceId instanceId,
+            JsonElement payload,
+            CancellationToken cancellationToken)
+        {
+            AdapterRemoteChangeBatch adapterBatch = payload.Deserialize<AdapterRemoteChangeBatch>()
+                ?? throw new InvalidDataException("The Adapter remote batch payload is empty.");
+            CloudRemoteChangeBatch batch = MirrorPulseAdapterRemoteBatchMapper.Map(
+                instanceId, topology.Roots, adapterBatch);
+            await ApplyCloudRemoteBatchAsync(instanceId, batch, cancellationToken).ConfigureAwait(false);
+        }
+
         var credentialStore = new WindowsCredentialManagerStore();
         await using var workers = new AdapterInstanceProcessSupervisor(catalog,
             credentialStore, ApplyRemoteBatchAsync);
         var rootRouter = new MirrorPulseRootRouter(paths.SyncRootPath, topology.Roots);
-        var provider = new MirrorPulseDemandProvider(rootRouter, workers,
-            new MirrorPulseAdapterDirectoryPageSource(workers));
+        var directorySource = new MirrorPulseAdapterDirectoryPageSource(workers);
+        var provider = new MirrorPulseDemandProvider(rootRouter, workers, directorySource);
         await using var session = MirrorPulseCloudHostSession.CreateDefault(
             paths, topology.Instances, topology.Roots, provider, workers, workers,
             rootRouter, catalog, instanceId => topology.Instances.Any(instance =>
@@ -86,6 +97,9 @@ try
         currentSession = session;
         await session.StartAsync(shutdown.Token);
         await workers.StartAsync(topology);
+        await using var remotePoller = new MirrorPulseActiveRemotePoller(directorySource,
+            topology.Instances, topology.Roots, ApplyCloudRemoteBatchAsync);
+        await remotePoller.StartAsync(shutdown.Token);
         Console.WriteLine($"{ProductInfo.Name} Cloud Files session started at {paths.SyncRootPath}.");
         if (args.Length == 0)
         {

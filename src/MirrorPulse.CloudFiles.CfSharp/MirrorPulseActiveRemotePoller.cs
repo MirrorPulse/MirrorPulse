@@ -1,0 +1,296 @@
+using System.Collections.ObjectModel;
+using System.Security.Cryptography;
+using System.Text;
+using System.Runtime.Versioning;
+using CfSharp;
+using MirrorPulse.Core.Contracts;
+
+namespace MirrorPulse.CloudFiles.CfSharp;
+
+/// <summary>
+/// Polls Adapter-backed remote directory pages and turns deterministic snapshot changes into
+/// CfSharp remote batches. The last successful snapshot is kept in memory for the live Host
+/// session; CfSharp remains the authority for applying and checkpointing each batch.
+/// </summary>
+[SupportedOSPlatform("windows10.0.16299")]
+public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
+{
+    private readonly IMirrorPulseDirectoryPageSource _source;
+    private readonly IReadOnlyList<InstanceId> _instances;
+    private readonly Dictionary<InstanceId, RootRegistration> _roots;
+    private readonly Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask> _apply;
+    private readonly TimeSpan _interval;
+    private readonly int _pageSize;
+    private readonly int _maximumPages;
+    private readonly Dictionary<InstanceId, IReadOnlyDictionary<string, SnapshotEntry>> _snapshots = [];
+    private readonly CancellationTokenSource _shutdown = new();
+    private Task? _loop;
+
+    public MirrorPulseActiveRemotePoller(
+        IMirrorPulseDirectoryPageSource source,
+        IEnumerable<AdapterInstance> instances,
+        IEnumerable<RootRegistration> roots,
+        Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask> apply,
+        TimeSpan? interval = null,
+        int pageSize = 128,
+        int maximumPages = 2048)
+    {
+        _source = source ?? throw new ArgumentNullException(nameof(source));
+        ArgumentNullException.ThrowIfNull(instances);
+        ArgumentNullException.ThrowIfNull(roots);
+        _apply = apply ?? throw new ArgumentNullException(nameof(apply));
+        if (pageSize is < 1 or > 512) throw new ArgumentOutOfRangeException(nameof(pageSize));
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumPages, 1);
+        if (interval is { } value && value <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(interval));
+
+        _instances = instances.Where(instance => instance.Enabled)
+            .Select(instance => instance.InstanceId).Distinct().ToArray();
+        _roots = roots.Where(root => root.State == RootRegistrationState.Active)
+            .GroupBy(root => root.InstanceId)
+            .ToDictionary(group => group.Key, group => group.Single(), EqualityComparer<InstanceId>.Default);
+        _interval = interval ?? TimeSpan.FromSeconds(30);
+        _pageSize = pageSize;
+        _maximumPages = maximumPages;
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        if (_loop is not null) throw new InvalidOperationException("The remote poller has already started.");
+        _loop = RunAsync(cancellationToken);
+        await Task.Yield();
+    }
+
+    /// <summary>Runs one deterministic poll for an enabled instance.</summary>
+    public async ValueTask<bool> PollOnceAsync(InstanceId instanceId, CancellationToken cancellationToken = default)
+    {
+        if (!_instances.Contains(instanceId)) return false;
+        if (!_roots.TryGetValue(instanceId, out RootRegistration? root)) return false;
+
+        IReadOnlyDictionary<string, SnapshotEntry> current = await ReadSnapshotAsync(
+            instanceId, cancellationToken).ConfigureAwait(false);
+        if (!_snapshots.TryGetValue(instanceId, out IReadOnlyDictionary<string, SnapshotEntry>? previous))
+        {
+            _snapshots[instanceId] = current;
+            return false;
+        }
+
+        if (SnapshotsEqual(previous, current)) return false;
+        CloudRemoteChangeBatch batch = CreateBatch(instanceId, root, previous, current);
+        await _apply(instanceId, batch, cancellationToken).ConfigureAwait(false);
+        _snapshots[instanceId] = current;
+        return true;
+    }
+
+    private async Task RunAsync(CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
+        while (!linked.Token.IsCancellationRequested)
+        {
+            foreach (InstanceId instanceId in _instances)
+            {
+                try
+                {
+                    await PollOnceAsync(instanceId, linked.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (linked.Token.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch
+                {
+                    // A transient remote failure leaves the previous snapshot intact. The next
+                    // interval retries the same comparison and lets the normal status surfaces
+                    // report any Worker-side error.
+                }
+            }
+
+            try
+            {
+                await Task.Delay(_interval, linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (linked.Token.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<string, SnapshotEntry>> ReadSnapshotAsync(
+        InstanceId instanceId,
+        CancellationToken cancellationToken)
+    {
+        var entries = new Dictionary<string, SnapshotEntry>(StringComparer.Ordinal);
+        var directories = new Queue<string>([string.Empty]);
+        var visitedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pages = 0;
+        while (directories.Count > 0)
+        {
+            string directory = directories.Dequeue();
+            if (!visitedDirectories.Add(directory)) continue;
+            ReadOnlyMemory<byte> cursor = ReadOnlyMemory<byte>.Empty;
+            var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+            while (true)
+            {
+                if (++pages > _maximumPages)
+                    throw new InvalidDataException("The active remote poll exceeded its page limit.");
+                CloudRemoteDirectoryPage page = await _source.ReadPageAsync(
+                    instanceId, directory, cursor, _pageSize, cancellationToken).ConfigureAwait(false);
+                foreach (CloudRemoteDirectoryEntry entry in page.Entries)
+                {
+                    string relativePath = NormalizeRemotePath(entry.RelativePath);
+                    string key = entry.RemoteId;
+                    CloudPlaceholderMetadata metadata = entry.Metadata ?? (entry.ItemKind == CloudItemKind.Directory
+                        ? CloudPlaceholderMetadata.CreateDirectoryBuilder().Build()
+                        : CloudPlaceholderMetadata.CreateFileBuilder().Build());
+                    var candidate = new SnapshotEntry(entry.RemoteId, entry.RemoteRevision,
+                            entry.ItemKind, relativePath, entry.Length, metadata);
+                    if (!entries.TryAdd(key, candidate) &&
+                        !entries[key].Equals(new SnapshotEntry(entry.RemoteId, entry.RemoteRevision,
+                            entry.ItemKind, relativePath, entry.Length, metadata)))
+                    {
+                        throw new InvalidDataException("The remote poll returned duplicate object identifiers.");
+                    }
+
+                    if (entry.ItemKind == CloudItemKind.Directory && !entry.IsDeleted)
+                        directories.Enqueue(relativePath);
+                }
+
+                if (page.IsComplete) break;
+                if (page.ContinuationCursor.IsEmpty ||
+                    !seenCursors.Add(Convert.ToBase64String(page.ContinuationCursor.Span)))
+                {
+                    throw new InvalidDataException("The remote poll returned an invalid continuation cursor.");
+                }
+
+                cursor = page.ContinuationCursor;
+            }
+        }
+
+        return new ReadOnlyDictionary<string, SnapshotEntry>(entries);
+    }
+
+    private static CloudRemoteChangeBatch CreateBatch(
+        InstanceId instanceId,
+        RootRegistration root,
+        IReadOnlyDictionary<string, SnapshotEntry> previous,
+        IReadOnlyDictionary<string, SnapshotEntry> current)
+    {
+        byte[] initialCursor = Fingerprint(previous);
+        byte[] finalCursor = Fingerprint(current);
+        var changes = new List<CloudRemoteChange>();
+        foreach ((string id, SnapshotEntry entry) in current.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            if (!previous.TryGetValue(id, out SnapshotEntry? prior))
+            {
+                changes.Add(ToChange(instanceId, root, entry, UpsertKind(entry.ItemKind),
+                    previousRevision: null, previousPath: null, finalCursor));
+                continue;
+            }
+
+            CloudRemoteChangeKind kind = prior.ItemKind != entry.ItemKind
+                ? UpsertKind(entry.ItemKind)
+                : prior.RelativePath != entry.RelativePath
+                    ? CloudRemoteChangeKind.Move
+                    : UpsertKind(entry.ItemKind);
+            if ((kind is CloudRemoteChangeKind.FileUpsert or CloudRemoteChangeKind.DirectoryUpsert) &&
+                prior.RemoteRevision == entry.RemoteRevision && prior.Length == entry.Length &&
+                Equals(prior.Metadata, entry.Metadata)) continue;
+            changes.Add(ToChange(instanceId, root, entry, kind, prior.RemoteRevision,
+                kind == CloudRemoteChangeKind.Move ? prior.RelativePath : null, finalCursor));
+        }
+
+        foreach ((string id, SnapshotEntry entry) in previous.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            if (current.ContainsKey(id)) continue;
+            changes.Add(ToChange(instanceId, root, entry, CloudRemoteChangeKind.Delete,
+                previousRevision: null, previousPath: null, finalCursor));
+        }
+
+        return new CloudRemoteChangeBatch(
+            $"{instanceId}/{Convert.ToHexString(finalCursor)}",
+            initialCursor,
+            changes,
+            finalCursor);
+    }
+
+    private static CloudRemoteChangeKind UpsertKind(CloudItemKind itemKind) =>
+        itemKind == CloudItemKind.Directory
+            ? CloudRemoteChangeKind.DirectoryUpsert
+            : CloudRemoteChangeKind.FileUpsert;
+
+    private static CloudRemoteChange ToChange(
+        InstanceId instanceId,
+        RootRegistration root,
+        SnapshotEntry entry,
+        CloudRemoteChangeKind kind,
+        string? previousRevision,
+        string? previousPath,
+        ReadOnlyMemory<byte> cursor)
+    {
+        CloudItemKind itemKind = entry.ItemKind;
+        CloudPlaceholderMetadata metadata = entry.Metadata;
+        string path = root.DirectoryName + "\\" + entry.RelativePath.Replace('/', '\\');
+        return new CloudRemoteChange(
+            $"{instanceId}/{entry.RemoteId}/{Convert.ToHexString(cursor.Span)}",
+            kind,
+            entry.RemoteId,
+            entry.RemoteRevision,
+            itemKind,
+            path,
+            MirrorPulsePlaceholderIdentity.Create(instanceId, entry.RemoteId).ToCfSharp().ItemId,
+            previousRevision,
+            previousPath is null ? null : root.DirectoryName + "\\" + previousPath.Replace('/', '\\'),
+            entry.Length,
+            metadata,
+            cursorAfter: cursor);
+    }
+
+    private static bool SnapshotsEqual(
+        IReadOnlyDictionary<string, SnapshotEntry> left,
+        IReadOnlyDictionary<string, SnapshotEntry> right) =>
+        left.Count == right.Count && Fingerprint(left).AsSpan().SequenceEqual(Fingerprint(right));
+
+    private static byte[] Fingerprint(IReadOnlyDictionary<string, SnapshotEntry> snapshot)
+    {
+        var builder = new StringBuilder();
+        foreach ((string id, SnapshotEntry entry) in snapshot.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            builder.Append(id).Append('\n').Append(entry.RemoteRevision).Append('\n')
+                .Append((int)entry.ItemKind).Append('\n').Append(entry.RelativePath).Append('\n')
+                .Append(entry.Length?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")
+                .Append('\n');
+        }
+
+        return SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+    }
+
+    private static string NormalizeRemotePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
+            throw new InvalidDataException("The remote poll returned an invalid path.");
+        string normalized = path.Replace('\\', '/').Trim('/');
+        if (normalized.Length == 0 || normalized.Split('/').Any(segment => segment is "" or "." or ".."))
+            throw new InvalidDataException("The remote poll returned an unsafe path.");
+        return normalized;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _shutdown.Cancel();
+        if (_loop is not null)
+        {
+            try { await _loop.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
+        }
+
+        _shutdown.Dispose();
+    }
+
+    private sealed record SnapshotEntry(
+        string RemoteId,
+        string RemoteRevision,
+        CloudItemKind ItemKind,
+        string RelativePath,
+        long? Length,
+        CloudPlaceholderMetadata Metadata);
+}
