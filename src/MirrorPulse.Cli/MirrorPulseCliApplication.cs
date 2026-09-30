@@ -20,17 +20,36 @@ public sealed class MirrorPulseCliApplication
         output ??= Console.Out;
         error ??= Console.Error;
 
-        if (arguments.Count == 1 &&
-            string.Equals(arguments[0], "--version", StringComparison.OrdinalIgnoreCase))
+        MirrorPulseCliParseResult parsed = MirrorPulseCliCommandLine.Parse(arguments);
+        if (!parsed.Succeeded)
+        {
+            await error.WriteLineAsync(parsed.Error).ConfigureAwait(false);
+            return 1;
+        }
+
+        if (parsed.ShowHelp)
+        {
+            await output.WriteLineAsync(MirrorPulseCliHelp.Text).ConfigureAwait(false);
+            return 0;
+        }
+
+        if (parsed.ShowVersion)
         {
             await output.WriteLineAsync($"MirrorPulse mp {ProductVersion}").ConfigureAwait(false);
             return 0;
         }
 
-        await output.WriteLineAsync($"MirrorPulse mp {ProductVersion}").ConfigureAwait(false);
+        if (parsed.Command is { Name: "help" or "version" })
+        {
+            await output.WriteLineAsync(parsed.Command.Name.Equals("version", StringComparison.OrdinalIgnoreCase)
+                ? $"MirrorPulse mp {ProductVersion}"
+                : MirrorPulseCliHelp.Text).ConfigureAwait(false);
+            return 0;
+        }
+
         await error.WriteLineAsync(
-            "The command tree is not available in this development milestone. Use --version.")
+            $"Command '{parsed.Command!.Name}' is recognized but is not available in this milestone.")
             .ConfigureAwait(false);
-        return 1;
+        return 8;
     }
 }
