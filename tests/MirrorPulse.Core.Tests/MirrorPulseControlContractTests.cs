@@ -1,5 +1,6 @@
 using MirrorPulse.Control.Contracts;
 using MirrorPulse.Control.Transport;
+using MirrorPulse.Control.Dispatch;
 using System.Text.Json;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Conflicts;
@@ -144,4 +145,46 @@ public sealed class MirrorPulseControlContractTests
 
     private static byte[] MirrorPulseControlControlJson(ControlEventEnvelope value) =>
         MirrorPulseControlJsonCodec.Serialize(value);
+
+    [TestMethod]
+    public async Task DispatcherInvokesTypedHandlerAndReturnsStructuredData()
+    {
+        var dispatcher = new MirrorPulseControlDispatcher();
+        dispatcher.Register<InstanceEnableArguments, object>(
+            MirrorPulseControlCommands.InstanceEnable,
+            (arguments, _) => ValueTask.FromResult<object>(new { arguments.Enabled }));
+        using var document = JsonDocument.Parse("{\"instanceId\":\"instance\",\"enabled\":true}");
+        var request = new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion,
+            Guid.NewGuid(),
+            MirrorPulseControlCommands.InstanceEnable,
+            document.RootElement);
+
+        var response = await dispatcher.DispatchAsync(request);
+
+        Assert.IsTrue(response.Succeeded);
+        Assert.IsTrue(response.Data!.Value.GetProperty("enabled").GetBoolean());
+    }
+
+    [TestMethod]
+    public async Task DispatcherReturnsSafeErrorsForUnknownAndThrowingCommands()
+    {
+        var dispatcher = new MirrorPulseControlDispatcher();
+        dispatcher.Register<ControlEmptyArguments, object>(
+            MirrorPulseControlCommands.HostStatus,
+            (_, _) => ValueTask.FromException<object>(new InvalidOperationException("secret-value")));
+        using var document = JsonDocument.Parse("{}");
+        var unknown = new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(), "unknown.command", document.RootElement);
+        var known = new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(), MirrorPulseControlCommands.HostStatus,
+            document.RootElement);
+
+        var unknownResponse = await dispatcher.DispatchAsync(unknown);
+        var knownResponse = await dispatcher.DispatchAsync(known);
+
+        Assert.AreEqual(MirrorPulseControlErrorCodes.UnknownCommand, unknownResponse.Error!.Code);
+        Assert.AreEqual(MirrorPulseControlErrorCodes.InternalFailure, knownResponse.Error!.Code);
+        Assert.IsFalse(knownResponse.Error.Message.Contains("secret-value", StringComparison.Ordinal));
+    }
 }
