@@ -1,4 +1,5 @@
 using MirrorPulse.Control.Contracts;
+using MirrorPulse.Control.Transport;
 using System.Text.Json;
 using MirrorPulse.Core.Contracts;
 
@@ -96,6 +97,27 @@ public sealed class MirrorPulseControlContractTests
             0, Guid.NewGuid(), MirrorPulseControlCommands.HostStatus, arguments.RootElement));
         Assert.ThrowsExactly<ArgumentException>(() => new ControlResponseEnvelope(
             MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(), false));
+    }
+
+    [TestMethod]
+    public async Task ControlTransportRoundTripsLengthPrefixedPayloads()
+    {
+        await using var stream = new MemoryStream();
+        var payload = new byte[] { 1, 2, 3, 4 };
+        await MirrorPulseControlPipeTransport.WriteFrameAsync(stream, payload);
+        stream.Position = 0;
+
+        var roundTrip = await MirrorPulseControlPipeTransport.ReadFrameAsync(stream);
+
+        CollectionAssert.AreEqual(payload, roundTrip);
+    }
+
+    [TestMethod]
+    public void CurrentUserPipeNameIsVersioned()
+    {
+        var pipeName = MirrorPulseControlPipeNames.CurrentUserV1();
+
+        StringAssert.StartsWith(pipeName, "MirrorPulse-control-v1-");
     }
 
     private static byte[] MirrorPulseControlControlJson(ControlEventEnvelope value) =>
