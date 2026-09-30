@@ -132,7 +132,7 @@ public static class SignedProcessAdapterInstaller
         string adapterId = manifestRoot.GetProperty("adapterId").GetString() ?? string.Empty;
         string version = manifestRoot.GetProperty("version").GetString() ?? string.Empty;
         string entrypoint = manifestRoot.GetProperty("entrypoints").GetProperty(runtimeIdentifier).GetString() ?? string.Empty;
-        if (!adapterId.StartsWith("com.mirrorpulse.adapter.", StringComparison.Ordinal) ||
+        if (!AdapterId.TryParse(adapterId, out _) ||
             !Version.TryParse(version, out _) ||
             !actualFiles.Any(file => string.Equals(file.Path, entrypoint, StringComparison.Ordinal)))
         {
