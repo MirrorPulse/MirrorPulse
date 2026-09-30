@@ -9,8 +9,9 @@ namespace MirrorPulse.CloudFiles.CfSharp;
 
 /// <summary>
 /// Polls Adapter-backed remote directory pages and turns deterministic snapshot changes into
-/// CfSharp remote batches. The last successful snapshot is kept in memory for the live Host
-/// session; CfSharp remains the authority for applying and checkpointing each batch.
+/// CfSharp remote batches. The last successful snapshot is kept in memory and can be restored
+/// from MP's data directory; CfSharp remains the authority for applying and checkpointing each
+/// batch.
 /// </summary>
 [SupportedOSPlatform("windows10.0.16299")]
 public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
@@ -22,6 +23,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
     private readonly TimeSpan _interval;
     private readonly int _pageSize;
     private readonly int _maximumPages;
+    private readonly IMirrorPulseRemotePollSnapshotStore? _snapshotStore;
     private readonly Dictionary<InstanceId, IReadOnlyDictionary<string, SnapshotEntry>> _snapshots = [];
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _loop;
@@ -33,7 +35,8 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask> apply,
         TimeSpan? interval = null,
         int pageSize = 128,
-        int maximumPages = 2048)
+        int maximumPages = 2048,
+        IMirrorPulseRemotePollSnapshotStore? snapshotStore = null)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
         ArgumentNullException.ThrowIfNull(instances);
@@ -51,6 +54,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         _interval = interval ?? TimeSpan.FromSeconds(30);
         _pageSize = pageSize;
         _maximumPages = maximumPages;
+        _snapshotStore = snapshotStore;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -70,15 +74,54 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
             instanceId, cancellationToken).ConfigureAwait(false);
         if (!_snapshots.TryGetValue(instanceId, out IReadOnlyDictionary<string, SnapshotEntry>? previous))
         {
-            _snapshots[instanceId] = current;
+            IReadOnlyDictionary<string, MirrorPulseRemoteSnapshotEntry>? persisted =
+                _snapshotStore is null
+                    ? null
+                    : await _snapshotStore.LoadAsync(instanceId, cancellationToken).ConfigureAwait(false);
+            if (persisted is not null)
+            {
+                previous = persisted.ToDictionary(
+                    item => item.Key,
+                    item => FromSnapshotEntry(item.Value),
+                    StringComparer.Ordinal);
+                _snapshots[instanceId] = previous;
+            }
+            else
+            {
+                _snapshots[instanceId] = current;
+                await SaveSnapshotAsync(instanceId, current, cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        if (SnapshotsEqual(previous!, current))
+        {
+            // Re-saving a loaded snapshot repairs a stale temporary file without changing the
+            // CfSharp cursor or creating another remote batch.
+            await SaveSnapshotAsync(instanceId, current, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
-        if (SnapshotsEqual(previous, current)) return false;
-        CloudRemoteChangeBatch batch = CreateBatch(instanceId, root, previous, current);
+        CloudRemoteChangeBatch batch = CreateBatch(instanceId, root, previous!, current);
         await _apply(instanceId, batch, cancellationToken).ConfigureAwait(false);
         _snapshots[instanceId] = current;
+        await SaveSnapshotAsync(instanceId, current, cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    private async ValueTask SaveSnapshotAsync(
+        InstanceId instanceId,
+        IReadOnlyDictionary<string, SnapshotEntry> snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (_snapshotStore is null) return;
+        var durable = snapshot.ToDictionary(
+            item => item.Key,
+            item => new MirrorPulseRemoteSnapshotEntry(item.Value.RemoteId,
+                item.Value.RemoteRevision, item.Value.ItemKind, item.Value.RelativePath,
+                item.Value.Length),
+            StringComparer.Ordinal);
+        await _snapshotStore.SaveAsync(instanceId, durable, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -285,6 +328,12 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
 
         _shutdown.Dispose();
     }
+
+    private static SnapshotEntry FromSnapshotEntry(MirrorPulseRemoteSnapshotEntry entry) =>
+        new(entry.RemoteId, entry.RemoteRevision, entry.ItemKind, entry.RelativePath, entry.Length,
+            entry.ItemKind == CloudItemKind.Directory
+                ? CloudPlaceholderMetadata.CreateDirectoryBuilder().Build()
+                : CloudPlaceholderMetadata.CreateFileBuilder().Build());
 
     private sealed record SnapshotEntry(
         string RemoteId,

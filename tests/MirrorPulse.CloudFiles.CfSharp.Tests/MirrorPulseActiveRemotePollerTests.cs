@@ -52,6 +52,53 @@ public sealed class MirrorPulseActiveRemotePollerTests
         CollectionAssert.AreEqual(batches[0].FinalCursor.ToArray(), batches[0].Changes[0].CursorAfter.ToArray());
     }
 
+    [TestMethod]
+    public async Task PollerRestoresSnapshotAcrossProcessInstances()
+    {
+        string dataRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dataRoot);
+        try
+        {
+            InstanceId instance = InstanceId.New();
+            RootRegistration root = AdapterRootRegistrationMapper.Map(
+                AdapterId.Parse("example.drive"), instance,
+                new AdapterRootDefinition("files", "Documents", "Documents", false),
+                RootRegistrationState.Active);
+            var adapter = new AdapterInstance(
+                root.AdapterId, InstallId.New(), instance, "Remote files", new Dictionary<string, string>(), [],
+                Path.Combine(dataRoot, "files"), Path.Combine(dataRoot, "transfers"), true,
+                AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+            var source = new FakeDirectorySource();
+            var store = new MirrorPulseFileRemotePollSnapshotStore(dataRoot);
+            source.Set(new FakeEntry("file-1", "v1", CloudItemKind.File, "report.bin", 3));
+            await using (var first = new MirrorPulseActiveRemotePoller(
+                source, [adapter], [root], (_, _, _) => ValueTask.CompletedTask,
+                snapshotStore: store))
+            {
+                Assert.IsFalse(await first.PollOnceAsync(instance));
+            }
+
+            source.Set(new FakeEntry("file-1", "v2", CloudItemKind.File, "renamed.bin", 4));
+            var batches = new List<CloudRemoteChangeBatch>();
+            await using (var second = new MirrorPulseActiveRemotePoller(
+                source, [adapter], [root], (_, batch, _) =>
+                {
+                    batches.Add(batch);
+                    return ValueTask.CompletedTask;
+                }, snapshotStore: store))
+            {
+                Assert.IsTrue(await second.PollOnceAsync(instance));
+            }
+
+            Assert.AreEqual(CloudRemoteChangeKind.Move, batches.Single().Changes.Single().Kind);
+            Assert.AreEqual("Documents\\report.bin", batches.Single().Changes.Single().PreviousRelativePath);
+        }
+        finally
+        {
+            if (Directory.Exists(dataRoot)) Directory.Delete(dataRoot, recursive: true);
+        }
+    }
+
     private sealed class FakeDirectorySource : IMirrorPulseDirectoryPageSource
     {
         private readonly Dictionary<string, CloudRemoteDirectoryEntry> _entries = new(StringComparer.Ordinal);

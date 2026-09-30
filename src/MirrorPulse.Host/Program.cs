@@ -97,8 +97,10 @@ try
         currentSession = session;
         await session.StartAsync(shutdown.Token);
         await workers.StartAsync(topology);
+        var remoteSnapshotStore = new MirrorPulseFileRemotePollSnapshotStore(paths.DataRootPath);
         await using var remotePoller = new MirrorPulseActiveRemotePoller(directorySource,
-            topology.Instances, topology.Roots, ApplyCloudRemoteBatchAsync);
+            topology.Instances, topology.Roots, ApplyCloudRemoteBatchAsync,
+            snapshotStore: remoteSnapshotStore);
         await remotePoller.StartAsync(shutdown.Token);
         Console.WriteLine($"{ProductInfo.Name} Cloud Files session started at {paths.SyncRootPath}.");
         if (args.Length == 0)
