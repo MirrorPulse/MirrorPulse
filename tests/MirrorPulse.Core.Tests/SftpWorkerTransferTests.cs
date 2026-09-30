@@ -16,9 +16,36 @@ public sealed class SftpWorkerTransferTests
         await using SftpProtocolFixture fixture = await SftpProtocolFixture.StartAsync();
         string file = Path.Combine(fixture.StorageDirectory, "report.bin");
         await File.WriteAllBytesAsync(file, [2, 5, 7, 11, 13]);
+        string directory = Path.Combine(fixture.StorageDirectory, "folder");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(Path.Combine(directory, "nested.txt"), "nested");
         Guid retryId = Guid.NewGuid();
         await using (var worker = await WorkerHarness.StartAsync(fixture))
         {
+            await worker.SendAsync("Stat", Guid.NewGuid(), new { path = "folder" });
+            ControlFrameEnvelope directoryStat = await worker.ReadAsync();
+            string directoryRevision = directoryStat.Payload.GetProperty("revision").GetString()!;
+            await worker.SendAsync("Move", Guid.NewGuid(), new
+            {
+                sourcePath = "folder",
+                destinationPath = "renamed-folder",
+                expectedRevision = directoryRevision,
+                isDirectory = true,
+            });
+            ControlFrameEnvelope movedDirectory = await worker.ReadAsync();
+            Assert.AreEqual("MutationComplete", movedDirectory.MessageType);
+            string movedDirectoryRevision = movedDirectory.Payload.GetProperty("revision").GetString()!;
+            Assert.IsTrue(Directory.Exists(Path.Combine(fixture.StorageDirectory, "renamed-folder")));
+            await worker.SendAsync("Delete", Guid.NewGuid(), new
+            {
+                path = "renamed-folder",
+                expectedRevision = movedDirectoryRevision,
+                isDirectory = true,
+            });
+            ControlFrameEnvelope deletedDirectory = await worker.ReadAsync();
+            Assert.AreEqual("MutationComplete", deletedDirectory.MessageType);
+            Assert.IsFalse(Directory.Exists(Path.Combine(fixture.StorageDirectory, "renamed-folder")));
+
             Guid readId = Guid.NewGuid();
             await worker.SendAsync("ReadRange", readId, new { path = "report.bin", offset = 2, length = 3 });
             ControlFrameEnvelope ready = await worker.ReadAsync();
