@@ -131,7 +131,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
             item => item.Key,
             item => new MirrorPulseRemoteSnapshotEntry(item.Value.RemoteId,
                 item.Value.RemoteRevision, item.Value.ItemKind, item.Value.RelativePath,
-                item.Value.Length),
+                item.Value.Length, ToSnapshotMetadata(item.Value.Metadata)),
             StringComparer.Ordinal);
         await _snapshotStore.SaveAsync(instanceId, durable, cancellationToken).ConfigureAwait(false);
     }
@@ -343,9 +343,25 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
 
     private static SnapshotEntry FromSnapshotEntry(MirrorPulseRemoteSnapshotEntry entry) =>
         new(entry.RemoteId, entry.RemoteRevision, entry.ItemKind, entry.RelativePath, entry.Length,
-            entry.ItemKind == CloudItemKind.Directory
-                ? CloudPlaceholderMetadata.CreateDirectoryBuilder().Build()
-                : CloudPlaceholderMetadata.CreateFileBuilder().Build());
+            FromSnapshotMetadata(entry.Metadata));
+
+    private static MirrorPulseRemoteSnapshotMetadata ToSnapshotMetadata(CloudPlaceholderMetadata metadata) =>
+        new(metadata.Kind, metadata.Attributes, metadata.CreationTime, metadata.LastAccessTime,
+            metadata.LastWriteTime, metadata.ChangeTime);
+
+    private static CloudPlaceholderMetadata FromSnapshotMetadata(
+        MirrorPulseRemoteSnapshotMetadata metadata)
+    {
+        CloudPlaceholderMetadata.Builder builder = metadata.Kind == CloudItemKind.Directory
+            ? CloudPlaceholderMetadata.CreateDirectoryBuilder()
+            : CloudPlaceholderMetadata.CreateFileBuilder();
+        builder.WithAttributes(metadata.Attributes);
+        if (metadata.CreationTime is { } creation) builder.WithCreationTime(creation);
+        if (metadata.LastAccessTime is { } access) builder.WithLastAccessTime(access);
+        if (metadata.LastWriteTime is { } write) builder.WithLastWriteTime(write);
+        if (metadata.ChangeTime is { } change) builder.WithChangeTime(change);
+        return builder.Build();
+    }
 
     private sealed record SnapshotEntry(
         string RemoteId,

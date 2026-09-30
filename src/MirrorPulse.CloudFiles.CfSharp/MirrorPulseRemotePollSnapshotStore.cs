@@ -29,7 +29,17 @@ public sealed record MirrorPulseRemoteSnapshotEntry(
     string RemoteRevision,
     CloudItemKind ItemKind,
     string RelativePath,
-    long? Length);
+    long? Length,
+    MirrorPulseRemoteSnapshotMetadata Metadata);
+
+/// <summary>JSON-safe projection of CfSharp placeholder metadata.</summary>
+public sealed record MirrorPulseRemoteSnapshotMetadata(
+    CloudItemKind Kind,
+    FileAttributes Attributes,
+    DateTimeOffset? CreationTime,
+    DateTimeOffset? LastAccessTime,
+    DateTimeOffset? LastWriteTime,
+    DateTimeOffset? ChangeTime);
 
 /// <summary>Stores each Adapter instance snapshot with replace-on-write semantics.</summary>
 public sealed class MirrorPulseFileRemotePollSnapshotStore : IMirrorPulseRemotePollSnapshotStore
@@ -114,7 +124,8 @@ public sealed class MirrorPulseFileRemotePollSnapshotStore : IMirrorPulseRemoteP
             if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(entry.RemoteId) ||
                 !string.Equals(key, entry.RemoteId, StringComparison.Ordinal))
                 throw new InvalidDataException("The remote poll snapshot contains an invalid object identifier.");
-            if (string.IsNullOrWhiteSpace(entry.RemoteRevision) || string.IsNullOrWhiteSpace(entry.RelativePath))
+            if (string.IsNullOrWhiteSpace(entry.RemoteRevision) || string.IsNullOrWhiteSpace(entry.RelativePath) ||
+                entry.Metadata is null || entry.Metadata.Kind != entry.ItemKind)
                 throw new InvalidDataException("The remote poll snapshot contains an incomplete object.");
         }
     }
