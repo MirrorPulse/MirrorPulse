@@ -1,5 +1,5 @@
-using MirrorPulse.Cli;
 using System.Text.Json;
+using MirrorPulse.Cli;
 
 namespace MirrorPulse.Cli.Tests;
 
