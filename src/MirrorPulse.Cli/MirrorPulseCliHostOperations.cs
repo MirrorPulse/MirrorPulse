@@ -177,6 +177,21 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                         .ConfigureAwait(false);
                     human = "Adapter instance configured: " + instanceId;
                     break;
+                case ("instance", "enable"):
+                case ("instance", "disable"):
+                    instanceId = GetRequiredOption(command.Arguments, "instance-id");
+                    bool enabled = command.Path[1].Equals("enable", StringComparison.OrdinalIgnoreCase);
+                    result = await _client.SetInstanceEnabledAsync(instanceId, enabled, cancellationToken)
+                        .ConfigureAwait(false);
+                    human = $"Adapter instance {(enabled ? "enabled" : "disabled")}: {instanceId}";
+                    break;
+                case ("instance", "select-version"):
+                    instanceId = GetRequiredOption(command.Arguments, "instance-id");
+                    string installId = GetRequiredOption(command.Arguments, "install-id");
+                    result = await _client.SelectInstallationAsync(instanceId, installId, cancellationToken)
+                        .ConfigureAwait(false);
+                    human = $"Adapter instance version selected: {installId}";
+                    break;
                 default:
                     await MirrorPulseCliOutputFormatter.WriteErrorAsync(
                         MirrorPulseControlExitCodes.Unsupported,
