@@ -78,7 +78,6 @@ public sealed class MirrorPulseActiveRemotePollerTests
                 Assert.IsFalse(await first.PollOnceAsync(instance));
             }
 
-            source.Set(new FakeEntry("file-1", "v2", CloudItemKind.File, "renamed.bin", 4));
             var batches = new List<CloudRemoteChangeBatch>();
             await using (var second = new MirrorPulseActiveRemotePoller(
                 source, [adapter], [root], (_, batch, _) =>
@@ -87,7 +86,18 @@ public sealed class MirrorPulseActiveRemotePollerTests
                     return ValueTask.CompletedTask;
                 }, snapshotStore: store))
             {
-                Assert.IsTrue(await second.PollOnceAsync(instance));
+                Assert.IsFalse(await second.PollOnceAsync(instance));
+            }
+
+            source.Set(new FakeEntry("file-1", "v2", CloudItemKind.File, "renamed.bin", 4));
+            await using (var third = new MirrorPulseActiveRemotePoller(
+                source, [adapter], [root], (_, batch, _) =>
+                {
+                    batches.Add(batch);
+                    return ValueTask.CompletedTask;
+                }, snapshotStore: store))
+            {
+                Assert.IsTrue(await third.PollOnceAsync(instance));
             }
 
             Assert.AreEqual(CloudRemoteChangeKind.Move, batches.Single().Changes.Single().Kind);
@@ -132,6 +142,12 @@ public sealed class MirrorPulseActiveRemotePollerTests
                 CloudPlaceholderMetadata metadata = entry.Kind == CloudItemKind.Directory
                     ? CloudPlaceholderMetadata.CreateDirectoryBuilder().Build()
                     : CloudPlaceholderMetadata.CreateFileBuilder().Build();
+                if (entry.Kind == CloudItemKind.File)
+                {
+                    metadata = CloudPlaceholderMetadata.CreateFileBuilder()
+                        .WithLastWriteTime(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero))
+                        .Build();
+                }
                 _entries.Add(entry.RemoteId, new CloudRemoteDirectoryEntry(entry.RemoteId,
                     entry.Revision, entry.Kind, entry.Path, null, entry.Length, metadata, false));
             }
