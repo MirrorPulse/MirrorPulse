@@ -116,6 +116,21 @@ public sealed record InstanceSelectVersionArguments(string InstanceId, string In
 
 public sealed record ConflictListArguments(int? Limit = null, string? Cursor = null) : IMirrorPulseControlArguments;
 
+public sealed record MirrorPulseControlConflict(
+    string ConflictId,
+    string InstanceId,
+    string RelativePath,
+    string Reason,
+    string Status,
+    string Source,
+    string? LocalRevision,
+    string? RemoteRevision,
+    DateTimeOffset DetectedAt);
+
+public sealed record MirrorPulseControlConflictList(
+    IReadOnlyList<MirrorPulseControlConflict> Items,
+    string? NextCursor = null);
+
 public sealed record ConflictSnoozeArguments(Guid ConflictId) : IMirrorPulseControlArguments;
 
 public sealed record ConflictResolveArguments(

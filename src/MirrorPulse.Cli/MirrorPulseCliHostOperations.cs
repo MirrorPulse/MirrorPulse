@@ -192,6 +192,39 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                         .ConfigureAwait(false);
                     human = $"Adapter instance version selected: {installId}";
                     break;
+                case ("conflict", "list"):
+                    result = await _client.GetConflictsAsync(cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    human = $"Conflicts: {((MirrorPulseControlConflictList)result).Items.Count}";
+                    break;
+                case ("conflict", "show"):
+                    string conflictId = GetRequiredOption(command.Arguments, "conflict-id");
+                    MirrorPulseControlConflictList allConflicts = await _client.GetConflictsAsync(
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
+                    MirrorPulseControlConflict? selected = allConflicts.Items.SingleOrDefault(item =>
+                        item.ConflictId.Equals(conflictId, StringComparison.OrdinalIgnoreCase));
+                    if (selected is null)
+                        throw new FileNotFoundException("The conflict was not found.");
+                    result = selected;
+                    human = $"Conflict {selected.ConflictId}: {selected.RelativePath} ({selected.Source})";
+                    break;
+                case ("conflict", "snooze"):
+                    conflictId = GetRequiredOption(command.Arguments, "conflict-id");
+                    result = await _client.SnoozeConflictAsync(Guid.Parse(conflictId), cancellationToken)
+                        .ConfigureAwait(false);
+                    human = $"Conflict snoozed: {conflictId}";
+                    break;
+                case ("conflict", "resolve"):
+                    conflictId = GetRequiredOption(command.Arguments, "conflict-id");
+                    if (!Enum.TryParse(GetRequiredOption(command.Arguments, "action"), true,
+                            out MirrorPulse.Core.Conflicts.MirrorPulseConflictAction action) ||
+                        action == MirrorPulse.Core.Conflicts.MirrorPulseConflictAction.Defer)
+                        throw new ArgumentException("The conflict action is invalid.");
+                    result = await _client.ResolveConflictAsync(Guid.Parse(conflictId), action,
+                        GetOptionalOption(command.Arguments, "preserved-path"), cancellationToken)
+                        .ConfigureAwait(false);
+                    human = $"Conflict resolved: {conflictId}";
+                    break;
                 default:
                     await MirrorPulseCliOutputFormatter.WriteErrorAsync(
                         MirrorPulseControlExitCodes.Unsupported,

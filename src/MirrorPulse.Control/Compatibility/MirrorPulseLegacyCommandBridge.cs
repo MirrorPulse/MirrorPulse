@@ -23,6 +23,8 @@ public sealed class MirrorPulseLegacyCommandBridge
         Task<MirrorPulseAppStatusResponse>>? _createInstance;
     private readonly Func<InstanceId, InstanceConfigureArguments, CancellationToken,
         Task<MirrorPulseAppStatusResponse>>? _configureInstance;
+    private readonly Func<ConflictListArguments, CancellationToken,
+        Task<MirrorPulseControlConflictList>>? _listConflicts;
     private readonly Func<CancellationToken, Task<MirrorPulseHostStatus>>? _hostStatus;
     private readonly Func<HostLifecycleArguments, CancellationToken,
         Task<MirrorPulseHostStatus>>? _hostStart;
@@ -66,7 +68,9 @@ public sealed class MirrorPulseLegacyCommandBridge
         Func<SyncRefreshArguments, CancellationToken,
             Task<MirrorPulseAppStatusResponse>>? refresh = null,
         Func<InstanceId, InstanceConfigureArguments, CancellationToken,
-            Task<MirrorPulseAppStatusResponse>>? configureInstance = null)
+            Task<MirrorPulseAppStatusResponse>>? configureInstance = null,
+        Func<ConflictListArguments, CancellationToken,
+            Task<MirrorPulseControlConflictList>>? listConflicts = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -85,6 +89,7 @@ public sealed class MirrorPulseLegacyCommandBridge
         _settingsSet = settingsSet;
         _diagnostics = diagnostics;
         _refresh = refresh;
+        _listConflicts = listConflicts;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
@@ -137,6 +142,13 @@ public sealed class MirrorPulseLegacyCommandBridge
             dispatcher.Register<InstanceListArguments, MirrorPulseControlTopology>(
                 MirrorPulseControlCommands.InstanceList,
                 (_, cancellationToken) => new(_topology(cancellationToken)));
+        }
+
+        if (_listConflicts is not null)
+        {
+            dispatcher.Register<ConflictListArguments, MirrorPulseControlConflictList>(
+                MirrorPulseControlCommands.ConflictList,
+                (arguments, cancellationToken) => new(_listConflicts(arguments, cancellationToken)));
         }
 
         if (_settingsGet is not null)
