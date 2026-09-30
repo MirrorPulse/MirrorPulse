@@ -1,6 +1,8 @@
 using MirrorPulse.Control.Contracts;
 using MirrorPulse.Control.Transport;
 using MirrorPulse.Control.Dispatch;
+using MirrorPulse.Control.Compatibility;
+using MirrorPulse.Core.Host;
 using System.Text.Json;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Conflicts;
@@ -186,5 +188,31 @@ public sealed class MirrorPulseControlContractTests
         Assert.AreEqual(MirrorPulseControlErrorCodes.UnknownCommand, unknownResponse.Error!.Code);
         Assert.AreEqual(MirrorPulseControlErrorCodes.InternalFailure, knownResponse.Error!.Code);
         Assert.IsFalse(knownResponse.Error.Message.Contains("secret-value", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task LegacyBridgeRegistersStatusAndMutationCommands()
+    {
+        var expected = new MirrorPulseAppStatusResponse(3, 1, [], []);
+        var dispatcher = new MirrorPulseControlDispatcher();
+        var bridge = new MirrorPulseLegacyCommandBridge(
+            _ => Task.FromResult(expected),
+            (_, _) => Task.FromResult(expected),
+            (_, _, _) => Task.FromResult(expected),
+            (_, _, _) => Task.FromResult(expected),
+            (_, _, _) => Task.FromResult(expected),
+            (_, _) => Task.FromResult(expected),
+            (_, _) => Task.FromResult(expected));
+        bridge.Register(dispatcher);
+        using var document = JsonDocument.Parse("{}");
+        var request = new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
+            MirrorPulseControlCommands.HostStatus, document.RootElement);
+
+        var response = await dispatcher.DispatchAsync(request);
+
+        Assert.IsTrue(dispatcher.RegisteredCommands.Contains(MirrorPulseControlCommands.InstanceCreate));
+        Assert.IsTrue(response.Succeeded);
+        Assert.AreEqual(3, response.Data!.Value.GetProperty("pendingUploads").GetInt32());
     }
 }

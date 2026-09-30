@@ -2,6 +2,9 @@ using System.Text.Json;
 using CfSharp;
 using MirrorPulse.Adapter.Sdk;
 using MirrorPulse.CloudFiles.CfSharp;
+using MirrorPulse.Control.Compatibility;
+using MirrorPulse.Control.Dispatch;
+using MirrorPulse.Control.Transport;
 using MirrorPulse.Core;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
@@ -185,52 +188,85 @@ try
                 };
             }
 
-            var statusPipe = new MirrorPulseAppStatusPipe(ReadStatusAsync,
-                async (conflictId, cancellationToken) =>
+            async Task<MirrorPulseAppStatusResponse> SnoozeConflictAsync(
+                Guid conflictId,
+                CancellationToken cancellationToken)
+            {
+                MirrorPulseAppStatusResponse current = await ReadStatusAsync(cancellationToken);
+                if (!current.Notifications.Any(item => item.ConflictId == conflictId.ToString("D")))
                 {
-                    MirrorPulseAppStatusResponse current = await ReadStatusAsync(cancellationToken);
-                    if (!current.Notifications.Any(item => item.ConflictId == conflictId.ToString("D")))
-                    {
-                        throw new FileNotFoundException("The pending conflict notification was not found.");
-                    }
+                    throw new FileNotFoundException("The pending conflict notification was not found.");
+                }
 
-                    await catalog.SetConflictSnoozedAsync(conflictId, true, cancellationToken);
-                    return await ReadStatusAsync(cancellationToken);
-                },
-                async (instanceId, enabled, cancellationToken) =>
+                await catalog.SetConflictSnoozedAsync(conflictId, true, cancellationToken);
+                return await ReadStatusAsync(cancellationToken);
+            }
+
+            async Task<MirrorPulseAppStatusResponse> SetInstanceEnabledAsync(
+                InstanceId instanceId,
+                bool enabled,
+                CancellationToken cancellationToken)
+            {
+                await catalog.SetInstanceEnabledAsync(instanceId, enabled, cancellationToken);
+                return await ReadStatusAsync(cancellationToken);
+            }
+
+            async Task<MirrorPulseAppStatusResponse> SelectInstallationAsync(
+                InstanceId instanceId,
+                InstallId installId,
+                CancellationToken cancellationToken)
+            {
+                await catalog.SelectInstanceInstallationAsync(instanceId, installId, cancellationToken);
+                return await ReadStatusAsync(cancellationToken);
+            }
+
+            async Task<MirrorPulseAppStatusResponse> ResolveConflictAsync(
+                Guid conflictId,
+                MirrorPulseConflictAction action,
+                CancellationToken cancellationToken)
+            {
+                if (await catalog.ReadUploadConflictAsync(conflictId, cancellationToken)
+                    .ConfigureAwait(false) is not null)
                 {
-                    await catalog.SetInstanceEnabledAsync(instanceId, enabled, cancellationToken);
-                    return await ReadStatusAsync(cancellationToken);
-                },
-                async (instanceId, installId, cancellationToken) =>
+                    await session.ApplyUploadConflictAsync(conflictId, action, cancellationToken)
+                        .ConfigureAwait(false);
+                    conflictCenter.Remove(conflictId);
+                }
+                else
                 {
-                    await catalog.SelectInstanceInstallationAsync(instanceId, installId, cancellationToken);
-                    return await ReadStatusAsync(cancellationToken);
-                },
-                InstallAdapterAsync, CreateInstanceAsync,
-                async (conflictId, action, cancellationToken) =>
-                {
-                    if (await catalog.ReadUploadConflictAsync(conflictId, cancellationToken)
-                        .ConfigureAwait(false) is not null)
+                    MirrorPulseRemoteConflictActionOutcome outcome =
+                        await session.ApplyRemoteConflictAsync(conflictId, action, catalog,
+                            cancellationToken).ConfigureAwait(false);
+                    if (outcome.Resolved)
                     {
-                        await session.ApplyUploadConflictAsync(conflictId, action, cancellationToken)
-                            .ConfigureAwait(false);
                         conflictCenter.Remove(conflictId);
                     }
-                    else
-                    {
-                        MirrorPulseRemoteConflictActionOutcome outcome =
-                            await session.ApplyRemoteConflictAsync(conflictId, action, catalog,
-                                cancellationToken).ConfigureAwait(false);
-                        if (outcome.Resolved)
-                        {
-                            conflictCenter.Remove(conflictId);
-                        }
-                    }
+                }
 
-                    return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
-                });
-            await statusPipe.ServeAsync(shutdown.Token);
+                return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var statusPipe = new MirrorPulseAppStatusPipe(
+                ReadStatusAsync,
+                SnoozeConflictAsync,
+                SetInstanceEnabledAsync,
+                SelectInstallationAsync,
+                InstallAdapterAsync,
+                CreateInstanceAsync,
+                ResolveConflictAsync);
+            var dispatcher = new MirrorPulseControlDispatcher();
+            new MirrorPulseLegacyCommandBridge(
+                ReadStatusAsync,
+                SnoozeConflictAsync,
+                ResolveConflictAsync,
+                SetInstanceEnabledAsync,
+                SelectInstallationAsync,
+                InstallAdapterAsync,
+                CreateInstanceAsync).Register(dispatcher);
+            var controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
+            await Task.WhenAll(
+                statusPipe.ServeAsync(shutdown.Token),
+                controlPipe.ServeAsync(shutdown.Token));
         }
 
         return 0;

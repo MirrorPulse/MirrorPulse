@@ -13,6 +13,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <ProjectReference Include="..\MirrorPulse.CloudFiles.CfSharp\MirrorPulse.CloudFiles.CfSharp.csproj" />
+    <ProjectReference Include="..\MirrorPulse.Control\MirrorPulse.Control.csproj" />
     <ProjectReference Include="..\MirrorPulse.Core\MirrorPulse.Core.csproj" />
   </ItemGroup>
 
