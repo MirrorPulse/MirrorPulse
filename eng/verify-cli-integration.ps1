@@ -200,6 +200,23 @@ try {
                 Write-Host "Recent local upload diagnostics:"
                 Get-Content -LiteralPath $logPath -Tail 12 | ForEach-Object { Write-Host $_ }
             }
+            $stateDatabase = Join-Path $dataRoot "state\cfsharp.db"
+            if (Test-Path -LiteralPath $stateDatabase) {
+                $journalProbe = @'
+import sqlite3, sys
+with sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True) as database:
+    tables = [row[0] for row in database.execute("select name from sqlite_master where type='table' and (name like '%operation%' or name like '%journal%')")]
+    for table in tables:
+        columns = [row[1] for row in database.execute(f'pragma table_info("{table}")')]
+        safe = [column for column in columns if not any(word in column.lower() for word in ('payload', 'content', 'data'))]
+        print(f"Journal table {table}: {', '.join(safe)}")
+        if safe:
+            names = ', '.join(f'"{column}"' for column in safe)
+            for row in database.execute(f'select {names} from "{table}" limit 12'):
+                print(row)
+'@
+                & python -c $journalProbe $stateDatabase | ForEach-Object { Write-Host $_ }
+            }
             throw "The persisted upload was not delivered. Pending=$($failedStatus.data.pendingUploads); " +
                 "UploadConflicts=$($failedStatus.data.pendingUploadConflicts); " +
                 "Phase=$($failedInstance.phase); Error=$($failedInstance.lastErrorCode); " +

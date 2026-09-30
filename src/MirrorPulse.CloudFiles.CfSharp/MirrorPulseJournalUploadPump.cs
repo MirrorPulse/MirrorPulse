@@ -309,6 +309,10 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
                 new("exceptionType", exception.GetType().FullName ?? exception.GetType().Name),
                 new("hresult", exception.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture)),
             };
+            if (exception is InvalidDataException)
+            {
+                fields.Add(new("reason", exception.Message));
+            }
             if (command is not null)
             {
                 fields.Add(new("operationId", command.OperationId.ToString("D")));
