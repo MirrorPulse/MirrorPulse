@@ -9,7 +9,7 @@ from the storage protocol's theoretical feature set.
 | --- | --- | --- | --- | --- | --- | --- |
 | Local directory | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Journal retry path only | Revision check |
 | WebDAV | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Conditional ETag check |
-| SMB | Signed Worker; no live share fixture | Signed Worker; no live share fixture | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Revision check |
+| SMB | Signed Worker + CfSharp demand (live UNC share) | Signed Worker + Host upload (live UNC share) | Not exposed by Worker | Not exposed by Worker | Not verified end to end | Revision check |
 | FTP / FTPS | Signed Worker + CfSharp demand (plain FTP fixture) | Signed Worker + Host upload (plain FTP fixture) | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
 | SFTP | Signed Worker + CfSharp demand | Signed Worker + Host upload | Not exposed by Worker | Not exposed by Worker | Transfer retry only | Optimistic revision check |
 
@@ -17,8 +17,9 @@ The WebDAV loopback fixture exercises the installed signed Worker, Host pipe,
 CfSharp-compatible demand reads, and stale ETag upload rejection without a
 remote overwrite. It does not establish compatibility with every WebDAV server.
 “Journal retry path” and “transfer retry only” do not establish end-to-end offline queuing through
-Explorer and CfSharp. The SMB release contains a real Worker, but a live UNC
-share test is still needed before its transfer capability is fully verified.
+Explorer and CfSharp. The SMB CI fixture creates a Windows share and verifies
+the signed Worker against its UNC path. This establishes the Host and CfSharp
+demand path, not Explorer's complete offline synchronization behavior.
 
 The current FTP and SFTP Workers expose `Stat`, `ReadRange`, and `Upload`.
 Their tests launch separate EXEs, pass credentials through the current-user
@@ -38,8 +39,11 @@ Evidence:
 - `MirrorPulseWebDavRangeReadTests`,
   `MirrorPulseWebDavUploadTests`, and
   `MirrorPulseWebDavEtagGuardTests` use HTTP handlers.
-- `MirrorPulseSmbDirectoryPollerTests` uses an injected entry source; no
-  real SMB capability is claimed.
+- `MirrorPulseSmbDirectoryPollerTests` uses an injected entry source.
+- `SignedSmbHostProcessTests` starts the installed signed release against a
+  live Windows share. It checks directory enumeration, CfSharp demand range
+  reads, conditional upload, and stale revision rejection without overwriting
+  the share's newer content.
 - `FtpWorkerProcessTests` and `SftpWorkerTransferTests` run real protocol
   fixtures through independent Workers.
 - `FtpSignedPackageProcessTests` and `SftpSignedPackageProcessTests` verify
