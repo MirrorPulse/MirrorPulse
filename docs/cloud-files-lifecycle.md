@@ -22,7 +22,10 @@ instance routing, user policy, and a separate product catalog.
    account removal has a separate unregister path.
 
 The WinUI install flow verifies and registers a signed `.mpadapter` package
-before creating an instance. The instance form supplies non-secret Worker
+before creating an instance. Current packages carry their signed inventory at
+`META-INF/mirrorpulse/signature.json`, so a local package can be installed
+without a neighboring signature file. Older releases with a detached
+`.signature.json` remain supported. The instance form supplies non-secret Worker
 settings and first-level folder names through the current-user Host Pipe;
 optional secrets are stored in Windows Credential Manager and only their
 references enter the product catalog. New instances and version or startup

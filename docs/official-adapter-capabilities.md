@@ -52,7 +52,8 @@ Evidence:
   and `SignedSftpHostProcessTests` install current signed releases, route range
   hydration through the Host and CfSharp demand provider, upload through the
   Host, and reject stale revisions against real loopback protocol servers.
-- `OfficialAdapterAggregateProcessTests` installs all five signed releases;
+- `OfficialAdapterAggregateProcessTests` installs all five signed releases
+  using only each `.mpadapter` file and the built-in public trust anchor;
   the Local case starts two independent installed Workers and routes
   CfSharp-compatible demand enumeration and range reads through their separate roots.
 - `SignedLocalVersionSwitchProcessTests` installs signed Local v0.1.3 alongside
