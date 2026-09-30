@@ -43,6 +43,17 @@ jobs:
       - name: Verify x64 CLI entry point
         run: pwsh ./eng/verify-cli-publish.ps1 -Runtime win-x64
 
+      - name: Verify x64 CLI and Host publish manifest
+        shell: pwsh
+        run: pwsh ./eng/verify-cli-host-publish.ps1 -Runtime win-x64 -OutputDirectory "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-x64"
+
+      - name: Upload x64 CLI and Host publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-host-win-x64
+          path: ${{ runner.temp }}/mirrorpulse-cli-host-win-x64
+          if-no-files-found: error
+
       - name: Install SFTP fixture dependencies
         run: "python -m pip install --only-binary=:all: -r eng/sftp-fixture/requirements.txt"
 
@@ -87,6 +98,17 @@ jobs:
 
       - name: Verify ARM64 CLI entry point
         run: pwsh ./eng/verify-cli-publish.ps1 -Runtime win-arm64
+
+      - name: Verify ARM64 CLI and Host publish manifest
+        shell: pwsh
+        run: pwsh ./eng/verify-cli-host-publish.ps1 -Runtime win-arm64 -OutputDirectory "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-arm64"
+
+      - name: Upload ARM64 CLI and Host publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-host-win-arm64
+          path: ${{ runner.temp }}/mirrorpulse-cli-host-win-arm64
+          if-no-files-found: error
 
       - name: Verify signed official packages and native ARM64 Workers
         run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SignedPackageProcessTests
