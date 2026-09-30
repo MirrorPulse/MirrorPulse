@@ -18,6 +18,7 @@ $syncRoot = Join-Path $runRoot "sync"
 $dataRoot = Join-Path $runRoot "data"
 $sourceRoot = Join-Path $runRoot "source"
 $hostProcess = $null
+$fixtureBytes = [Text.Encoding]::ASCII.GetBytes("0123456789ABCDEF-local-fixture")
 
 function Invoke-MirrorPulseCli {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
@@ -34,6 +35,17 @@ function Invoke-MirrorPulseCli {
     return $text | ConvertFrom-Json
 }
 
+function Wait-MirrorPulseHostStopped {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        & $script:cliExecutable --json --no-start status 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    throw "The Host did not stop after the CLI lifecycle command."
+}
+
 try {
     if (-not (Test-Path -LiteralPath $PackagePath -PathType Leaf)) {
         throw "The Adapter package was not found: $PackagePath"
@@ -41,7 +53,7 @@ try {
 
     New-Item -ItemType Directory -Path $cliRoot, $hostRoot, $syncRoot, $dataRoot, $sourceRoot -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $sourceRoot "nested") -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $sourceRoot "nested\fixture.txt") -Value "MirrorPulse CLI fixture" -NoNewline
+    [IO.File]::WriteAllBytes((Join-Path $sourceRoot "nested\fixture.txt"), $fixtureBytes)
 
     $cliProject = Join-Path $repositoryRoot "src\MirrorPulse.Cli\MirrorPulse.Cli.csproj"
     $hostProject = Join-Path $repositoryRoot "src\MirrorPulse.Host\MirrorPulse.Host.csproj"
@@ -80,27 +92,58 @@ try {
     $instanceId = $instance.data.createdInstanceId
     if ([string]::IsNullOrWhiteSpace($instanceId)) { throw "The CLI create response did not contain an instance ID." }
 
+    # A new instance is admitted when the Host is composed on the next start.
+    $restart = Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart")
+    if ($restart.kind -ne "result") { throw "The CLI Host restart response is invalid." }
+    Wait-MirrorPulseHostStopped
+
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         Start-Sleep -Milliseconds 500
         $status = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
         $entry = @($status.data.instances) | Where-Object { $_.instanceId -eq $instanceId } | Select-Object -First 1
-    } while ($null -eq $entry -and [DateTime]::UtcNow -lt $deadline)
-    if ($null -eq $entry) { throw "The CLI status response did not contain the created instance." }
+    } while (($null -eq $entry -or $entry.phase -ne "Connected") -and [DateTime]::UtcNow -lt $deadline)
+    if ($null -eq $entry -or $entry.phase -ne "Connected") {
+        throw "The CLI status response did not show a connected Local Worker: $($entry | ConvertTo-Json -Compress)"
+    }
+
+    $topology = Invoke-MirrorPulseCli @("--json", "--developer-mode", "adapter", "list")
+    $rootDirectory = @($topology.data.roots) |
+        Where-Object { $_.instanceId -eq $instanceId } |
+        Select-Object -First 1 -ExpandProperty directoryName
+    if ([string]::IsNullOrWhiteSpace($rootDirectory)) {
+        throw "The Adapter instance did not register a first-level root."
+    }
+    $mappedRoot = Join-Path $syncRoot $rootDirectory
 
     $refresh = Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh")
     if ($refresh.kind -ne "result") { throw "The CLI refresh response is invalid." }
 
-    if ($Regression) {
-        $topology = Invoke-MirrorPulseCli @("--json", "--developer-mode", "adapter", "list")
-        $rootDirectory = @($topology.data.roots) |
-            Where-Object { $_.instanceId -eq $instanceId } |
-            Select-Object -First 1 -ExpandProperty directoryName
-        if ([string]::IsNullOrWhiteSpace($rootDirectory)) {
-            throw "The Adapter instance did not register a first-level root."
-        }
+    $mappedFixture = Join-Path $mappedRoot "nested\fixture.txt"
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    while (-not (Test-Path -LiteralPath $mappedFixture) -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh") | Out-Null
+    }
+    if (-not (Test-Path -LiteralPath $mappedFixture)) {
+        throw "The signed Local Adapter file was not listed through the Cloud Files root."
+    }
 
-        $mappedRoot = Join-Path $syncRoot $rootDirectory
+    $range = [byte[]]::new(5)
+    $stream = [IO.File]::Open($mappedFixture, [IO.FileMode]::Open,
+        [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        [void]$stream.Seek(7, [IO.SeekOrigin]::Begin)
+        $count = $stream.Read($range, 0, $range.Length)
+    }
+    finally {
+        $stream.Dispose()
+    }
+    if ($count -ne 5 -or [Text.Encoding]::ASCII.GetString($range) -ne "789AB") {
+        throw "The Cloud Files range read returned the wrong bytes."
+    }
+
+    if ($Regression) {
         $roundTrip = Join-Path $sourceRoot "cli-roundtrip.txt"
         Set-Content -LiteralPath $roundTrip -Value "remote-before-local" -NoNewline
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh") | Out-Null
@@ -114,20 +157,70 @@ try {
             throw "The remote Local Adapter change did not reach the Cloud Files root."
         }
 
-        Set-Content -LiteralPath $remoteFile -Value "local-before-remote" -NoNewline
-        Set-Content -LiteralPath $roundTrip -Value "remote-after-local" -NoNewline
-        Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh") | Out-Null
-        $conflicts = Invoke-MirrorPulseCli @("--json", "--developer-mode", "conflict", "list")
-        if ($conflicts.kind -ne "result" -or $null -eq $conflicts.data.items) {
-            throw "The CLI conflict center response is invalid after the local/remote race."
+        if ([IO.File]::ReadAllText($remoteFile) -ne "remote-before-local") {
+            throw "The remote batch did not hydrate the expected content."
         }
+
+        # Preserve the local change in CfSharp's journal while the instance is offline.
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "instance", "disable",
+            "--instance-id", $instanceId) | Out-Null
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart") | Out-Null
+        Wait-MirrorPulseHostStopped
+        $queuedFile = Join-Path $mappedRoot "queued-upload.txt"
+        [IO.File]::WriteAllText($queuedFile, "queued-local-upload")
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        do {
+            Start-Sleep -Milliseconds 250
+            $queuedStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+        } while ($queuedStatus.data.pendingUploads -lt 1 -and [DateTime]::UtcNow -lt $deadline)
+        if ($queuedStatus.data.pendingUploads -lt 1) {
+            throw "The offline local edit was not retained in the upload journal."
+        }
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "instance", "enable",
+            "--instance-id", $instanceId) | Out-Null
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart") | Out-Null
+        Wait-MirrorPulseHostStopped
+        $sourceUpload = Join-Path $sourceRoot "queued-upload.txt"
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while (-not (Test-Path -LiteralPath $sourceUpload) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            Invoke-MirrorPulseCli @("--json", "--developer-mode", "status") | Out-Null
+        }
+        if (-not (Test-Path -LiteralPath $sourceUpload) -or
+            [IO.File]::ReadAllText($sourceUpload) -ne "queued-local-upload") {
+            throw "The persisted upload was not delivered to the Local Adapter source."
+        }
+
+        # Both sides change while the Host is stopped. The conflict must survive another restart.
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "stop") | Out-Null
+        Wait-MirrorPulseHostStopped
+        [IO.File]::WriteAllText($remoteFile, "local-conflict")
+        [IO.File]::WriteAllText($roundTrip, "remote-conflict")
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "start") | Out-Null
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            Start-Sleep -Milliseconds 500
+            Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh") | Out-Null
+            $conflicts = Invoke-MirrorPulseCli @("--json", "--developer-mode", "conflict", "list")
+            $conflict = @($conflicts.data.items) |
+                Where-Object { $_.relativePath -like "*cli-roundtrip.txt" } | Select-Object -First 1
+        } while ($null -eq $conflict -and [DateTime]::UtcNow -lt $deadline)
+        if ($null -eq $conflict) { throw "The local/remote race did not create a CLI-visible conflict." }
+        $conflictId = $conflict.conflictId
     }
 
     $restart = Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart")
     if ($restart.kind -ne "result") { throw "The CLI Host restart response is invalid." }
+    Wait-MirrorPulseHostStopped
     $listed = Invoke-MirrorPulseCli @("--json", "--developer-mode", "instance", "list")
     if (-not (@($listed.data.instances) | Where-Object { $_.instanceId -eq $instanceId })) {
         throw "The instance was not retained across a CLI Host restart."
+    }
+    if ($Regression) {
+        $persisted = Invoke-MirrorPulseCli @("--json", "--developer-mode", "conflict", "list")
+        if (-not (@($persisted.data.items) | Where-Object { $_.conflictId -eq $conflictId })) {
+            throw "The conflict was not retained across a CLI Host restart."
+        }
     }
 
     Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "stop") | Out-Null

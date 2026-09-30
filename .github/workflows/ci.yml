@@ -113,6 +113,22 @@ jobs:
           path: ${{ runner.temp }}/mirrorpulse-cli-host-win-arm64
           if-no-files-found: error
 
+      - name: Verify ARM64 CLI through signed Local Adapter and Cloud Files
+        shell: pwsh
+        timeout-minutes: 10
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $directory = Join-Path $env:RUNNER_TEMP 'mirrorpulse-cli-local'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          gh release download --repo MirrorPulse/adapter-local --dir $directory --pattern '*.mpadapter*'
+          if ($LASTEXITCODE -ne 0) { throw 'The signed Local Adapter release could not be downloaded.' }
+          $package = Get-ChildItem -LiteralPath $directory -Filter '*.mpadapter' -File | Select-Object -First 1
+          if ($null -eq $package -or -not (Test-Path -LiteralPath "$($package.FullName).signature.json")) {
+            throw 'The Local Adapter package or signature is missing.'
+          }
+          pwsh ./eng/verify-cli-regression.ps1 -Runtime win-arm64 -PackagePath $package.FullName
+
       - name: Verify signed official packages and native ARM64 Workers
         run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SignedPackageProcessTests
 
