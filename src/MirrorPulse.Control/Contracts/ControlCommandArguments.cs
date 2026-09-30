@@ -18,6 +18,18 @@ public sealed record ControlEmptyArguments : IMirrorPulseControlArguments;
 
 public sealed record HostLifecycleArguments(bool Force = false) : IMirrorPulseControlArguments;
 
+/// <summary>
+/// Snapshot of the current user's Host process and lifecycle channel.
+/// </summary>
+public sealed record MirrorPulseHostStatus(
+    string State,
+    int ProcessId,
+    string ControlPipeName,
+    DateTimeOffset StartedAt,
+    bool CanStop,
+    bool CanRestart,
+    string? RequestedAction = null);
+
 public sealed record AdapterInstallArguments(string PackagePath) : IMirrorPulseControlArguments;
 
 public sealed record AdapterRemoveArguments(string AdapterId, bool Purge = false) : IMirrorPulseControlArguments;

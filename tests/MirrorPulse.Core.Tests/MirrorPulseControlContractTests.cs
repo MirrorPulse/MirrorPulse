@@ -209,7 +209,7 @@ public sealed class MirrorPulseControlContractTests
         using var document = JsonDocument.Parse("{}");
         var request = new ControlRequestEnvelope(
             MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
-            MirrorPulseControlCommands.HostStatus, document.RootElement);
+            MirrorPulseControlCommands.SyncStatus, document.RootElement);
 
         var response = await dispatcher.DispatchAsync(request);
 
@@ -219,12 +219,41 @@ public sealed class MirrorPulseControlContractTests
     }
 
     [TestMethod]
+    public async Task LegacyBridgeExposesHostLifecycleCommandsSeparatelyFromSyncStatus()
+    {
+        var hostStatus = new MirrorPulseHostStatus(
+            "Running", 123, "MirrorPulse-control-test", DateTimeOffset.UtcNow,
+            true, true);
+        var expected = new MirrorPulseAppStatusResponse(0, 0, [], []);
+        var dispatcher = new MirrorPulseControlDispatcher();
+        var bridge = new MirrorPulseLegacyCommandBridge(
+            _ => Task.FromResult(expected),
+            hostStatus: _ => Task.FromResult(hostStatus),
+            hostStart: (_, _) => Task.FromResult(hostStatus),
+            hostStop: (_, _) => Task.FromResult(hostStatus with { RequestedAction = "stop" }),
+            hostRestart: (_, _) => Task.FromResult(hostStatus with { RequestedAction = "restart" }));
+        bridge.Register(dispatcher);
+        using var document = JsonDocument.Parse("{}");
+
+        var status = await dispatcher.DispatchAsync(new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
+            MirrorPulseControlCommands.HostStatus, document.RootElement));
+        var restart = await dispatcher.DispatchAsync(new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
+            MirrorPulseControlCommands.HostRestart, document.RootElement));
+
+        Assert.IsTrue(status.Succeeded);
+        Assert.AreEqual("Running", status.Data!.Value.GetProperty("state").GetString());
+        Assert.AreEqual("restart", restart.Data!.Value.GetProperty("requestedAction").GetString());
+    }
+
+    [TestMethod]
     public async Task TypedClientSendsRequestAndDeserializesResponse()
     {
         var pipeName = $"MirrorPulse-control-test-{Guid.NewGuid():N}";
         var dispatcher = new MirrorPulseControlDispatcher();
         dispatcher.Register<ControlEmptyArguments, MirrorPulseAppStatusResponse>(
-            MirrorPulseControlCommands.HostStatus,
+            MirrorPulseControlCommands.SyncStatus,
             (_, _) => ValueTask.FromResult(new MirrorPulseAppStatusResponse(4, 0, [], [])));
         using var shutdown = new CancellationTokenSource();
         var server = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync, pipeName);
@@ -287,5 +316,15 @@ public sealed class MirrorPulseControlContractTests
         await acceptTask;
 
         Assert.AreEqual(MirrorPulseControlErrorCodes.HostUnavailable, exception.Error.Code);
+    }
+
+    [TestMethod]
+    public async Task HostLocatorReportsMissingCurrentUserHost()
+    {
+        var locator = new MirrorPulseHostLocator($"MirrorPulse-control-locator-{Guid.NewGuid():N}");
+
+        bool running = await locator.IsRunningAsync(TimeSpan.FromMilliseconds(50));
+
+        Assert.IsFalse(running);
     }
 }

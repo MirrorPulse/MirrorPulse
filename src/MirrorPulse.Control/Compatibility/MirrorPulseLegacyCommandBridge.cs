@@ -21,6 +21,13 @@ public sealed class MirrorPulseLegacyCommandBridge
     private readonly Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _install;
     private readonly Func<MirrorPulseCreateInstanceRequest, CancellationToken,
         Task<MirrorPulseAppStatusResponse>>? _createInstance;
+    private readonly Func<CancellationToken, Task<MirrorPulseHostStatus>>? _hostStatus;
+    private readonly Func<HostLifecycleArguments, CancellationToken,
+        Task<MirrorPulseHostStatus>>? _hostStart;
+    private readonly Func<HostLifecycleArguments, CancellationToken,
+        Task<MirrorPulseHostStatus>>? _hostStop;
+    private readonly Func<HostLifecycleArguments, CancellationToken,
+        Task<MirrorPulseHostStatus>>? _hostRestart;
 
     public MirrorPulseLegacyCommandBridge(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
@@ -32,7 +39,14 @@ public sealed class MirrorPulseLegacyCommandBridge
             Task<MirrorPulseAppStatusResponse>>? selectVersion = null,
         Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? install = null,
         Func<MirrorPulseCreateInstanceRequest, CancellationToken,
-            Task<MirrorPulseAppStatusResponse>>? createInstance = null)
+            Task<MirrorPulseAppStatusResponse>>? createInstance = null,
+        Func<CancellationToken, Task<MirrorPulseHostStatus>>? hostStatus = null,
+        Func<HostLifecycleArguments, CancellationToken,
+            Task<MirrorPulseHostStatus>>? hostStart = null,
+        Func<HostLifecycleArguments, CancellationToken,
+            Task<MirrorPulseHostStatus>>? hostStop = null,
+        Func<HostLifecycleArguments, CancellationToken,
+            Task<MirrorPulseHostStatus>>? hostRestart = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -41,17 +55,46 @@ public sealed class MirrorPulseLegacyCommandBridge
         _selectVersion = selectVersion;
         _install = install;
         _createInstance = createInstance;
+        _hostStatus = hostStatus;
+        _hostStart = hostStart;
+        _hostStop = hostStop;
+        _hostRestart = hostRestart;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         dispatcher.Register<ControlEmptyArguments, MirrorPulseAppStatusResponse>(
-            MirrorPulseControlCommands.HostStatus,
-            (_, cancellationToken) => new(_readStatus(cancellationToken)));
-        dispatcher.Register<ControlEmptyArguments, MirrorPulseAppStatusResponse>(
             MirrorPulseControlCommands.SyncStatus,
             (_, cancellationToken) => new(_readStatus(cancellationToken)));
+
+        if (_hostStatus is not null)
+        {
+            dispatcher.Register<ControlEmptyArguments, MirrorPulseHostStatus>(
+                MirrorPulseControlCommands.HostStatus,
+                (_, cancellationToken) => new(_hostStatus(cancellationToken)));
+        }
+
+        if (_hostStart is not null)
+        {
+            dispatcher.Register<HostLifecycleArguments, MirrorPulseHostStatus>(
+                MirrorPulseControlCommands.HostStart,
+                (arguments, cancellationToken) => new(_hostStart(arguments, cancellationToken)));
+        }
+
+        if (_hostStop is not null)
+        {
+            dispatcher.Register<HostLifecycleArguments, MirrorPulseHostStatus>(
+                MirrorPulseControlCommands.HostStop,
+                (arguments, cancellationToken) => new(_hostStop(arguments, cancellationToken)));
+        }
+
+        if (_hostRestart is not null)
+        {
+            dispatcher.Register<HostLifecycleArguments, MirrorPulseHostStatus>(
+                MirrorPulseControlCommands.HostRestart,
+                (arguments, cancellationToken) => new(_hostRestart(arguments, cancellationToken)));
+        }
 
         if (_snooze is not null)
         {

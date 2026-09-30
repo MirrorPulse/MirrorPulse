@@ -5,6 +5,7 @@ using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Control.Compatibility;
 using MirrorPulse.Control.Dispatch;
 using MirrorPulse.Control.Transport;
+using MirrorPulse.Control.Contracts;
 using MirrorPulse.Core;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
@@ -36,6 +37,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
     private MirrorPulseControlPipeServer? _controlPipe;
     private Task? _serveTask;
     private MirrorPulseLifecycleState _state = MirrorPulseLifecycleState.Created;
+    private DateTimeOffset _startedAt;
+    private string? _requestedAction;
     private bool _disposed;
 
     private MirrorPulseHostApplication(
@@ -65,6 +68,15 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
     public MirrorPulseLifecycleState State => _state;
 
     public bool IsRunning => _state is MirrorPulseLifecycleState.Running or MirrorPulseLifecycleState.Degraded;
+
+    public MirrorPulseHostStatus GetHostStatus() => new(
+        _state.ToString(),
+        Environment.ProcessId,
+        MirrorPulseControlPipeNames.CurrentUserV1(),
+        _startedAt,
+        IsRunning,
+        IsRunning,
+        _requestedAction);
 
     public static async Task<MirrorPulseHostApplication> CreateAsync(
         MirrorPulseStoragePaths paths,
@@ -193,6 +205,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             await _session.StartAsync(cancellationToken).ConfigureAwait(false);
             await _workers.StartAsync(_topology).ConfigureAwait(false);
             await _remotePoller.StartAsync(cancellationToken).ConfigureAwait(false);
+            _startedAt = DateTimeOffset.UtcNow;
+            _requestedAction = null;
             _state = MirrorPulseLifecycleState.Running;
         }
         catch
@@ -291,9 +305,68 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             SetInstanceEnabledAsync,
             SelectInstallationAsync,
             InstallAdapterAsync,
-            (request, cancellationToken) => CreateInstanceAsync(provisioner, request, cancellationToken))
+            (request, cancellationToken) => CreateInstanceAsync(provisioner, request, cancellationToken),
+            _ => Task.FromResult(GetHostStatus()),
+            StartRequestedAsync,
+            StopRequestedAsync,
+            RestartRequestedAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
+    }
+
+    private async Task<MirrorPulseHostStatus> StartRequestedAsync(
+        HostLifecycleArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        if (_state == MirrorPulseLifecycleState.Created)
+        {
+            await StartAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (_state == MirrorPulseLifecycleState.Failed)
+        {
+            throw new InvalidOperationException("The MirrorPulse Host failed during startup and must be restarted.");
+        }
+
+        return GetHostStatus();
+    }
+
+    private Task<MirrorPulseHostStatus> StopRequestedAsync(
+        HostLifecycleArguments arguments,
+        CancellationToken cancellationToken) =>
+        RequestStopAsync("stop", arguments, cancellationToken);
+
+    private Task<MirrorPulseHostStatus> RestartRequestedAsync(
+        HostLifecycleArguments arguments,
+        CancellationToken cancellationToken) =>
+        RequestStopAsync("restart", arguments, cancellationToken);
+
+    private Task<MirrorPulseHostStatus> RequestStopAsync(
+        string action,
+        HostLifecycleArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsRunning && _state != MirrorPulseLifecycleState.Stopping)
+        {
+            throw new InvalidOperationException("The MirrorPulse Host is not running.");
+        }
+
+        _requestedAction = action;
+        _state = MirrorPulseLifecycleState.Stopping;
+        _ = CancelAfterResponseAsync();
+        return Task.FromResult(GetHostStatus());
+    }
+
+    private async Task CancelAfterResponseAsync()
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+            _shutdown.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     private async Task<MirrorPulseAppStatusResponse> InstallAdapterAsync(

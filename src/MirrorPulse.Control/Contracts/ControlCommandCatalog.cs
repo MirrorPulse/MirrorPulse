@@ -8,6 +8,7 @@ public static class MirrorPulseControlCommands
     public const string HostStatus = "host.status";
     public const string HostStart = "host.start";
     public const string HostStop = "host.stop";
+    public const string HostRestart = "host.restart";
 
     public const string AdapterList = "adapter.list";
     public const string AdapterInstall = "adapter.install";
@@ -36,6 +37,7 @@ public static class MirrorPulseControlCommands
         new(HostStatus, "host", false, false),
         new(HostStart, "host", true, false),
         new(HostStop, "host", true, false),
+        new(HostRestart, "host", true, false),
         new(AdapterList, "adapter", false, false),
         new(AdapterInstall, "adapter", true, false),
         new(AdapterRemove, "adapter", true, false),

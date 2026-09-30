@@ -172,6 +172,11 @@ public sealed class MirrorPulseControlClient
 
     public Task<MirrorPulseAppStatusResponse> GetStatusAsync(CancellationToken cancellationToken = default) =>
         SendAsync<ControlEmptyArguments, MirrorPulseAppStatusResponse>(
+            MirrorPulseControlCommands.SyncStatus, new(), cancellationToken);
+
+    public Task<MirrorPulseHostStatus> GetHostStatusAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ControlEmptyArguments, MirrorPulseHostStatus>(
             MirrorPulseControlCommands.HostStatus, new(), cancellationToken);
 
     public Task<MirrorPulseAppStatusResponse> InstallAsync(
