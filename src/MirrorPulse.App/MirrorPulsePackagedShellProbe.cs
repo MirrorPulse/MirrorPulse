@@ -11,7 +11,9 @@ internal static class MirrorPulsePackagedShellProbe
 {
     public static async Task RunAsync(string resultPath, App app)
     {
-        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-packaged-shell",
+        string root = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "MirrorPulse-packaged-shell",
             Guid.NewGuid().ToString("N"));
         MirrorPulseShellRegistrationProfile? profile = null;
         try
