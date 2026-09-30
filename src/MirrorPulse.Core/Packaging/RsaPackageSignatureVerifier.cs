@@ -4,7 +4,7 @@ using MirrorPulse.Core.Contracts;
 namespace MirrorPulse.Core.Packaging;
 
 /// <summary>
-/// Verifies a detached RSA-SHA256 signature over the canonical package file manifest.
+/// Verifies an RSA-SHA256 signature over the canonical package file manifest.
 /// </summary>
 public sealed class RsaPackageSignatureVerifier : IAdapterPackageSignatureVerifier
 {

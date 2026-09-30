@@ -138,11 +138,6 @@ try
                 }
 
                 string signaturePath = source + ".signature.json";
-                if (!File.Exists(signaturePath))
-                {
-                    throw new FileNotFoundException(
-                        "The detached Adapter signature must be next to the .mpadapter file.", signaturePath);
-                }
 
                 string runtimeIdentifier = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
                 {

@@ -98,7 +98,7 @@ public sealed record PackageFileEntry
 }
 
 /// <summary>
-/// Complete package file inventory used by the detached package signature.
+/// Complete package file inventory covered by the Adapter signature.
 /// </summary>
 public sealed record PackageFileManifest
 {

@@ -44,6 +44,8 @@ public sealed class FtpSignedPackageProcessTests
                     Assert.IsNotNull(zip.GetEntry($"worker/{runtime}/MirrorPulse.Adapter.Ftp.Worker.dll"));
                     Assert.IsNotNull(zip.GetEntry($"worker/{runtime}/FluentFTP.dll"));
                 }
+
+                Assert.IsNotNull(zip.GetEntry(SignedProcessAdapterInstaller.EmbeddedSignaturePath));
             }
 
             string runtimeIdentifier = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
@@ -53,7 +55,14 @@ public sealed class FtpSignedPackageProcessTests
                 runtimeIdentifier, key, "MirrorPulse");
             Assert.AreEqual("com.mirrorpulse.adapter.ftp", installation.AdapterId);
             Assert.IsTrue(File.Exists(installation.ExecutablePath));
+            Assert.IsFalse(File.Exists(Path.Combine(installation.InstallationDirectory,
+                SignedProcessAdapterInstaller.EmbeddedSignaturePath.Replace('/', Path.DirectorySeparatorChar))));
             await VerifyInstalledWorkerStartsAsync(installation);
+
+            SignedProcessAdapterInstallation standalone = await SignedProcessAdapterInstaller.InstallAsync(
+                packagePath, Path.Combine(root, "missing.signature.json"), Path.Combine(root, "standalone"),
+                runtimeIdentifier, key, "MirrorPulse");
+            Assert.IsTrue(File.Exists(standalone.ExecutablePath));
 
             var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"),
                 Path.Combine(root, "product-data"));

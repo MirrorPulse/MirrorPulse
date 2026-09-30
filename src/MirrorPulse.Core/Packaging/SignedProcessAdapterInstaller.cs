@@ -17,6 +17,7 @@ public sealed record SignedProcessAdapterInstallation(
 public static class SignedProcessAdapterInstaller
 {
     private const long MaximumUncompressedBytes = 2L * 1024 * 1024 * 1024;
+    public const string EmbeddedSignaturePath = "META-INF/mirrorpulse/signature.json";
 
     public static async Task<SignedProcessAdapterInstallation> InstallAsync(
         string packagePath,
@@ -38,8 +39,21 @@ public static class SignedProcessAdapterInstaller
             throw new PlatformNotSupportedException("The Adapter runtime is unsupported.");
         }
 
-        using JsonDocument metadata = JsonDocument.Parse(await File.ReadAllTextAsync(signaturePath, cancellationToken)
-            .ConfigureAwait(false));
+        await using var packageStream = File.OpenRead(packagePath);
+        using var archive = new ZipArchive(packageStream, ZipArchiveMode.Read, leaveOpen: true);
+        ZipArchiveEntry[] embeddedSignatures = archive.Entries
+            .Where(entry => entry.FullName == EmbeddedSignaturePath).ToArray();
+        if (embeddedSignatures.Length > 1 || embeddedSignatures.Any(entry => entry.Length > 1024 * 1024))
+        {
+            throw new InvalidDataException("The embedded Adapter signature is duplicated or too large.");
+        }
+
+        ZipArchiveEntry? embeddedSignature = embeddedSignatures.SingleOrDefault();
+        using JsonDocument metadata = embeddedSignature is not null
+            ? await JsonDocument.ParseAsync(embeddedSignature.Open(), cancellationToken: cancellationToken)
+                .ConfigureAwait(false)
+            : JsonDocument.Parse(await File.ReadAllTextAsync(signaturePath, cancellationToken)
+                .ConfigureAwait(false));
         JsonElement root = metadata.RootElement;
         string algorithm = root.GetProperty("algorithm").GetString() ?? string.Empty;
         string signer = root.GetProperty("signer").GetString() ?? string.Empty;
@@ -51,8 +65,6 @@ public static class SignedProcessAdapterInstaller
                 Sha256Digest.Parse(file.GetProperty("sha256").GetString() ?? string.Empty))).ToArray();
         var declaredManifest = new PackageFileManifest(declaredFiles);
 
-        await using var packageStream = File.OpenRead(packagePath);
-        using var archive = new ZipArchive(packageStream, ZipArchiveMode.Read, leaveOpen: true);
         if (archive.Entries.Count == 0 || archive.Entries.Count > 4096 ||
             archive.Entries.Any(entry => string.IsNullOrEmpty(entry.Name) ||
                 ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000))
@@ -64,6 +76,11 @@ public static class SignedProcessAdapterInstaller
         long totalBytes = 0;
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
+            if (entry.FullName == EmbeddedSignaturePath)
+            {
+                continue;
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             if (entry.Length > MaximumUncompressedBytes - totalBytes)
             {
@@ -131,6 +148,11 @@ public static class SignedProcessAdapterInstaller
             Directory.CreateDirectory(stagedDirectory);
             foreach (ZipArchiveEntry entry in archive.Entries)
             {
+                if (entry.FullName == EmbeddedSignaturePath)
+                {
+                    continue;
+                }
+
                 string target = Path.GetFullPath(Path.Combine(stagedDirectory,
                     entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
                 if (!target.StartsWith(stagedDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))

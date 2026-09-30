@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using MirrorPulse.Core.Contracts;
@@ -102,6 +103,14 @@ public static class OfficialProcessAdapterPackageBuilder
             };
             await File.WriteAllTextAsync(signaturePath, JsonSerializer.Serialize(envelope, JsonOptions),
                 cancellationToken).ConfigureAwait(false);
+            using (var archive = ZipFile.Open(package.PackagePath, ZipArchiveMode.Update))
+            {
+                ZipArchiveEntry embedded = archive.CreateEntry(
+                    SignedProcessAdapterInstaller.EmbeddedSignaturePath, CompressionLevel.Optimal);
+                await using Stream output = embedded.Open();
+                await JsonSerializer.SerializeAsync(output, envelope, JsonOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             return new SignedAdapterPackageBuildResult(package, signaturePath);
         }
         finally
