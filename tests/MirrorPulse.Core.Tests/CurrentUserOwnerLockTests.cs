@@ -34,4 +34,16 @@ public sealed class CurrentUserOwnerLockTests
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => owner.TryAcquire(TimeSpan.FromMilliseconds(-2)));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => owner.TryAcquire(TimeSpan.FromMilliseconds(int.MaxValue) + TimeSpan.FromMilliseconds(1)));
     }
+
+    [TestMethod]
+    public void HostLeaseAllowsOnlyOneCurrentUserOwner()
+    {
+        using var first = MirrorPulseHostLease.CreateDefault();
+        using var second = MirrorPulseHostLease.CreateDefault();
+
+        Assert.IsTrue(first.TryAcquire(TimeSpan.Zero));
+        Assert.IsFalse(second.TryAcquire(TimeSpan.Zero));
+        Assert.IsTrue(first.IsHeld);
+        Assert.IsFalse(second.IsHeld);
+    }
 }
