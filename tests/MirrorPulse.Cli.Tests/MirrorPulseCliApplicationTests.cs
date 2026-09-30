@@ -52,10 +52,13 @@ public sealed class MirrorPulseCliApplicationTests
         using var output = new StringWriter();
         using var error = new StringWriter();
 
-        int exitCode = await MirrorPulseCliApplication.RunAsync(["host", "status"], output, error);
+        var operations = new FakeHostOperations();
+        int exitCode = await MirrorPulseCliApplication.RunAsync(
+            ["host", "status"], output, error, hostOperations: operations);
 
-        Assert.AreEqual(8, exitCode);
-        StringAssert.Contains(error.ToString(), "recognized");
+        Assert.AreEqual(0, exitCode);
+        Assert.AreEqual(0, operations.EnsureStartedCount);
+        StringAssert.Contains(output.ToString(), "fake-host");
     }
 
     [TestMethod]
@@ -79,9 +82,10 @@ public sealed class MirrorPulseCliApplicationTests
     {
         using var output = new StringWriter();
         using var error = new StringWriter();
+        var operations = new FakeHostOperations();
 
         int exitCode = await MirrorPulseCliApplication.RunAsync(
-            ["--json", "host", "status"], output, error);
+            ["--json", "status"], output, error, hostOperations: operations);
 
         Assert.AreEqual(8, exitCode);
         Assert.AreEqual(string.Empty, output.ToString());
@@ -123,5 +127,50 @@ public sealed class MirrorPulseCliApplicationTests
         StringAssert.Contains(exception.Message, "one password source");
         Assert.IsFalse(exception.Message.Contains("secret-value", StringComparison.Ordinal));
         Assert.IsFalse(exception.Message.Contains("prompt-value", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task OrdinaryCommandStartsHostUnlessNoStartIsSet()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var operations = new FakeHostOperations();
+
+        int exitCode = await MirrorPulseCliApplication.RunAsync(
+            ["status"], output, error, hostOperations: operations);
+
+        Assert.AreEqual(8, exitCode);
+        Assert.AreEqual(1, operations.EnsureStartedCount);
+
+        output.GetStringBuilder().Clear();
+        error.GetStringBuilder().Clear();
+        operations.EnsureStartedCount = 0;
+        exitCode = await MirrorPulseCliApplication.RunAsync(
+            ["--no-start", "status"], output, error, hostOperations: operations);
+
+        Assert.AreEqual(8, exitCode);
+        Assert.AreEqual(0, operations.EnsureStartedCount);
+    }
+
+    private sealed class FakeHostOperations : IMirrorPulseCliHostOperations
+    {
+        public int EnsureStartedCount { get; set; }
+
+        public Task EnsureStartedAsync(CancellationToken cancellationToken)
+        {
+            EnsureStartedCount++;
+            return Task.CompletedTask;
+        }
+
+        public async Task<int> RunHostCommandAsync(
+            string action,
+            bool json,
+            TextWriter output,
+            TextWriter errorWriter,
+            CancellationToken cancellationToken)
+        {
+            await output.WriteLineAsync("fake-host");
+            return 0;
+        }
     }
 }

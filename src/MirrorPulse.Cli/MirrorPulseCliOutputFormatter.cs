@@ -77,6 +77,27 @@ public static class MirrorPulseCliOutputFormatter
         await error.WriteLineAsync(message).ConfigureAwait(false);
     }
 
+    public static async Task WriteDataAsync<T>(
+        T value,
+        string humanText,
+        bool json,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        if (json)
+        {
+            await WriteJsonAsync(output, new
+            {
+                SchemaVersion,
+                Kind = "result",
+                Data = value
+            }, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await output.WriteLineAsync(humanText).ConfigureAwait(false);
+    }
+
     private static async Task WriteJsonAsync<T>(
         TextWriter writer,
         T value,

@@ -1,0 +1,160 @@
+using MirrorPulse.Control.Client;
+using MirrorPulse.Control.Contracts;
+
+namespace MirrorPulse.Cli;
+
+public interface IMirrorPulseCliHostOperations
+{
+    Task EnsureStartedAsync(CancellationToken cancellationToken);
+
+    Task<int> RunHostCommandAsync(
+        string action,
+        bool json,
+        TextWriter output,
+        TextWriter errorWriter,
+        CancellationToken cancellationToken);
+}
+
+public static class MirrorPulseCliHostPathResolver
+{
+    public static MirrorPulseHostStartupOptions CreateDefault(bool developerMode)
+    {
+        string siblingHost = Path.Combine(AppContext.BaseDirectory, "MirrorPulse.Host.exe");
+        string? explicitHost = Environment.GetEnvironmentVariable("MIRRORPULSE_HOST_PATH");
+        bool developer = developerMode ||
+            string.Equals(Environment.GetEnvironmentVariable("MIRRORPULSE_DEVELOPER_MODE"),
+                "1", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Environment.GetEnvironmentVariable("MIRRORPULSE_DEVELOPER_MODE"),
+                "true", StringComparison.OrdinalIgnoreCase);
+
+        return new MirrorPulseHostStartupOptions
+        {
+            InstalledHostPath = !developer && File.Exists(siblingHost) ? siblingHost : null,
+            DevelopmentHostPath = explicitHost ?? siblingHost,
+            DeveloperMode = developer
+        };
+    }
+}
+
+public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations, IAsyncDisposable
+{
+    private readonly MirrorPulseHostStartupCoordinator _startup;
+    private readonly MirrorPulseControlClient _client;
+
+    public MirrorPulseCliHostOperations(MirrorPulseHostStartupOptions options)
+    {
+        _startup = new MirrorPulseHostStartupCoordinator(options: options);
+        _client = new MirrorPulseControlClient();
+    }
+
+    public Task EnsureStartedAsync(CancellationToken cancellationToken) =>
+        _startup.EnsureStartedAsync(cancellationToken);
+
+    public async Task<int> RunHostCommandAsync(
+        string action,
+        bool json,
+        TextWriter output,
+        TextWriter errorWriter,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            MirrorPulseHostStatus status = action.ToLowerInvariant() switch
+            {
+                "status" => await _client.GetHostStatusAsync(cancellationToken).ConfigureAwait(false),
+                "start" => await StartAsync(cancellationToken).ConfigureAwait(false),
+                "stop" => await _client.StopHostAsync(cancellationToken: cancellationToken)
+                    .ConfigureAwait(false),
+                "restart" => await _client.RestartHostAsync(cancellationToken: cancellationToken)
+                    .ConfigureAwait(false),
+                _ => throw new InvalidOperationException($"Unknown Host action '{action}'.")
+            };
+
+            string human =
+                $"{status.State} (pid {status.ProcessId}, pipe {status.ControlPipeName})";
+            await MirrorPulseCliOutputFormatter.WriteDataAsync(
+                status, human, json, output, cancellationToken).ConfigureAwait(false);
+            return MirrorPulseControlExitCodes.Success;
+        }
+        catch (MirrorPulseControlException exception)
+        {
+            return await WriteControlErrorAsync(exception.Error, json, errorWriter, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+                MirrorPulseControlExitCodes.Cancelled,
+                "mp.control.cancelled",
+                "The operation was cancelled.",
+                json,
+                errorWriter,
+                cancellationToken).ConfigureAwait(false);
+            return MirrorPulseControlExitCodes.Cancelled;
+        }
+    }
+
+    public async ValueTask DisposeAsync() => await _startup.DisposeAsync().ConfigureAwait(false);
+
+    private async Task<MirrorPulseHostStatus> StartAsync(CancellationToken cancellationToken)
+    {
+        await EnsureStartedAsync(cancellationToken).ConfigureAwait(false);
+        return await _client.StartHostAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<int> WriteControlErrorAsync(
+        ControlError error,
+        bool json,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        int exitCode = MirrorPulseCliExitCodeMapper.From(error);
+        await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+            exitCode,
+            error.Code,
+            error.Message,
+            json,
+            output,
+            cancellationToken).ConfigureAwait(false);
+        return exitCode;
+    }
+}
+
+public static class MirrorPulseCliExitCodeMapper
+{
+    public static int From(ControlError error) => error.Category switch
+    {
+        MirrorPulse.Core.Contracts.ErrorCategory.Validation => MirrorPulseControlExitCodes.Validation,
+        MirrorPulse.Core.Contracts.ErrorCategory.Authentication => MirrorPulseControlExitCodes.Authentication,
+        MirrorPulse.Core.Contracts.ErrorCategory.Authorization => MirrorPulseControlExitCodes.Authorization,
+        MirrorPulse.Core.Contracts.ErrorCategory.Network => MirrorPulseControlExitCodes.Unavailable,
+        MirrorPulse.Core.Contracts.ErrorCategory.Conflict => MirrorPulseControlExitCodes.Conflict,
+        MirrorPulse.Core.Contracts.ErrorCategory.Unsupported => MirrorPulseControlExitCodes.Unsupported,
+        MirrorPulse.Core.Contracts.ErrorCategory.Storage => MirrorPulseControlExitCodes.Storage,
+        MirrorPulse.Core.Contracts.ErrorCategory.Cancelled => MirrorPulseControlExitCodes.Cancelled,
+        _ when error.Code == MirrorPulseControlErrorCodes.RequestTimeout ||
+                error.Code == MirrorPulseControlErrorCodes.HostStartTimeout =>
+            MirrorPulseControlExitCodes.Timeout,
+        _ => MirrorPulseControlExitCodes.Internal
+    };
+}
+
+public static class MirrorPulseCliHostOperationsError
+{
+    public static async Task<int> WriteAsync(
+        ControlError error,
+        bool json,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        int exitCode = MirrorPulseCliExitCodeMapper.From(error);
+        await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+            exitCode,
+            error.Code,
+            error.Message,
+            json,
+            output,
+            cancellationToken).ConfigureAwait(false);
+        return exitCode;
+    }
+}

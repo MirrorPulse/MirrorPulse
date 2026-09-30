@@ -1,4 +1,5 @@
 using System.Reflection;
+using MirrorPulse.Control.Client;
 
 namespace MirrorPulse.Cli;
 
@@ -14,6 +15,7 @@ public sealed class MirrorPulseCliApplication
         IReadOnlyList<string> arguments,
         TextWriter? output = null,
         TextWriter? error = null,
+        IMirrorPulseCliHostOperations? hostOperations = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -65,6 +67,36 @@ public sealed class MirrorPulseCliApplication
             }
 
             return 0;
+        }
+
+        bool isHostCommand = parsed.Command!.Path.Count >= 2 &&
+            parsed.Command.Path[0].Equals("host", StringComparison.OrdinalIgnoreCase);
+        hostOperations ??= new MirrorPulseCliHostOperations(
+            MirrorPulseCliHostPathResolver.CreateDefault(parsed.Options.DeveloperMode));
+        if (isHostCommand)
+        {
+            return await hostOperations.RunHostCommandAsync(
+                parsed.Command.Path[1],
+                parsed.Options.Json,
+                output,
+                error,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!parsed.Options.NoStart)
+        {
+            try
+            {
+                await hostOperations.EnsureStartedAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (MirrorPulseControlException exception)
+            {
+                return await MirrorPulseCliHostOperationsError.WriteAsync(
+                    exception.Error,
+                    parsed.Options.Json,
+                    error,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         string message = $"Command '{parsed.Command!.Name}' is recognized but is not available in this milestone.";

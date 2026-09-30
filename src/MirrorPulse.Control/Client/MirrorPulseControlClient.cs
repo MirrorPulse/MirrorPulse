@@ -179,6 +179,24 @@ public sealed class MirrorPulseControlClient
         SendAsync<ControlEmptyArguments, MirrorPulseHostStatus>(
             MirrorPulseControlCommands.HostStatus, new(), cancellationToken);
 
+    public Task<MirrorPulseHostStatus> StartHostAsync(
+        bool force = false,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<HostLifecycleArguments, MirrorPulseHostStatus>(
+            MirrorPulseControlCommands.HostStart, new(force), cancellationToken);
+
+    public Task<MirrorPulseHostStatus> StopHostAsync(
+        bool force = false,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<HostLifecycleArguments, MirrorPulseHostStatus>(
+            MirrorPulseControlCommands.HostStop, new(force), cancellationToken);
+
+    public Task<MirrorPulseHostStatus> RestartHostAsync(
+        bool force = false,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<HostLifecycleArguments, MirrorPulseHostStatus>(
+            MirrorPulseControlCommands.HostRestart, new(force), cancellationToken);
+
     public Task<MirrorPulseControlTopology> GetAdapterTopologyAsync(
         CancellationToken cancellationToken = default) =>
         SendAsync<ControlEmptyArguments, MirrorPulseControlTopology>(

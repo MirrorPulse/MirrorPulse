@@ -3,7 +3,8 @@ namespace MirrorPulse.Cli;
 public sealed record MirrorPulseCliGlobalOptions(
     bool Json = false,
     bool NoStart = false,
-    TimeSpan? Timeout = null);
+    TimeSpan? Timeout = null,
+    bool DeveloperMode = false);
 
 public sealed record MirrorPulseCliCommand(
     IReadOnlyList<string> Path,
@@ -79,6 +80,12 @@ public static class MirrorPulseCliCommandLine
             if (!commandStarted && token.Equals("--no-start", StringComparison.OrdinalIgnoreCase))
             {
                 options = options with { NoStart = true };
+                continue;
+            }
+
+            if (!commandStarted && token.Equals("--developer-mode", StringComparison.OrdinalIgnoreCase))
+            {
+                options = options with { DeveloperMode = true };
                 continue;
             }
 
@@ -175,6 +182,7 @@ public static class MirrorPulseCliHelp
           --version        Show the CLI version.
           --json           Emit machine-readable output.
           --no-start       Do not start the Host automatically.
+          --developer-mode Allow the configured development Host executable.
           --timeout SEC    Set the control request timeout.
 
         Commands:
