@@ -151,10 +151,10 @@ public sealed class SignedWebDavWorkerProcessTests
                     await HandleAsync(context);
                 }
             }
-            catch (HttpListenerException) when (!_listener.IsListening)
+            catch (HttpListenerException)
             {
             }
-            catch (ObjectDisposedException) when (!_listener.IsListening)
+            catch (ObjectDisposedException)
             {
             }
         }
