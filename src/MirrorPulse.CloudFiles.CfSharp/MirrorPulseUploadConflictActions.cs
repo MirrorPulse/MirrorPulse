@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using CfSharp;
-using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.CloudFiles;
+using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
