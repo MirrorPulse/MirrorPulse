@@ -15,6 +15,7 @@ public sealed partial class InstanceConfigurationPage : Page
 {
     private InstalledAdapter? _installation;
     private readonly Dictionary<string, TextBox> _rootLabels = new(StringComparer.Ordinal);
+    private readonly List<(AdapterConfigurationField Field, Control Input)> _configurationInputs = [];
 
     public InstanceConfigurationPage()
     {
@@ -60,6 +61,43 @@ public sealed partial class InstanceConfigurationPage : Page
                 ? "A password is required. MirrorPulse stores it in Windows Credential Manager."
                 : "Optional password or token. MirrorPulse stores it in Windows Credential Manager.";
 
+            if (_installation.Manifest.ConfigurationFields.Count > 0)
+            {
+                SourcePathTextBox.Visibility = Visibility.Collapsed;
+                UsernameTextBox.Visibility = Visibility.Collapsed;
+                SecretBox.Visibility = Visibility.Collapsed;
+                SecretHintText.Visibility = Visibility.Collapsed;
+                AdditionalConfigurationTextBox.Visibility = Visibility.Collapsed;
+                foreach (AdapterConfigurationField field in _installation.Manifest.ConfigurationFields)
+                {
+                    Control input = field.Kind switch
+                    {
+                        AdapterConfigurationFieldKind.Choice => new ComboBox
+                        {
+                            Header = field.Label,
+                            ItemsSource = field.Options.ToArray(),
+                            SelectedItem = field.DefaultValue,
+                        },
+                        AdapterConfigurationFieldKind.Toggle => new ToggleSwitch
+                        {
+                            Header = field.Label,
+                            IsOn = bool.TryParse(field.DefaultValue, out bool enabled) && enabled,
+                        },
+                        AdapterConfigurationFieldKind.Secret => new PasswordBox
+                        {
+                            Header = field.Label,
+                        },
+                        _ => new TextBox
+                        {
+                            Header = field.Label,
+                            Text = field.DefaultValue ?? string.Empty,
+                        },
+                    };
+                    _configurationInputs.Add((field, input));
+                    ConfigurationFieldsPanel.Children.Add(input);
+                }
+            }
+
             HashSet<string> usedLabels = topology.Roots.Select(root => root.Label)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (AdapterRootDefinition definition in _installation.Manifest.RootDefinitions)
@@ -94,7 +132,8 @@ public sealed partial class InstanceConfigurationPage : Page
         try
         {
             string adapterId = _installation.AdapterId.ToString();
-            string? sourceKey = adapterId switch
+            bool usesManifestForm = _configurationInputs.Count > 0;
+            string? sourceKey = usesManifestForm ? null : adapterId switch
             {
                 "com.mirrorpulse.adapter.local" => "sourceDirectory",
                 "com.mirrorpulse.adapter.smb" => "networkPath",
@@ -108,12 +147,14 @@ public sealed partial class InstanceConfigurationPage : Page
                 throw new InvalidDataException("Enter a source path or endpoint.");
             }
 
-            if (adapterId == "com.mirrorpulse.adapter.local" && !Directory.Exists(source))
+            if (!usesManifestForm && adapterId == "com.mirrorpulse.adapter.local" &&
+                !Directory.Exists(source))
             {
                 throw new DirectoryNotFoundException("The local source directory does not exist.");
             }
 
-            var configuration = string.IsNullOrWhiteSpace(AdditionalConfigurationTextBox.Text)
+            var configuration = AdditionalConfigurationTextBox.Visibility != Visibility.Visible ||
+                string.IsNullOrWhiteSpace(AdditionalConfigurationTextBox.Text)
                 ? new Dictionary<string, string>(StringComparer.Ordinal)
                 : JsonSerializer.Deserialize<Dictionary<string, string>>(
                     AdditionalConfigurationTextBox.Text) ?? throw new InvalidDataException(
@@ -136,20 +177,47 @@ public sealed partial class InstanceConfigurationPage : Page
                 }
             }
 
-            if (adapterId == "com.mirrorpulse.adapter.ftp" &&
+            if (!usesManifestForm && adapterId == "com.mirrorpulse.adapter.ftp" &&
                 !configuration.ContainsKey("securityMode"))
             {
                 configuration["securityMode"] = "ExplicitTls";
             }
 
             string? secret = SecretBox.Visibility == Visibility.Visible ? SecretBox.Password : null;
-            if (adapterId is "com.mirrorpulse.adapter.ftp" or "com.mirrorpulse.adapter.sftp" &&
+            foreach ((AdapterConfigurationField field, Control input) in _configurationInputs)
+            {
+                if (input is PasswordBox password)
+                {
+                    secret = password.Password;
+                }
+                else
+                {
+                    string? value = input switch
+                    {
+                        TextBox box => box.Text.Trim(),
+                        ComboBox combo => combo.SelectedItem as string,
+                        ToggleSwitch toggle => toggle.IsOn ? "true" : "false",
+                        _ => null,
+                    };
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        configuration[field.Key] = value;
+                    }
+                }
+            }
+
+            configuration = new Dictionary<string, string>(
+                AdapterConfigurationFieldValidator.ValidateAndApplyDefaults(
+                    _installation.Manifest, configuration, secret), StringComparer.Ordinal);
+            if (!usesManifestForm &&
+                adapterId is ("com.mirrorpulse.adapter.ftp" or "com.mirrorpulse.adapter.sftp") &&
                 (!configuration.TryGetValue("username", out string? usernameValue) ||
                  string.IsNullOrWhiteSpace(usernameValue)))
             {
                 throw new InvalidDataException("This Adapter requires a username.");
             }
-            if (adapterId is "com.mirrorpulse.adapter.ftp" or "com.mirrorpulse.adapter.sftp" &&
+            if (!usesManifestForm &&
+                adapterId is ("com.mirrorpulse.adapter.ftp" or "com.mirrorpulse.adapter.sftp") &&
                 string.IsNullOrEmpty(secret))
             {
                 throw new InvalidDataException("This Adapter requires a password.");
@@ -167,6 +235,13 @@ public sealed partial class InstanceConfigurationPage : Page
             }
 
             SecretBox.Password = string.Empty;
+            foreach ((_, Control input) in _configurationInputs)
+            {
+                if (input is PasswordBox password)
+                {
+                    password.Password = string.Empty;
+                }
+            }
             Frame.Navigate(typeof(InstalledAdaptersPage));
         }
         catch (Exception exception)

@@ -17,6 +17,7 @@
             <TextBox x:Name="UsernameTextBox" Header="Username" Visibility="Collapsed" />
             <PasswordBox x:Name="SecretBox" Header="Password or token" Visibility="Collapsed" />
             <TextBlock x:Name="SecretHintText" TextWrapping="Wrap" Opacity="0.75" Visibility="Collapsed" />
+            <StackPanel x:Name="ConfigurationFieldsPanel" Spacing="12" />
             <StackPanel x:Name="RootLabelsPanel" Spacing="12" />
             <TextBox x:Name="AdditionalConfigurationTextBox" Header="Additional non-secret settings (JSON)"
                      PlaceholderText="Enter string settings as JSON" TextWrapping="Wrap"
