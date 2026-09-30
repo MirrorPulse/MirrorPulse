@@ -129,7 +129,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
                     syncRootPath, mayDispatch, completion, conflicts, notifications, mutations);
                 _conflictActions = new MirrorPulseUploadConflictActions(catalog, state, feed,
                     new BackoffPolicy(TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(5)),
-                    new MirrorPulseStoragePaths(syncRootPath, dataRootPath));
+                    new MirrorPulseStoragePaths(syncRootPath, dataRootPath), router, mutations);
                 await _uploadPump.StartAsync(cancellationToken).ConfigureAwait(false);
             }
 

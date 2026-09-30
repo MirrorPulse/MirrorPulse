@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using CfSharp;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
@@ -17,13 +18,17 @@ public sealed class MirrorPulseUploadConflictActions
     private readonly MirrorPulseJournalUploadCompletion _completion;
     private readonly string _syncRootPath;
     private readonly string _conflictRootPath;
+    private readonly MirrorPulseRootRouter? _router;
+    private readonly IMirrorPulseWorkerMutationTransport? _mutations;
 
     public MirrorPulseUploadConflictActions(
         MirrorPulseProductCatalog catalog,
         MirrorPulseCfSharpStateSession state,
         CloudLocalChangeFeed feed,
         BackoffPolicy retryPolicy,
-        MirrorPulseStoragePaths paths)
+        MirrorPulseStoragePaths paths,
+        MirrorPulseRootRouter? router = null,
+        IMirrorPulseWorkerMutationTransport? mutations = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _state = state ?? throw new ArgumentNullException(nameof(state));
@@ -31,6 +36,8 @@ public sealed class MirrorPulseUploadConflictActions
         _completion = new MirrorPulseJournalUploadCompletion(feed, state, retryPolicy);
         _syncRootPath = Path.GetFullPath(paths.SyncRootPath);
         _conflictRootPath = Path.Combine(paths.DataRootPath, MirrorPulseConflictDirectory.DirectoryName);
+        _router = router;
+        _mutations = mutations;
     }
 
     public async ValueTask<MirrorPulseConflictResolution> ApplyAsync(
@@ -73,8 +80,8 @@ public sealed class MirrorPulseUploadConflictActions
                     cancellationToken).ConfigureAwait(false);
                 break;
             case MirrorPulseConflictAction.DeleteRemote:
-                throw new NotSupportedException(
-                    "The Adapter protocol does not yet expose an atomic remote delete operation.");
+                await DeleteRemoteAsync(conflict, cancellationToken).ConfigureAwait(false);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
@@ -101,6 +108,56 @@ public sealed class MirrorPulseUploadConflictActions
             ?? throw new FileNotFoundException("The CfSharp item for the conflict was not found.");
         await transaction.Items.UpsertAsync(new CloudItemState(item.ItemId, item.RemoteId,
             item.RelativePath, item.Kind, conflict.RemoteRevision, item.LocalFileId,
+            item.IsTombstone, DateTimeOffset.UtcNow), cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask DeleteRemoteAsync(
+        MirrorPulseConflictRecord conflict,
+        CancellationToken cancellationToken)
+    {
+        if (_router is null || _mutations is null)
+        {
+            throw new NotSupportedException("Remote conflict deletion requires the active Adapter Worker.");
+        }
+
+        if (string.IsNullOrWhiteSpace(conflict.RemoteRevision))
+        {
+            throw new InvalidOperationException("Delete-remote requires a current remote revision.");
+        }
+
+        string callbackPath = Path.Combine(_syncRootPath,
+            conflict.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+        MirrorPulseRoutedItem routed = _router.ResolvePath(callbackPath);
+        bool isDirectory = false;
+        await using (ICloudStateTransaction transaction = await _state.OpenStore
+            .BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
+        {
+            CloudItemState? item = await transaction.Items.GetByRelativePathAsync(
+                conflict.RelativePath, cancellationToken).ConfigureAwait(false);
+            isDirectory = item?.Kind == CloudItemKind.Directory;
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await _mutations.DeleteAsync(new MirrorPulseWorkerDeleteRequest(
+            conflict.InstanceId, routed.RelativePath, conflict.RemoteRevision, isDirectory),
+            cancellationToken).ConfigureAwait(false);
+        await AlignRemoteDeletedAsync(conflict, cancellationToken).ConfigureAwait(false);
+        await _completion.PrepareRetryAsync(Guid.Parse(conflict.ChangeId), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask AlignRemoteDeletedAsync(
+        MirrorPulseConflictRecord conflict,
+        CancellationToken cancellationToken)
+    {
+        await using ICloudStateTransaction transaction = await _state.OpenStore
+            .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        CloudItemState item = await transaction.Items.GetByRelativePathAsync(
+            conflict.RelativePath, cancellationToken).ConfigureAwait(false)
+            ?? throw new FileNotFoundException("The CfSharp item for the conflict was not found.");
+        await transaction.Items.UpsertAsync(new CloudItemState(item.ItemId, item.RemoteId,
+            item.RelativePath, item.Kind, null, item.LocalFileId,
             item.IsTombstone, DateTimeOffset.UtcNow), cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
