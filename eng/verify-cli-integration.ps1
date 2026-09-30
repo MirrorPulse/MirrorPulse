@@ -161,6 +161,13 @@ try {
         if ([IO.File]::ReadAllText($remoteFile) -ne "remote-before-local") {
             throw "The remote batch did not hydrate the expected content."
         }
+        $cursorStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+        $cursorBeforeRestart = @($cursorStatus.data.instances) |
+            Where-Object { $_.instanceId -eq $instanceId } |
+            Select-Object -First 1 -ExpandProperty cursorFingerprint
+        if ([string]::IsNullOrWhiteSpace($cursorBeforeRestart)) {
+            throw "The remote batch did not persist an Adapter cursor."
+        }
 
         # Preserve the local change in CfSharp's journal while the instance is offline.
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "instance", "disable",
@@ -252,6 +259,13 @@ try {
         $persisted = Invoke-MirrorPulseCli @("--json", "--developer-mode", "conflict", "list")
         if (-not (@($persisted.data.items) | Where-Object { $_.conflictId -eq $conflictId })) {
             throw "The conflict was not retained across a CLI Host restart."
+        }
+        $persistedStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+        $cursorAfterRestart = @($persistedStatus.data.instances) |
+            Where-Object { $_.instanceId -eq $instanceId } |
+            Select-Object -First 1 -ExpandProperty cursorFingerprint
+        if ([string]::IsNullOrWhiteSpace($cursorAfterRestart)) {
+            throw "The Adapter cursor was not retained across a CLI Host restart."
         }
     }
 
