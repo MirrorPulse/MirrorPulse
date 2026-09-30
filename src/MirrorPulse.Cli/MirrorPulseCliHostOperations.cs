@@ -241,6 +241,48 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                         .ConfigureAwait(false);
                     human = $"Operation cancelled: {operationId}";
                     break;
+                case ("config", _):
+                    if (command.Arguments.Count == 0)
+                    {
+                        result = await _client.GetSettingsAsync(cancellationToken).ConfigureAwait(false);
+                        human = FormatSettings((MirrorPulseControlSettings)result);
+                    }
+                    else
+                    {
+                        result = await _client.SetSettingsAsync(new MirrorPulseSettingsUpdateArguments(
+                            GetOptionalOption(command.Arguments, "locale"),
+                            ParseNullableBool(command.Arguments, "developer-mode"),
+                            ParseNullableBool(command.Arguments, "start-with-windows"),
+                            GetOptionValues(command.Arguments, "enable-installation"),
+                            GetOptionalOption(command.Arguments, "sync-root-display-name")),
+                            cancellationToken).ConfigureAwait(false);
+                        human = FormatSettings((MirrorPulseControlSettings)result);
+                    }
+                    break;
+                case ("developer-mode", _):
+                    result = command.Arguments.Count == 0
+                        ? await _client.GetSettingsAsync(cancellationToken).ConfigureAwait(false)
+                        : await _client.SetSettingsAsync(new MirrorPulseSettingsUpdateArguments(
+                            DeveloperMode: ParseRequiredBool(command.Arguments, "developer-mode")),
+                            cancellationToken).ConfigureAwait(false);
+                    human = $"Developer mode: {((MirrorPulseControlSettings)result).DeveloperMode}";
+                    break;
+                case ("startup", _):
+                    result = command.Arguments.Count == 0
+                        ? await _client.GetSettingsAsync(cancellationToken).ConfigureAwait(false)
+                        : await _client.SetSettingsAsync(new MirrorPulseSettingsUpdateArguments(
+                            StartWithWindows: ParseRequiredBool(command.Arguments, "start-with-windows")),
+                            cancellationToken).ConfigureAwait(false);
+                    human = $"Start with Windows: {((MirrorPulseControlSettings)result).StartWithWindows}";
+                    break;
+                case ("diagnostics", _):
+                    result = await _client.CollectDiagnosticsAsync(new DiagnosticsArguments(
+                        HasFlag(command.Arguments, "include-logs"),
+                        GetOptionalOption(command.Arguments, "output")), cancellationToken)
+                        .ConfigureAwait(false);
+                    human = "Diagnostics package: " +
+                        ((MirrorPulseControlDiagnosticsResult)result).PackagePath;
+                    break;
                 default:
                     await MirrorPulseCliOutputFormatter.WriteErrorAsync(
                         MirrorPulseControlExitCodes.Unsupported,
@@ -275,6 +317,10 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
     private static string FormatTopology(MirrorPulseControlTopology topology) =>
         $"Installations: {topology.Installations.Count}; instances: {topology.Instances.Count}; " +
         $"roots: {topology.Roots.Count}";
+
+    private static string FormatSettings(MirrorPulseControlSettings settings) =>
+        $"Locale: {settings.Locale}; developer mode: {settings.DeveloperMode}; " +
+        $"start with Windows: {settings.StartWithWindows}";
 
     private static string GetRequiredValue(
         IReadOnlyList<string> arguments,
@@ -319,6 +365,36 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
 
     private static bool HasFlag(IReadOnlyList<string> arguments, string name) =>
         arguments.Any(value => value.Equals("--" + name, StringComparison.OrdinalIgnoreCase));
+
+    private static bool? ParseNullableBool(IReadOnlyList<string> arguments, string name)
+    {
+        string? value = GetOptionalOption(arguments, name);
+        return value is null ? null : ParseBool(value, name);
+    }
+
+    private static bool ParseRequiredBool(IReadOnlyList<string> arguments, string name) =>
+        ParseBool(GetRequiredOption(arguments, name), name);
+
+    private static bool ParseBool(string value, string name) =>
+        bool.TryParse(value, out bool parsed)
+            ? parsed
+            : throw new ArgumentException($"The --{name} value must be true or false.");
+
+    private static List<string>? GetOptionValues(
+        IReadOnlyList<string> arguments, string name)
+    {
+        var values = new List<string>();
+        for (int index = 0; index < arguments.Count; index++)
+        {
+            if (!arguments[index].Equals("--" + name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (++index >= arguments.Count || string.IsNullOrWhiteSpace(arguments[index]))
+                throw new ArgumentException($"The --{name} option requires a value.");
+            values.Add(arguments[index]);
+        }
+
+        return values.Count == 0 ? null : values;
+    }
 
     private static Dictionary<string, string> ParseMap(
         IReadOnlyList<string> arguments, string option)
