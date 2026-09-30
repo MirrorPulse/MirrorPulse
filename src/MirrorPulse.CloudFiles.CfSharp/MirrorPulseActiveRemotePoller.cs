@@ -18,7 +18,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
 {
     private readonly IMirrorPulseDirectoryPageSource _source;
     private readonly IReadOnlyList<InstanceId> _instances;
-    private readonly Dictionary<InstanceId, RootRegistration> _roots;
+    private readonly Dictionary<InstanceId, IReadOnlyList<RootRegistration>> _roots;
     private readonly Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask> _apply;
     private readonly TimeSpan _interval;
     private readonly int _pageSize;
@@ -50,7 +50,11 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
             .Select(instance => instance.InstanceId).Distinct().ToArray();
         _roots = roots.Where(root => root.State == RootRegistrationState.Active)
             .GroupBy(root => root.InstanceId)
-            .ToDictionary(group => group.Key, group => group.Single(), EqualityComparer<InstanceId>.Default);
+            .ToDictionary(group => group.Key,
+                group => (IReadOnlyList<RootRegistration>)group
+                    .OrderBy(root => root.DirectoryName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(root => root.DirectoryName, StringComparer.Ordinal)
+                    .ToArray(), EqualityComparer<InstanceId>.Default);
         _interval = interval ?? TimeSpan.FromSeconds(30);
         _pageSize = pageSize;
         _maximumPages = maximumPages;
@@ -68,7 +72,15 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
     public async ValueTask<bool> PollOnceAsync(InstanceId instanceId, CancellationToken cancellationToken = default)
     {
         if (!_instances.Contains(instanceId)) return false;
-        if (!_roots.TryGetValue(instanceId, out RootRegistration? root)) return false;
+        if (!_roots.TryGetValue(instanceId, out IReadOnlyList<RootRegistration>? roots) || roots.Count != 1)
+        {
+            // A multi-root Adapter needs an explicit remote-root mapping before an active
+            // snapshot can be attributed to one first-level Cloud Files directory. Demand
+            // hydration remains available for every root; skip the ambiguous background poll.
+            return false;
+        }
+
+        RootRegistration root = roots[0];
 
         IReadOnlyDictionary<string, SnapshotEntry> current = await ReadSnapshotAsync(
             instanceId, cancellationToken).ConfigureAwait(false);

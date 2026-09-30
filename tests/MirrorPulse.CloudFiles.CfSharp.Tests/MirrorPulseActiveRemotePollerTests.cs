@@ -99,6 +99,27 @@ public sealed class MirrorPulseActiveRemotePollerTests
         }
     }
 
+    [TestMethod]
+    public async Task PollerLeavesMultiRootInstancesForExplicitRemoteRootMapping()
+    {
+        InstanceId instance = InstanceId.New();
+        AdapterId adapterId = AdapterId.Parse("example.multi-root");
+        IReadOnlyList<RootRegistration> roots = AdapterRootRegistrationMapper.MapAll(
+            adapterId, instance,
+            [new AdapterRootDefinition("documents", "Documents", "Documents", false),
+             new AdapterRootDefinition("photos", "Photos", "Photos", false)],
+            RootRegistrationState.Active);
+        var adapter = new AdapterInstance(
+            adapterId, InstallId.New(), instance, "Multi-root", new Dictionary<string, string>(), [],
+            Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "files"),
+            Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "transfers"),
+            true, AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+        await using var poller = new MirrorPulseActiveRemotePoller(
+            new FakeDirectorySource(), [adapter], roots, (_, _, _) => ValueTask.CompletedTask);
+
+        Assert.IsFalse(await poller.PollOnceAsync(instance));
+    }
+
     private sealed class FakeDirectorySource : IMirrorPulseDirectoryPageSource
     {
         private readonly Dictionary<string, CloudRemoteDirectoryEntry> _entries = new(StringComparer.Ordinal);
