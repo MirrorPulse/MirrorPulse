@@ -8,7 +8,7 @@ This repository contains the MirrorPulse application and its runtime code.
 
 ## Development status
 
-The current branch establishes the English codebase baseline before runtime features are added.
+The no-UI `mp` CLI and current-user Host control path are implemented for x64 and ARM64. The CLI is also packaged as an MSIX app execution alias; see [docs/cli.md](docs/cli.md) for the command reference and automation examples.
 
 ## Requirements
 
