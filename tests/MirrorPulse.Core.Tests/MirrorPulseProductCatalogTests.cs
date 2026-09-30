@@ -166,6 +166,9 @@ public sealed class MirrorPulseProductCatalogTests
                 Assert.AreEqual(conflict.RemoteRevision, stored.RemoteRevision);
                 Assert.AreEqual(MirrorPulseConflictSource.Upload, stored.Source);
                 Assert.Contains(operationId, await reopened.ReadSnoozedConflictIdsAsync());
+                Assert.IsNotNull(await reopened.ReadUploadConflictAsync(operationId));
+                await reopened.SetUploadConflictStatusAsync(operationId, MirrorPulseConflictStatus.Resolved);
+                Assert.IsFalse(await reopened.HasPendingUploadConflictAsync(operationId));
             }
         }
         finally
