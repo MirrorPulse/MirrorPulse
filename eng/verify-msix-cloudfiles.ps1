@@ -14,6 +14,14 @@ $project = Join-Path $PSScriptRoot "..\src\MirrorPulse.App\MirrorPulse.App.cspro
 $packageRoot = Join-Path ([IO.Path]::GetTempPath()) "MirrorPulse-msix-$([guid]::NewGuid().ToString('N'))"
 $certificate = $null
 $package = $null
+$installed = $null
+$uninstallFailed = $false
+$aliasPath = $null
+$packageName = "0B72358D-6DC9-479D-8C28-F0232B42A0B3"
+
+if (Get-AppxPackage -Name $packageName | Select-Object -First 1) {
+    throw "The verification user already has MirrorPulse installed; use a clean test user."
+}
 
 try {
     New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
@@ -25,11 +33,7 @@ try {
     $password = ConvertTo-SecureString -String $passwordText -AsPlainText -Force
     Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $password | Out-Null
     Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
-    # Keep the verification self-contained for a non-administrator CI runner. A
-    # package signed by a certificate trusted by the current user is sufficient
-    # for Add-AppxPackage and for app-execution-alias registration.
-    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
-    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
+    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\LocalMachine\TrustedPeople" | Out-Null
 
     & dotnet build $project --configuration $Configuration --runtime win-x64 `
         -p:GenerateAppxPackageOnBuild=true `
@@ -64,7 +68,7 @@ try {
     }
 
     Add-AppxPackage -Path $package.FullName -ForceApplicationShutdown
-    $installed = Get-AppxPackage -Name "0B72358D-6DC9-479D-8C28-F0232B42A0B3" |
+    $installed = Get-AppxPackage -Name $packageName |
         Select-Object -First 1
     if ($null -eq $installed) {
         throw "The test MSIX package was not installed for the current user."
@@ -100,10 +104,20 @@ try {
     if ($null -eq $mpCommand) {
         throw "The installed MSIX did not register the mp.exe app execution alias."
     }
+    $aliasPath = $mpCommand.Source
     $versionOutput = (& $mpCommand.Source --version 2>&1 | Out-String).Trim()
     if ($versionOutput -notmatch "MirrorPulse mp") {
         throw "The registered mp.exe alias did not return the CLI version: $versionOutput"
     }
+    $statusOutput = (& $mpCommand.Source --json status 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "The installed CLI did not auto-start its packaged Host: $statusOutput"
+    }
+    $status = $statusOutput | ConvertFrom-Json
+    if ($status.kind -ne "result" -or $null -eq $status.data.instances) {
+        throw "The packaged CLI status result is invalid."
+    }
+    & $mpCommand.Source --json host stop 2>$null | Out-Null
 
     if ($VerifyShell) {
         $resultPath = Join-Path $packageRoot "packaged-shell-probe.result"
@@ -137,18 +151,26 @@ try {
         Write-Output "Verified packaged Shell registration for $($installed.PackageFullName)."
     }
 
-    Write-Output "Verified installed MSIX $($installed.PackageFullName) Cloud Files and .mpadapter identities."
+    Write-Output "Verified installed MSIX $($installed.PackageFullName), mp.exe alias, packaged Host auto-start, Cloud Files, and .mpadapter identities."
 }
 finally {
     if ($null -ne $installed) {
         Remove-AppxPackage -Package $installed.PackageFullName -ErrorAction SilentlyContinue
+        if (Get-AppxPackage -Name $packageName | Select-Object -First 1) {
+            $uninstallFailed = $true
+        }
+        if ($null -ne $aliasPath -and (Test-Path -LiteralPath $aliasPath)) {
+            $uninstallFailed = $true
+        }
     }
     if ($null -ne $certificate) {
         Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath "Cert:\CurrentUser\TrustedPeople\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath "Cert:\CurrentUser\Root\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "Cert:\LocalMachine\TrustedPeople\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $packageRoot) {
         Remove-Item -LiteralPath $packageRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if ($uninstallFailed) {
+        throw "The test MSIX package or mp.exe app execution alias remained registered after uninstall."
     }
 }
