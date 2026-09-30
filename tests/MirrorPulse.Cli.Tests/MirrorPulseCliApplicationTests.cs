@@ -89,4 +89,39 @@ public sealed class MirrorPulseCliApplicationTests
         Assert.AreEqual("error", document.RootElement.GetProperty("kind").GetString());
         Assert.AreEqual("mp.control.unsupported", document.RootElement.GetProperty("code").GetString());
     }
+
+    [TestMethod]
+    public async Task CredentialValuesAreAcceptedWithoutAppearingInSafeText()
+    {
+        using var credentials = await MirrorPulseCliCredentialInput.ResolveAsync(
+            ["--username", "alice", "--password", "secret-value", "--credential-ref", "ref-1"]);
+
+        Assert.AreEqual("alice", credentials.Username);
+        Assert.AreEqual("ref-1", credentials.CredentialReference);
+        Assert.AreEqual("secret-value", credentials.Password!.Reveal());
+        Assert.IsFalse(credentials.ToString().Contains("secret-value", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task StandardInputPasswordIsReadAsASeparateSource()
+    {
+        using var credentials = await MirrorPulseCliCredentialInput.ResolveAsync(
+            ["--password-stdin"], new StringReader("stdin-secret\n"));
+
+        Assert.AreEqual(MirrorPulseCliCredentialSource.StandardInput, credentials.PasswordSource);
+        Assert.AreEqual("stdin-secret", credentials.Password!.Reveal());
+    }
+
+    [TestMethod]
+    public async Task DuplicatePasswordSourcesAreRejectedWithoutEchoingValues()
+    {
+        var exception = await Assert.ThrowsExactlyAsync<MirrorPulseCliCredentialException>(
+            () => MirrorPulseCliCredentialInput.ResolveAsync(
+                ["--password", "secret-value", "--password-prompt"],
+                hiddenPrompt: _ => Task.FromResult(new MirrorPulseCliSecret("prompt-value"))));
+
+        StringAssert.Contains(exception.Message, "one password source");
+        Assert.IsFalse(exception.Message.Contains("secret-value", StringComparison.Ordinal));
+        Assert.IsFalse(exception.Message.Contains("prompt-value", StringComparison.Ordinal));
+    }
 }
