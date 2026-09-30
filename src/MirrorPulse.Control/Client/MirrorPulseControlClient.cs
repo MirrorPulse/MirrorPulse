@@ -262,6 +262,15 @@ public sealed class MirrorPulseControlClient
             MirrorPulseControlCommands.AdapterInstall,
             new(packagePath), cancellationToken);
 
+    public Task<MirrorPulseAppStatusResponse> RemoveAdapterAsync(
+        string adapterId,
+        string? installId = null,
+        bool purge = false,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<AdapterRemoveArguments, MirrorPulseAppStatusResponse>(
+            MirrorPulseControlCommands.AdapterRemove,
+            new(adapterId, purge, installId), cancellationToken);
+
     public Task<MirrorPulseAppStatusResponse> CreateInstanceAsync(
         InstanceCreateArguments arguments,
         CancellationToken cancellationToken = default) =>

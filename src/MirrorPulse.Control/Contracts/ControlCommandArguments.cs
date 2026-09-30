@@ -90,7 +90,10 @@ public sealed record MirrorPulseControlRuntimeState(
 
 public sealed record AdapterInstallArguments(string PackagePath) : IMirrorPulseControlArguments;
 
-public sealed record AdapterRemoveArguments(string AdapterId, bool Purge = false) : IMirrorPulseControlArguments;
+public sealed record AdapterRemoveArguments(
+    string AdapterId,
+    bool Purge = false,
+    string? InstallId = null) : IMirrorPulseControlArguments;
 
 public sealed record InstanceListArguments(int? Limit = null, string? Cursor = null) : IMirrorPulseControlArguments;
 

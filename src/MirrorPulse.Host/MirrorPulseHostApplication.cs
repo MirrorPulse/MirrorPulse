@@ -393,7 +393,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             ReadConflictsAsync,
             GetOperationAsync,
             GetOperationAsync,
-            CancelOperationAsync)
+            CancelOperationAsync,
+            RemoveAdapterAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
     }
@@ -673,6 +674,46 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             id, current.Action, current.TargetId, "cancelled"), cancellationToken)
             .ConfigureAwait(false);
         return current with { State = "cancelled" };
+    }
+
+    private async Task<MirrorPulseAppStatusResponse> RemoveAdapterAsync(
+        AdapterRemoveArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        MirrorPulseAdapterTopology topology = await _catalog.ReadAdapterTopologyAsync(cancellationToken)
+            .ConfigureAwait(false);
+        InstallId installId;
+        if (arguments.InstallId is not null)
+        {
+            installId = InstallId.Parse(arguments.InstallId);
+        }
+        else if (InstallId.TryParse(arguments.AdapterId, out InstallId direct))
+        {
+            installId = direct;
+        }
+        else if (AdapterId.TryParse(arguments.AdapterId, out AdapterId adapterId))
+        {
+            InstalledAdapter[] matches = topology.Installations.Where(item => item.AdapterId == adapterId).ToArray();
+            if (matches.Length != 1)
+                throw new InvalidOperationException("Specify --install-id when an Adapter has multiple installations.");
+            installId = matches[0].InstallId;
+        }
+        else
+        {
+            throw new ArgumentException("The Adapter or installation ID is invalid.", nameof(arguments));
+        }
+
+        InstalledAdapter installation = topology.Installations.SingleOrDefault(item => item.InstallId == installId)
+            ?? throw new FileNotFoundException("The selected Adapter installation is not registered.");
+        if (topology.Instances.Any(instance => instance.InstallId == installId))
+            throw new InvalidOperationException("The Adapter installation is still referenced by an instance.");
+        var pathProvider = new CurrentUserAdapterPathProvider(
+            Path.Combine(_paths.DataRootPath, "adapters", "installed"));
+        var uninstall = new AdapterUninstallService(pathProvider,
+            new AdapterActivationPointerStore(pathProvider));
+        await uninstall.UninstallAsync(installation, cancellationToken).ConfigureAwait(false);
+        await _catalog.RemoveInstallationAsync(installId, cancellationToken).ConfigureAwait(false);
+        return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<MirrorPulseAppStatusResponse> SnoozeConflictAsync(

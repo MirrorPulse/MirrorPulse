@@ -150,6 +150,21 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                     human = $"Adapter package installed: " +
                         ((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result).InstalledAdapterId;
                     break;
+                case ("adapter", "update"):
+                    packagePath = GetRequiredValue(command.Arguments, "package", 0,
+                        "adapter update requires a .mpadapter package path.");
+                    result = await _client.InstallAsync(packagePath, cancellationToken).ConfigureAwait(false);
+                    human = "Adapter package updated: " +
+                        ((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result).InstalledAdapterId;
+                    break;
+                case ("adapter", "remove"):
+                case ("adapter", "uninstall"):
+                    string adapterId = GetRequiredOption(command.Arguments, "adapter-id");
+                    result = await _client.RemoveAdapterAsync(adapterId,
+                        GetOptionalOption(command.Arguments, "install-id"),
+                        HasFlag(command.Arguments, "purge"), cancellationToken).ConfigureAwait(false);
+                    human = "Adapter installation removed: " + adapterId;
+                    break;
                 case ("instance", "list"):
                     result = await _client.GetInstancesAsync(cancellationToken: cancellationToken)
                         .ConfigureAwait(false);

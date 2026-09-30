@@ -9,6 +9,39 @@ namespace MirrorPulse.Core.State;
 
 public sealed partial class MirrorPulseProductCatalog
 {
+    public async Task<InstalledAdapter> RemoveInstallationAsync(
+        InstallId installId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand query = _connection.CreateCommand();
+            query.CommandText = "SELECT payload FROM adapter_topology WHERE id = 1;";
+            string? payload = (string?)await query.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            MirrorPulseAdapterTopology current = payload is null ? new([], [], []) : DeserializeTopology(payload);
+            InstalledAdapter installation = current.Installations.SingleOrDefault(item => item.InstallId == installId)
+                ?? throw new FileNotFoundException("The selected Adapter installation is not registered.");
+            if (current.Instances.Any(instance => instance.InstallId == installId))
+                throw new InvalidOperationException("The Adapter installation is still referenced by an instance.");
+
+            var next = new MirrorPulseAdapterTopology(
+                current.Installations.Where(item => item.InstallId != installId).ToArray(),
+                current.Instances, current.Roots);
+            ValidateTopology(next);
+            await using SqliteCommand update = _connection.CreateCommand();
+            update.CommandText = "UPDATE adapter_topology SET payload = $payload WHERE id = 1;";
+            update.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(next, TopologyJsonOptions));
+            await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return installation;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     /// <summary>Verifies and installs an official Adapter with MP's built-in trust anchor.</summary>
     public async Task<InstalledAdapter> InstallSignedAdapterAsync(
         string packagePath,

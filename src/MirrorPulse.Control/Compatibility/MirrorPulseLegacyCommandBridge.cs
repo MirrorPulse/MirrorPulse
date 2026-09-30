@@ -31,6 +31,8 @@ public sealed class MirrorPulseLegacyCommandBridge
         Task<MirrorPulseControlOperation>>? _watchOperation;
     private readonly Func<OperationIdArguments, CancellationToken,
         Task<MirrorPulseControlOperation>>? _cancelOperation;
+    private readonly Func<AdapterRemoveArguments, CancellationToken,
+        Task<MirrorPulseAppStatusResponse>>? _removeAdapter;
     private readonly Func<CancellationToken, Task<MirrorPulseHostStatus>>? _hostStatus;
     private readonly Func<HostLifecycleArguments, CancellationToken,
         Task<MirrorPulseHostStatus>>? _hostStart;
@@ -82,7 +84,9 @@ public sealed class MirrorPulseLegacyCommandBridge
         Func<OperationIdArguments, CancellationToken,
             Task<MirrorPulseControlOperation>>? watchOperation = null,
         Func<OperationIdArguments, CancellationToken,
-            Task<MirrorPulseControlOperation>>? cancelOperation = null)
+            Task<MirrorPulseControlOperation>>? cancelOperation = null,
+        Func<AdapterRemoveArguments, CancellationToken,
+            Task<MirrorPulseAppStatusResponse>>? removeAdapter = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -105,6 +109,7 @@ public sealed class MirrorPulseLegacyCommandBridge
         _getOperation = getOperation;
         _watchOperation = watchOperation;
         _cancelOperation = cancelOperation;
+        _removeAdapter = removeAdapter;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
@@ -169,6 +174,13 @@ public sealed class MirrorPulseLegacyCommandBridge
         RegisterOperation(dispatcher, MirrorPulseControlCommands.OperationGet, _getOperation);
         RegisterOperation(dispatcher, MirrorPulseControlCommands.OperationWatch, _watchOperation);
         RegisterOperation(dispatcher, MirrorPulseControlCommands.OperationCancel, _cancelOperation);
+
+        if (_removeAdapter is not null)
+        {
+            dispatcher.Register<AdapterRemoveArguments, MirrorPulseAppStatusResponse>(
+                MirrorPulseControlCommands.AdapterRemove,
+                (arguments, cancellationToken) => new(_removeAdapter(arguments, cancellationToken)));
+        }
 
         if (_settingsGet is not null)
         {
