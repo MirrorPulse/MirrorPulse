@@ -16,6 +16,8 @@ public sealed class MirrorPulseSensitiveDataAttribute : Attribute;
 
 public sealed record ControlEmptyArguments : IMirrorPulseControlArguments;
 
+public sealed record SyncRefreshArguments(bool Force = false) : IMirrorPulseControlArguments;
+
 public sealed record HostLifecycleArguments(bool Force = false) : IMirrorPulseControlArguments;
 
 /// <summary>

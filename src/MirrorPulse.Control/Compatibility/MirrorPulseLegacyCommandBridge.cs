@@ -34,6 +34,8 @@ public sealed class MirrorPulseLegacyCommandBridge
         Task<MirrorPulseControlSettings>>? _settingsSet;
     private readonly Func<DiagnosticsArguments, CancellationToken,
         Task<MirrorPulseControlDiagnosticsResult>>? _diagnostics;
+    private readonly Func<SyncRefreshArguments, CancellationToken,
+        Task<MirrorPulseAppStatusResponse>>? _refresh;
 
     public MirrorPulseLegacyCommandBridge(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
@@ -58,7 +60,9 @@ public sealed class MirrorPulseLegacyCommandBridge
         Func<MirrorPulseSettingsUpdateArguments, CancellationToken,
             Task<MirrorPulseControlSettings>>? settingsSet = null,
         Func<DiagnosticsArguments, CancellationToken,
-            Task<MirrorPulseControlDiagnosticsResult>>? diagnostics = null)
+            Task<MirrorPulseControlDiagnosticsResult>>? diagnostics = null,
+        Func<SyncRefreshArguments, CancellationToken,
+            Task<MirrorPulseAppStatusResponse>>? refresh = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -75,6 +79,7 @@ public sealed class MirrorPulseLegacyCommandBridge
         _settingsGet = settingsGet;
         _settingsSet = settingsSet;
         _diagnostics = diagnostics;
+        _refresh = refresh;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
@@ -83,6 +88,13 @@ public sealed class MirrorPulseLegacyCommandBridge
         dispatcher.Register<ControlEmptyArguments, MirrorPulseAppStatusResponse>(
             MirrorPulseControlCommands.SyncStatus,
             (_, cancellationToken) => new(_readStatus(cancellationToken)));
+
+        if (_refresh is not null)
+        {
+            dispatcher.Register<SyncRefreshArguments, MirrorPulseAppStatusResponse>(
+                MirrorPulseControlCommands.SyncRefresh,
+                (arguments, cancellationToken) => new(_refresh(arguments, cancellationToken)));
+        }
 
         if (_hostStatus is not null)
         {

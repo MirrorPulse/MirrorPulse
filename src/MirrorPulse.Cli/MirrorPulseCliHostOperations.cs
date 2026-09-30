@@ -15,6 +15,17 @@ public interface IMirrorPulseCliHostOperations
         CancellationToken cancellationToken);
 }
 
+/// <summary>Executes a parsed non-lifecycle command through the Host control contract.</summary>
+public interface IMirrorPulseCliCommandOperations
+{
+    Task<int> RunCommandAsync(
+        MirrorPulseCliCommand command,
+        bool json,
+        TextWriter output,
+        TextWriter errorWriter,
+        CancellationToken cancellationToken);
+}
+
 public static class MirrorPulseCliHostPathResolver
 {
     public static MirrorPulseHostStartupOptions CreateDefault(bool developerMode)
@@ -36,7 +47,8 @@ public static class MirrorPulseCliHostPathResolver
     }
 }
 
-public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations, IAsyncDisposable
+public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations,
+    IMirrorPulseCliCommandOperations, IAsyncDisposable
 {
     private readonly MirrorPulseHostStartupCoordinator _startup;
     private readonly MirrorPulseControlClient _client;
@@ -95,6 +107,61 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
     }
 
     public async ValueTask DisposeAsync() => await _startup.DisposeAsync().ConfigureAwait(false);
+
+    public async Task<int> RunCommandAsync(
+        MirrorPulseCliCommand command,
+        bool json,
+        TextWriter output,
+        TextWriter errorWriter,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            object result;
+            string human;
+            switch (command.Path[0].ToLowerInvariant(),
+                command.Path.Count > 1 ? command.Path[1].ToLowerInvariant() : string.Empty)
+            {
+                case ("status", _):
+                case ("sync", "status"):
+                    result = await _client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+                    human = FormatStatus((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result);
+                    break;
+                case ("sync", "refresh"):
+                    result = await _client.RefreshAsync(cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    human = FormatStatus((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result);
+                    break;
+                default:
+                    await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+                        MirrorPulseControlExitCodes.Unsupported,
+                        "mp.control.unsupported",
+                        $"Command '{command.Name}' is recognized but is not available in this milestone.",
+                        json, errorWriter, cancellationToken).ConfigureAwait(false);
+                    return MirrorPulseControlExitCodes.Unsupported;
+            }
+
+            await MirrorPulseCliOutputFormatter.WriteDataAsync(
+                result, human, json, output, cancellationToken).ConfigureAwait(false);
+            return MirrorPulseControlExitCodes.Success;
+        }
+        catch (MirrorPulseControlException exception)
+        {
+            return await WriteControlErrorAsync(exception.Error, json, errorWriter, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+                MirrorPulseControlExitCodes.Cancelled, "mp.control.cancelled",
+                "The operation was cancelled.", json, errorWriter, cancellationToken).ConfigureAwait(false);
+            return MirrorPulseControlExitCodes.Cancelled;
+        }
+    }
+
+    private static string FormatStatus(MirrorPulse.Core.Host.MirrorPulseAppStatusResponse status) =>
+        $"Pending uploads: {status.PendingUploads}; remote conflicts: {status.PendingRemoteConflicts}; " +
+        $"instances: {status.Instances.Count}";
 
     private async Task<MirrorPulseHostStatus> StartAsync(CancellationToken cancellationToken)
     {

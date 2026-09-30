@@ -99,6 +99,13 @@ public sealed class MirrorPulseCliApplication
             }
         }
 
+        if (hostOperations is IMirrorPulseCliCommandOperations commandOperations)
+        {
+            return await commandOperations.RunCommandAsync(
+                parsed.Command, parsed.Options.Json, output, error, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         string message = $"Command '{parsed.Command!.Name}' is recognized but is not available in this milestone.";
         await MirrorPulseCliOutputFormatter.WriteErrorAsync(
             8,

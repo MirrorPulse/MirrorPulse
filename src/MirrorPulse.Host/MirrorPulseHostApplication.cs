@@ -387,7 +387,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             ReadTopologyAsync,
             ReadSettingsAsync,
             UpdateSettingsAsync,
-            CollectDiagnosticsAsync)
+            CollectDiagnosticsAsync,
+            RefreshAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
     }
@@ -582,6 +583,21 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         {
             InstalledAdapterId = installed.InstallId.ToString(),
         };
+    }
+
+    private async Task<MirrorPulseAppStatusResponse> RefreshAsync(
+        SyncRefreshArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        MirrorPulseAdapterTopology topology = await _catalog.ReadAdapterTopologyAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (AdapterInstance instance in topology.Instances.Where(item => item.Enabled))
+        {
+            await _remotePoller.PollOnceAsync(instance.InstanceId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<MirrorPulseAppStatusResponse> CreateInstanceAsync(
