@@ -30,6 +30,62 @@ public sealed record MirrorPulseHostStatus(
     bool CanRestart,
     string? RequestedAction = null);
 
+public sealed record MirrorPulseControlTopology(
+    IReadOnlyList<MirrorPulseControlInstallation> Installations,
+    IReadOnlyList<MirrorPulseControlInstance> Instances,
+    IReadOnlyList<MirrorPulseControlRoot> Roots,
+    IReadOnlyList<MirrorPulseControlRuntimeState> RuntimeStates);
+
+public sealed record MirrorPulseControlInstallation(
+    string AdapterId,
+    string InstallId,
+    string Version,
+    string Publisher,
+    string InstallationDirectory,
+    string PackageSha256,
+    string Source,
+    string? SourceReference,
+    bool IsSigned,
+    DateTimeOffset InstalledAt,
+    string LifecycleState,
+    string MinimumMirrorPulseVersion);
+
+public sealed record MirrorPulseControlInstance(
+    string AdapterId,
+    string InstallId,
+    string InstanceId,
+    string DisplayName,
+    IReadOnlyDictionary<string, string> Configuration,
+    IReadOnlyList<string> CredentialReferences,
+    string FileCacheDirectory,
+    string TransferCacheDirectory,
+    bool Enabled,
+    string LifecycleState,
+    string? WorkerSessionId,
+    DateTimeOffset CreatedAt);
+
+public sealed record MirrorPulseControlRoot(
+    string AdapterId,
+    string InstanceId,
+    string RootId,
+    string UniquenessKey,
+    string Label,
+    string DirectoryName,
+    bool CustomEntry,
+    string State,
+    DateTimeOffset RegisteredAt);
+
+public sealed record MirrorPulseControlRuntimeState(
+    string InstanceId,
+    string Phase,
+    bool RequiresFullRescan,
+    DateTimeOffset? LastSuccessfulSync,
+    string? LastErrorCode,
+    string? TransferOperation,
+    long? BytesTransferred,
+    long? TotalBytes,
+    DateTimeOffset? TransferUpdatedAt);
+
 public sealed record AdapterInstallArguments(string PackagePath) : IMirrorPulseControlArguments;
 
 public sealed record AdapterRemoveArguments(string AdapterId, bool Purge = false) : IMirrorPulseControlArguments;

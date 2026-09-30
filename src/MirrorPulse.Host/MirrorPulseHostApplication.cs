@@ -285,6 +285,63 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             PendingUploadConflicts: uploadConflicts.Count);
     }
 
+    public async Task<MirrorPulseControlTopology> ReadTopologyAsync(
+        CancellationToken cancellationToken = default)
+    {
+        MirrorPulseAdapterTopology topology = await _catalog.ReadAdapterTopologyAsync(cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<MirrorPulseInstanceRuntimeState> runtime =
+            await MirrorPulseProductCatalog.ReadRuntimeSnapshotAsync(_paths, cancellationToken)
+                .ConfigureAwait(false);
+        return new MirrorPulseControlTopology(
+            topology.Installations.Select(installation => new MirrorPulseControlInstallation(
+                installation.AdapterId.ToString(),
+                installation.InstallId.ToString(),
+                installation.Version,
+                installation.Publisher,
+                installation.InstallationDirectory,
+                installation.PackageSha256.ToString(),
+                installation.Source.ToString(),
+                installation.SourceReference,
+                installation.IsSigned,
+                installation.InstalledAt,
+                installation.LifecycleState.ToString(),
+                installation.Manifest.MinimumMirrorPulseVersion)).ToArray(),
+            topology.Instances.Select(instance => new MirrorPulseControlInstance(
+                instance.AdapterId.ToString(),
+                instance.InstallId.ToString(),
+                instance.InstanceId.ToString(),
+                instance.DisplayName,
+                instance.Configuration,
+                instance.CredentialReferences,
+                instance.FileCacheDirectory,
+                instance.TransferCacheDirectory,
+                instance.Enabled,
+                instance.LifecycleState.ToString(),
+                instance.WorkerSessionId?.ToString(),
+                instance.CreatedAt)).ToArray(),
+            topology.Roots.Select(root => new MirrorPulseControlRoot(
+                root.AdapterId.ToString(),
+                root.InstanceId.ToString(),
+                root.RootId.ToString(),
+                root.UniquenessKey,
+                root.Label,
+                root.DirectoryName,
+                root.CustomEntry,
+                root.State.ToString(),
+                root.RegisteredAt)).ToArray(),
+            runtime.Select(state => new MirrorPulseControlRuntimeState(
+                state.InstanceId.ToString(),
+                state.Phase,
+                state.RequiresFullRescan,
+                state.LastSuccessfulSync,
+                state.LastErrorCode,
+                state.TransferProgress?.Operation,
+                state.TransferProgress?.BytesTransferred,
+                state.TransferProgress?.TotalBytes,
+                state.TransferProgress?.UpdatedAt)).ToArray());
+    }
+
     private void InitializeControlPlane(ISecureCredentialStore credentialStore)
     {
         var provisioner = new MirrorPulseAdapterInstanceProvisioner(
@@ -309,7 +366,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             _ => Task.FromResult(GetHostStatus()),
             StartRequestedAsync,
             StopRequestedAsync,
-            RestartRequestedAsync)
+            RestartRequestedAsync,
+            ReadTopologyAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
     }

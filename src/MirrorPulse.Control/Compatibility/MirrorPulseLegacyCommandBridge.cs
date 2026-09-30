@@ -28,6 +28,7 @@ public sealed class MirrorPulseLegacyCommandBridge
         Task<MirrorPulseHostStatus>>? _hostStop;
     private readonly Func<HostLifecycleArguments, CancellationToken,
         Task<MirrorPulseHostStatus>>? _hostRestart;
+    private readonly Func<CancellationToken, Task<MirrorPulseControlTopology>>? _topology;
 
     public MirrorPulseLegacyCommandBridge(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
@@ -46,7 +47,8 @@ public sealed class MirrorPulseLegacyCommandBridge
         Func<HostLifecycleArguments, CancellationToken,
             Task<MirrorPulseHostStatus>>? hostStop = null,
         Func<HostLifecycleArguments, CancellationToken,
-            Task<MirrorPulseHostStatus>>? hostRestart = null)
+            Task<MirrorPulseHostStatus>>? hostRestart = null,
+        Func<CancellationToken, Task<MirrorPulseControlTopology>>? topology = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -59,6 +61,7 @@ public sealed class MirrorPulseLegacyCommandBridge
         _hostStart = hostStart;
         _hostStop = hostStop;
         _hostRestart = hostRestart;
+        _topology = topology;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
@@ -94,6 +97,16 @@ public sealed class MirrorPulseLegacyCommandBridge
             dispatcher.Register<HostLifecycleArguments, MirrorPulseHostStatus>(
                 MirrorPulseControlCommands.HostRestart,
                 (arguments, cancellationToken) => new(_hostRestart(arguments, cancellationToken)));
+        }
+
+        if (_topology is not null)
+        {
+            dispatcher.Register<ControlEmptyArguments, MirrorPulseControlTopology>(
+                MirrorPulseControlCommands.AdapterList,
+                (_, cancellationToken) => new(_topology(cancellationToken)));
+            dispatcher.Register<InstanceListArguments, MirrorPulseControlTopology>(
+                MirrorPulseControlCommands.InstanceList,
+                (_, cancellationToken) => new(_topology(cancellationToken)));
         }
 
         if (_snooze is not null)

@@ -248,6 +248,38 @@ public sealed class MirrorPulseControlContractTests
     }
 
     [TestMethod]
+    public async Task LegacyBridgeExposesTopologyWithoutCredentialValues()
+    {
+        var topology = new MirrorPulseControlTopology(
+            [new MirrorPulseControlInstallation(
+                "local", Guid.NewGuid().ToString("D"), "1.0.0", "MirrorPulse",
+                "C:\\Adapters\\local", new string('A', 64), "LocalFile", null,
+                true, DateTimeOffset.UtcNow, "Installed", "0.1.0")],
+            [new MirrorPulseControlInstance(
+                "local", Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D"),
+                "Documents", new Dictionary<string, string> { ["sourceDirectory"] = "C:\\Documents" },
+                ["credential-ref"], "C:\\Cache", "C:\\Transfer", true, "Enabled", null,
+                DateTimeOffset.UtcNow)],
+            [],
+            []);
+        var dispatcher = new MirrorPulseControlDispatcher();
+        new MirrorPulseLegacyCommandBridge(
+            _ => Task.FromResult(new MirrorPulseAppStatusResponse(0, 0, [], [])),
+            topology: _ => Task.FromResult(topology)).Register(dispatcher);
+        using var document = JsonDocument.Parse("{}");
+
+        var response = await dispatcher.DispatchAsync(new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
+            MirrorPulseControlCommands.AdapterList, document.RootElement));
+
+        Assert.IsTrue(response.Succeeded);
+        Assert.AreEqual("credential-ref", response.Data!.Value
+            .GetProperty("instances")[0].GetProperty("credentialReferences")[0].GetString());
+        Assert.IsFalse(response.Data.Value.GetProperty("instances")[0].ToString()
+            .Contains("secret", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public async Task TypedClientSendsRequestAndDeserializesResponse()
     {
         var pipeName = $"MirrorPulse-control-test-{Guid.NewGuid():N}";
