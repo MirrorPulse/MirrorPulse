@@ -229,6 +229,15 @@ try {
                 "Phase=$($failedInstance.phase); Error=$($failedInstance.lastErrorCode); " +
                 "Conflicts=$(@($failedConflicts.data.items).Count); SourceFiles=$sourceNames."
         }
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $drainedStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+            if ($drainedStatus.data.pendingUploads -eq 0) { break }
+            Start-Sleep -Milliseconds 500
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ($drainedStatus.data.pendingUploads -ne 0) {
+            throw "The upload journal did not drain after the Local Adapter accepted the queued file."
+        }
 
         # Both sides change while the Host is stopped. The conflict must survive another restart.
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "stop") | Out-Null

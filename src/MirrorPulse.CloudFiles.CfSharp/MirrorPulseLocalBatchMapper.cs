@@ -6,7 +6,7 @@ namespace MirrorPulse.CloudFiles.CfSharp;
 
 public sealed record MirrorPulseLocalBatchPlan(
     IReadOnlyList<MirrorPulseWorkerChangeCommand> Commands,
-    IReadOnlyList<Guid> RootMetadataOperationIds,
+    IReadOnlyList<Guid> DirectoryMetadataOperationIds,
     bool RequiresFullRescan);
 
 /// <summary>Projects CfSharp's durable local journal into per-Adapter commands without a second queue.</summary>
@@ -25,20 +25,21 @@ public static class MirrorPulseLocalBatchMapper
         }
 
         var commands = new List<MirrorPulseWorkerChangeCommand>(batch.Changes.Count);
-        var rootMetadata = new List<Guid>();
+        var directoryMetadata = new List<Guid>();
         foreach (CloudLocalChange change in batch.Changes)
         {
             MirrorPulseRoutedItem current = router.ResolvePath(change.RelativePath);
+            if (change.IsDirectory && change.Kind == CloudLocalChangeKind.MetadataUpdate)
+            {
+                // Directory timestamps and availability flags do not have a Worker mutation.
+                // Retain the real child operations in the batch and acknowledge this local
+                // bookkeeping event so it cannot remain a permanent pending upload.
+                directoryMetadata.Add(change.OperationId);
+                continue;
+            }
+
             if (current.RelativePath.Length == 0)
             {
-                if (change.IsDirectory && change.Kind == CloudLocalChangeKind.MetadataUpdate)
-                {
-                    // The first-level Adapter directory is MP-owned. Windows may journal its
-                    // metadata after an online/offline transition; it is not a Worker change.
-                    rootMetadata.Add(change.OperationId);
-                    continue;
-                }
-
                 throw new InvalidDataException(
                     $"First-level Adapter directory change '{change.Kind}: {change.RelativePath}' requires root reconciliation.");
             }
@@ -65,7 +66,7 @@ public static class MirrorPulseLocalBatchMapper
                 change.ObservedAt));
         }
 
-        return new(commands.AsReadOnly(), rootMetadata.AsReadOnly(), false);
+        return new(commands.AsReadOnly(), directoryMetadata.AsReadOnly(), false);
     }
 
     private static MirrorPulseWorkerChangeKind ToWorkerKind(CloudLocalChangeKind kind) => kind switch

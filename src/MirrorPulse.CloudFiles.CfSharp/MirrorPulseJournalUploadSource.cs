@@ -54,9 +54,9 @@ public sealed class MirrorPulseJournalUploadSource
             return new([], 0, true);
         }
 
-        if (plan.RootMetadataOperationIds.Count != 0)
+        if (plan.DirectoryMetadataOperationIds.Count != 0)
         {
-            await _feed.AcknowledgeAsync(plan.RootMetadataOperationIds.Select(operationId =>
+            await _feed.AcknowledgeAsync(plan.DirectoryMetadataOperationIds.Select(operationId =>
                     new CloudLocalChangeAcknowledgement(operationId, null)), cancellationToken)
                 .ConfigureAwait(false);
         }
