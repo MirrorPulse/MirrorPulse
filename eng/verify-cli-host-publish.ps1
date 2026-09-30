@@ -15,7 +15,7 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $ownedOutput = $true
 }
 
-$cliOutput = Join-Path $OutputDirectory "cli"
+$cliOutput = $OutputDirectory
 $hostOutput = Join-Path $OutputDirectory "host"
 New-Item -ItemType Directory -Path $cliOutput, $hostOutput -Force | Out-Null
 
