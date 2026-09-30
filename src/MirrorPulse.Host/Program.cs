@@ -82,7 +82,7 @@ try
             paths, topology.Instances, topology.Roots, provider, workers, workers,
             rootRouter, catalog, instanceId => topology.Instances.Any(instance =>
                 instance.InstanceId == instanceId && instance.Enabled),
-            conflictCenter, conflictNotifications);
+            conflictCenter, conflictNotifications, workers);
         currentSession = session;
         await session.StartAsync(shutdown.Token);
         await workers.StartAsync(topology);

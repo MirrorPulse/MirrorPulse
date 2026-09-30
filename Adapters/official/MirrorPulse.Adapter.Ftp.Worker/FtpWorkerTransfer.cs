@@ -69,7 +69,7 @@ public sealed class FtpWorkerTransfer(AsyncFtpClient client, FtpWorkerConfigurat
         string? current = await GetRevisionAsync(relativePath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(current, expectedRevision, StringComparison.Ordinal))
         {
-            throw new FtpRevisionConflictException();
+            throw new FtpRevisionConflictException(expectedRevision, current);
         }
 
         string stagedPath = $"{path}.mirrorpulse-upload-{requestId:N}";
@@ -106,6 +106,56 @@ public sealed class FtpWorkerTransfer(AsyncFtpClient client, FtpWorkerConfigurat
 
             throw;
         }
+    }
+
+    public async Task<string?> DeleteAsync(
+        string relativePath,
+        string? expectedRevision,
+        bool isDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (isDirectory)
+        {
+            throw new NotSupportedException("The FTP Worker does not delete directories through the mutation protocol.");
+        }
+
+        string? current = await GetRevisionAsync(relativePath, cancellationToken).ConfigureAwait(false);
+        if (current is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(current, expectedRevision, StringComparison.Ordinal))
+        {
+            throw new FtpRevisionConflictException(expectedRevision, current);
+        }
+
+        await client.DeleteFile(ResolvePath(relativePath), cancellationToken).ConfigureAwait(false);
+        return null;
+    }
+
+    public async Task<string> MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        string? expectedRevision,
+        bool isDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (isDirectory)
+        {
+            throw new NotSupportedException("The FTP Worker does not move directories through the mutation protocol.");
+        }
+
+        string? current = await GetRevisionAsync(sourcePath, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(current, expectedRevision, StringComparison.Ordinal))
+        {
+            throw new FtpRevisionConflictException(expectedRevision, current);
+        }
+
+        await client.Rename(ResolvePath(sourcePath), ResolvePath(destinationPath), cancellationToken)
+            .ConfigureAwait(false);
+        return await GetRevisionAsync(destinationPath, cancellationToken).ConfigureAwait(false)
+            ?? throw new IOException("The moved FTP file is missing.");
     }
 
     public string ResolvePath(string relativePath)
@@ -200,10 +250,16 @@ public sealed record FtpWorkerDirectoryEntry(
 
 public sealed class FtpRevisionConflictException : IOException
 {
-    public FtpRevisionConflictException()
+    public FtpRevisionConflictException(string? expectedRevision = null, string? actualRevision = null)
         : base("The remote FTP file changed before the conditional upload could complete.")
     {
+        ExpectedRevision = expectedRevision;
+        ActualRevision = actualRevision;
     }
+
+    public string? ExpectedRevision { get; }
+
+    public string? ActualRevision { get; }
 }
 
 public sealed class FtpWorkerTransferProtocol(
@@ -249,6 +305,12 @@ public sealed class FtpWorkerTransferProtocol(
                 case "Upload":
                     await HandleUploadAsync(command, cancellationToken).ConfigureAwait(false);
                     break;
+                case "Delete":
+                    await HandleDeleteAsync(command, cancellationToken).ConfigureAwait(false);
+                    break;
+                case "Move":
+                    await HandleMoveAsync(command, cancellationToken).ConfigureAwait(false);
+                    break;
                 case "List":
                     await HandleListAsync(command, cancellationToken).ConfigureAwait(false);
                     break;
@@ -265,9 +327,46 @@ public sealed class FtpWorkerTransferProtocol(
                 NotSupportedException => "CapabilityUnavailable",
                 _ => "RetryableTransferFailure",
             };
-            await channel.SendAsync("OperationError", command.RequestId, true, new { code }, CancellationToken.None)
-                .ConfigureAwait(false);
+            if (exception is FtpRevisionConflictException conflict)
+            {
+                await channel.SendAsync("OperationError", command.RequestId, true,
+                    new { code, expectedRevision = conflict.ExpectedRevision, actualRevision = conflict.ActualRevision },
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                await channel.SendAsync("OperationError", command.RequestId, true, new { code },
+                    CancellationToken.None).ConfigureAwait(false);
+            }
         }
+    }
+
+    private async Task HandleDeleteAsync(AdapterControlFrame command, CancellationToken cancellationToken)
+    {
+        string path = command.Payload.GetProperty("path").GetString()
+            ?? throw new InvalidDataException("The FTP delete path is missing.");
+        string? expectedRevision = command.Payload.TryGetProperty("expectedRevision", out var expected) &&
+            expected.ValueKind is not System.Text.Json.JsonValueKind.Null ? expected.GetString() : null;
+        bool isDirectory = command.Payload.GetProperty("isDirectory").GetBoolean();
+        string? revision = await _transfer.DeleteAsync(path, expectedRevision, isDirectory,
+            cancellationToken).ConfigureAwait(false);
+        await channel.SendAsync("MutationComplete", command.RequestId, true, new { revision },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleMoveAsync(AdapterControlFrame command, CancellationToken cancellationToken)
+    {
+        string sourcePath = command.Payload.GetProperty("sourcePath").GetString()
+            ?? throw new InvalidDataException("The FTP move source path is missing.");
+        string destinationPath = command.Payload.GetProperty("destinationPath").GetString()
+            ?? throw new InvalidDataException("The FTP move destination path is missing.");
+        string? expectedRevision = command.Payload.TryGetProperty("expectedRevision", out var expected) &&
+            expected.ValueKind is not System.Text.Json.JsonValueKind.Null ? expected.GetString() : null;
+        bool isDirectory = command.Payload.GetProperty("isDirectory").GetBoolean();
+        string revision = await _transfer.MoveAsync(sourcePath, destinationPath, expectedRevision,
+            isDirectory, cancellationToken).ConfigureAwait(false);
+        await channel.SendAsync("MutationComplete", command.RequestId, true, new { revision },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandleUploadAsync(AdapterControlFrame command, CancellationToken cancellationToken)

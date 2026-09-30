@@ -15,6 +15,9 @@ public static class MirrorPulseJournalUploadRevisionGuard
         IMirrorPulseWorkerStatTransport stats,
         MirrorPulseWorkerChangeCommand command,
         string syncRootRelativePath,
+        string? remoteStatPath = null,
+        bool allowTombstone = false,
+        bool allowMissingRemote = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -30,15 +33,20 @@ public static class MirrorPulseJournalUploadRevisionGuard
                 .ConfigureAwait(false);
         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-        if (item?.IsTombstone == true)
+        if (item?.IsTombstone == true && !allowTombstone)
         {
             throw new MirrorPulseUploadConflictException(null, null);
         }
 
         string? expected = string.IsNullOrEmpty(item?.RemoteRevision) ? null : item.RemoteRevision;
         string? actual = await stats.StatAsync(new MirrorPulseWorkerStatRequest(
-            command.InstanceId, command.RelativePath), cancellationToken).ConfigureAwait(false);
+            command.InstanceId, remoteStatPath ?? command.RelativePath), cancellationToken).ConfigureAwait(false);
         actual = string.IsNullOrEmpty(actual) ? null : actual;
+        if (allowMissingRemote && actual is null)
+        {
+            return expected;
+        }
+
         if (!string.Equals(expected, actual, StringComparison.Ordinal))
         {
             throw new MirrorPulseUploadConflictException(expected, actual);

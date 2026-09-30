@@ -15,7 +15,8 @@ namespace MirrorPulse.Core.Host;
 /// <summary>Owns one isolated process and current-user control pipe per enabled Adapter instance.</summary>
 public sealed class AdapterInstanceProcessSupervisor :
     IMirrorPulseWorkerRangeTransport, IMirrorPulseWorkerUploadTransport,
-    IMirrorPulseWorkerStatTransport, IMirrorPulseWorkerDirectoryPageSource, IAsyncDisposable
+    IMirrorPulseWorkerStatTransport, IMirrorPulseWorkerDirectoryPageSource,
+    IMirrorPulseWorkerMutationTransport, IAsyncDisposable
 {
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly ISecureCredentialStore _credentials;
@@ -25,6 +26,7 @@ public sealed class AdapterInstanceProcessSupervisor :
     private readonly ConcurrentDictionary<InstanceId, AdapterWorkerUploadClient> _uploads = new();
     private readonly ConcurrentDictionary<InstanceId, AdapterWorkerStatClient> _stats = new();
     private readonly ConcurrentDictionary<InstanceId, AdapterWorkerDirectoryPageClient> _directories = new();
+    private readonly ConcurrentDictionary<InstanceId, AdapterWorkerMutationClient> _mutations = new();
     private readonly ConcurrentDictionary<InstanceId, SemaphoreSlim> _instanceOperations = new();
     private Task[] _workers = [];
     private bool _started;
@@ -87,6 +89,22 @@ public sealed class AdapterInstanceProcessSupervisor :
     {
         ArgumentNullException.ThrowIfNull(request);
         return ReadDirectoryPageCoreAsync(request, cancellationToken);
+    }
+
+    public ValueTask<string?> DeleteAsync(
+        MirrorPulseWorkerDeleteRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return MutateDeleteCoreAsync(request, cancellationToken);
+    }
+
+    public ValueTask<string> MoveAsync(
+        MirrorPulseWorkerMoveRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return MutateMoveCoreAsync(request, cancellationToken);
     }
 
     private async ValueTask<Stream> ReadRangeCoreAsync(
@@ -173,6 +191,48 @@ public sealed class AdapterInstanceProcessSupervisor :
         }
     }
 
+    private async ValueTask<string?> MutateDeleteCoreAsync(
+        MirrorPulseWorkerDeleteRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_mutations.TryGetValue(request.InstanceId, out AdapterWorkerMutationClient? client) ||
+            !_instanceOperations.TryGetValue(request.InstanceId, out SemaphoreSlim? operation))
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
+        await operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await client.DeleteAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Release();
+        }
+    }
+
+    private async ValueTask<string> MutateMoveCoreAsync(
+        MirrorPulseWorkerMoveRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_mutations.TryGetValue(request.InstanceId, out AdapterWorkerMutationClient? client) ||
+            !_instanceOperations.TryGetValue(request.InstanceId, out SemaphoreSlim? operation))
+        {
+            throw new IOException("The Adapter instance is offline.");
+        }
+
+        await operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await client.MoveAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Release();
+        }
+    }
+
     private async Task RunInstanceAsync(
         MirrorPulseAdapterTopology topology,
         AdapterInstance instance,
@@ -251,6 +311,7 @@ public sealed class AdapterInstanceProcessSupervisor :
         var upload = new AdapterWorkerUploadClient(channel, instance.InstanceId, sessionId);
         var stat = new AdapterWorkerStatClient(channel, instance.InstanceId, sessionId);
         var directory = new AdapterWorkerDirectoryPageClient(channel, instance.InstanceId, sessionId);
+        var mutations = new AdapterWorkerMutationClient(channel, instance.InstanceId, sessionId);
         var instanceOperations = new SemaphoreSlim(1, 1);
         await channel.WriteControlAsync(new ControlFrameEnvelope(1, "Ready", hello.RequestId,
             instance.InstanceId, sessionId, true, JsonSerializer.SerializeToElement(instance.Configuration)),
@@ -263,6 +324,7 @@ public sealed class AdapterInstanceProcessSupervisor :
         _uploads[instance.InstanceId] = upload;
         _stats[instance.InstanceId] = stat;
         _directories[instance.InstanceId] = directory;
+        _mutations[instance.InstanceId] = mutations;
         _instanceOperations[instance.InstanceId] = instanceOperations;
 
         try
@@ -287,6 +349,10 @@ public sealed class AdapterInstanceProcessSupervisor :
                     else if (directory.CanHandle(frame))
                     {
                         await directory.HandleResponseAsync(frame).ConfigureAwait(false);
+                    }
+                    else if (mutations.CanHandle(frame))
+                    {
+                        await mutations.HandleResponseAsync(frame).ConfigureAwait(false);
                     }
                     else
                     {
@@ -344,11 +410,13 @@ public sealed class AdapterInstanceProcessSupervisor :
             _uploads.TryRemove(instance.InstanceId, out _);
             _stats.TryRemove(instance.InstanceId, out _);
             _directories.TryRemove(instance.InstanceId, out _);
+            _mutations.TryRemove(instance.InstanceId, out _);
             _instanceOperations.TryRemove(instance.InstanceId, out _);
             channel.Close();
             upload.Close();
             stat.Close();
             directory.Close();
+            mutations.Close();
             instanceOperations.Dispose();
         }
     }

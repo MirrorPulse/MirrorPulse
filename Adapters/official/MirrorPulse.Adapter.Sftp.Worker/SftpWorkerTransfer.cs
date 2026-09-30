@@ -61,7 +61,7 @@ public sealed class SftpWorkerTransfer(SftpClient client, SftpWorkerConfiguratio
         string? before = await GetRevisionAsync(relativePath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(before, expectedRevision, StringComparison.Ordinal))
         {
-            throw new SftpRevisionConflictException();
+            throw new SftpRevisionConflictException(expectedRevision, before);
         }
 
         string stagedPath = $"{path}.mirrorpulse-upload-{requestId:N}";
@@ -101,6 +101,63 @@ public sealed class SftpWorkerTransfer(SftpClient client, SftpWorkerConfiguratio
 
             throw;
         }
+    }
+
+    public async Task<string?> DeleteAsync(
+        string relativePath,
+        string? expectedRevision,
+        bool isDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (isDirectory)
+        {
+            throw new NotSupportedException("The SFTP Worker does not delete directories through the mutation protocol.");
+        }
+
+        string? current = await GetRevisionAsync(relativePath, cancellationToken).ConfigureAwait(false);
+        if (current is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(current, expectedRevision, StringComparison.Ordinal))
+        {
+            throw new SftpRevisionConflictException(expectedRevision, current);
+        }
+
+        await client.DeleteFileAsync(ResolvePath(relativePath), cancellationToken).ConfigureAwait(false);
+        return null;
+    }
+
+    public async Task<string> MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        string? expectedRevision,
+        bool isDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (isDirectory)
+        {
+            throw new NotSupportedException("The SFTP Worker does not move directories through the mutation protocol.");
+        }
+
+        string? current = await GetRevisionAsync(sourcePath, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(current, expectedRevision, StringComparison.Ordinal))
+        {
+            throw new SftpRevisionConflictException(expectedRevision, current);
+        }
+
+        try
+        {
+            client.RenameFile(ResolvePath(sourcePath), ResolvePath(destinationPath), isPosix: true);
+        }
+        catch (NotSupportedException)
+        {
+            client.RenameFile(ResolvePath(sourcePath), ResolvePath(destinationPath));
+        }
+
+        return await GetRevisionAsync(destinationPath, cancellationToken).ConfigureAwait(false)
+            ?? throw new IOException("The moved SFTP file is missing.");
     }
 
     private string ResolvePath(string relativePath)
@@ -190,10 +247,16 @@ public sealed record SftpWorkerDirectoryEntry(
 
 public sealed class SftpRevisionConflictException : IOException
 {
-    public SftpRevisionConflictException()
+    public SftpRevisionConflictException(string? expectedRevision = null, string? actualRevision = null)
         : base("The remote SFTP file changed before the conditional upload could complete.")
     {
+        ExpectedRevision = expectedRevision;
+        ActualRevision = actualRevision;
     }
+
+    public string? ExpectedRevision { get; }
+
+    public string? ActualRevision { get; }
 }
 
 public sealed class SftpWorkerTransferProtocol(
@@ -236,6 +299,12 @@ public sealed class SftpWorkerTransferProtocol(
                 case "Upload":
                     await HandleUploadAsync(command, cancellationToken).ConfigureAwait(false);
                     break;
+                case "Delete":
+                    await HandleDeleteAsync(command, cancellationToken).ConfigureAwait(false);
+                    break;
+                case "Move":
+                    await HandleMoveAsync(command, cancellationToken).ConfigureAwait(false);
+                    break;
                 case "List":
                     await HandleListAsync(command, cancellationToken).ConfigureAwait(false);
                     break;
@@ -252,9 +321,46 @@ public sealed class SftpWorkerTransferProtocol(
                 NotSupportedException => "CapabilityUnavailable",
                 _ => "RetryableTransferFailure",
             };
-            await channel.SendAsync("OperationError", command.RequestId, true, new { code }, CancellationToken.None)
-                .ConfigureAwait(false);
+            if (exception is SftpRevisionConflictException conflict)
+            {
+                await channel.SendAsync("OperationError", command.RequestId, true,
+                    new { code, expectedRevision = conflict.ExpectedRevision, actualRevision = conflict.ActualRevision },
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                await channel.SendAsync("OperationError", command.RequestId, true, new { code },
+                    CancellationToken.None).ConfigureAwait(false);
+            }
         }
+    }
+
+    private async Task HandleDeleteAsync(AdapterControlFrame command, CancellationToken cancellationToken)
+    {
+        string path = command.Payload.GetProperty("path").GetString()
+            ?? throw new InvalidDataException("The SFTP delete path is missing.");
+        string? expectedRevision = command.Payload.TryGetProperty("expectedRevision", out var expected) &&
+            expected.ValueKind is not System.Text.Json.JsonValueKind.Null ? expected.GetString() : null;
+        bool isDirectory = command.Payload.GetProperty("isDirectory").GetBoolean();
+        string? revision = await _transfer.DeleteAsync(path, expectedRevision, isDirectory,
+            cancellationToken).ConfigureAwait(false);
+        await channel.SendAsync("MutationComplete", command.RequestId, true, new { revision },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleMoveAsync(AdapterControlFrame command, CancellationToken cancellationToken)
+    {
+        string sourcePath = command.Payload.GetProperty("sourcePath").GetString()
+            ?? throw new InvalidDataException("The SFTP move source path is missing.");
+        string destinationPath = command.Payload.GetProperty("destinationPath").GetString()
+            ?? throw new InvalidDataException("The SFTP move destination path is missing.");
+        string? expectedRevision = command.Payload.TryGetProperty("expectedRevision", out var expected) &&
+            expected.ValueKind is not System.Text.Json.JsonValueKind.Null ? expected.GetString() : null;
+        bool isDirectory = command.Payload.GetProperty("isDirectory").GetBoolean();
+        string revision = await _transfer.MoveAsync(sourcePath, destinationPath, expectedRevision,
+            isDirectory, cancellationToken).ConfigureAwait(false);
+        await channel.SendAsync("MutationComplete", command.RequestId, true, new { revision },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandleUploadAsync(AdapterControlFrame command, CancellationToken cancellationToken)

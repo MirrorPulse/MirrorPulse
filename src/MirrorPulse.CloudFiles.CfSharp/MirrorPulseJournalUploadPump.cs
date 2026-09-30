@@ -24,6 +24,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly IMirrorPulseWorkerUploadTransport _uploads;
     private readonly IMirrorPulseWorkerStatTransport _stats;
+    private readonly IMirrorPulseWorkerMutationTransport? _mutations;
     private readonly MirrorPulseConflictCenter? _conflicts;
     private readonly MirrorPulseConflictNotificationBridge? _notifications;
     private readonly string _syncRootPath;
@@ -41,12 +42,14 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         Func<InstanceId, bool> mayDispatch,
         MirrorPulseJournalUploadCompletion completion,
         MirrorPulseConflictCenter? conflicts = null,
-        MirrorPulseConflictNotificationBridge? notifications = null)
+        MirrorPulseConflictNotificationBridge? notifications = null,
+        IMirrorPulseWorkerMutationTransport? mutations = null)
     {
         _feed = feed ?? throw new ArgumentNullException(nameof(feed));
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _uploads = uploads ?? throw new ArgumentNullException(nameof(uploads));
         _stats = stats ?? throw new ArgumentNullException(nameof(stats));
+        _mutations = mutations;
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _conflicts = conflicts;
@@ -113,6 +116,16 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         MirrorPulseWorkerChangeCommand command,
         CancellationToken cancellationToken)
     {
+        if (command.Kind is MirrorPulseWorkerChangeKind.Move or MirrorPulseWorkerChangeKind.Delete)
+        {
+            if (_mutations is null)
+            {
+                return false;
+            }
+
+            return await DispatchMutationAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+
         if (command.IsDirectory || command.Kind is not
             (MirrorPulseWorkerChangeKind.Create or MirrorPulseWorkerChangeKind.ContentUpdate))
         {
@@ -132,7 +145,8 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             syncRootRelativePath = Path.GetRelativePath(_syncRootPath, localPath)
                 .Replace(Path.DirectorySeparatorChar, '/');
             string? revision = await MirrorPulseJournalUploadRevisionGuard.ResolveAsync(
-                _state.OpenStore, _stats, command, syncRootRelativePath, cancellationToken)
+                _state.OpenStore, _stats, command, syncRootRelativePath,
+                cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             await using var content = new FileStream(localPath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, 64 * 1024, FileOptions.Asynchronous);
@@ -145,35 +159,15 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         }
         catch (MirrorPulseUploadConflictException conflict)
         {
-            var record = new MirrorPulseConflictRecord(command.OperationId,
-                command.InstanceId, command.OperationId.ToString("D"),
-                syncRootRelativePath!, MirrorPulseConflictReason.StaleRemoteRevision,
-                MirrorPulseVersionComparison.Diverged, conflict.ExpectedRevision,
-                conflict.ActualRevision, DateTimeOffset.UtcNow);
-            try
-            {
-                await _catalog.SaveUploadConflictAsync(record, cancellationToken).ConfigureAwait(false);
-                _conflicts?.Upsert(record);
-                if (_notifications is not null)
-                {
-                    try
-                    {
-                        await _notifications.NotifyAsync(record, cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (Exception exception) when (exception is not OperationCanceledException)
-                    {
-                        // Notification delivery cannot turn a durable conflict into an upload retry.
-                    }
-                }
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                // Keep the CfSharp journal operation pending if catalog persistence fails.
-            }
-
-            await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
-                cancellationToken).ConfigureAwait(false);
-            return true;
+            return await DeferConflictAsync(command, syncRootRelativePath!,
+                conflict.ExpectedRevision, conflict.ActualRevision, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (MirrorPulseWorkerMutationConflictException conflict)
+        {
+            return await DeferConflictAsync(command, syncRootRelativePath!,
+                conflict.ExpectedRevision, conflict.ActualRevision, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -181,6 +175,105 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
                 cancellationToken).ConfigureAwait(false);
             return true;
         }
+    }
+
+    private async ValueTask<bool> DispatchMutationAsync(
+        MirrorPulseWorkerChangeCommand command,
+        CancellationToken cancellationToken)
+    {
+        string localPath = _router.ResolveUploadPath(command.InstanceId,
+            command.RootKey, command.RelativePath);
+        string syncRootRelativePath = Path.GetRelativePath(_syncRootPath, localPath)
+            .Replace(Path.DirectorySeparatorChar, '/');
+        try
+        {
+            string? revision;
+            if (command.Kind == MirrorPulseWorkerChangeKind.Delete)
+            {
+                revision = await MirrorPulseJournalUploadRevisionGuard.ResolveAsync(
+                    _state.OpenStore, _stats, command, syncRootRelativePath,
+                    allowTombstone: true, allowMissingRemote: true,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                await _mutations!.DeleteAsync(new MirrorPulseWorkerDeleteRequest(
+                    command.InstanceId, command.RelativePath, revision, command.IsDirectory),
+                    cancellationToken).ConfigureAwait(false);
+                await _completion.AcknowledgeSuccessfulUploadAsync(command.OperationId, null,
+                    cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(command.PreviousRelativePath))
+            {
+                return false;
+            }
+
+            revision = await MirrorPulseJournalUploadRevisionGuard.ResolveAsync(
+                _state.OpenStore, _stats, command, syncRootRelativePath,
+                remoteStatPath: command.PreviousRelativePath,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            string movedRevision = await _mutations!.MoveAsync(new MirrorPulseWorkerMoveRequest(
+                command.InstanceId, command.PreviousRelativePath, command.RelativePath,
+                revision, command.IsDirectory), cancellationToken).ConfigureAwait(false);
+            await _completion.AcknowledgeSuccessfulUploadAsync(command.OperationId, movedRevision,
+                cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (MirrorPulseUploadConflictException conflict)
+        {
+            return await DeferConflictAsync(command, syncRootRelativePath,
+                conflict.ExpectedRevision, conflict.ActualRevision, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (MirrorPulseWorkerMutationConflictException conflict)
+        {
+            return await DeferConflictAsync(command, syncRootRelativePath,
+                conflict.ExpectedRevision, conflict.ActualRevision, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
+                cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+    }
+
+    private async ValueTask<bool> DeferConflictAsync(
+        MirrorPulseWorkerChangeCommand command,
+        string syncRootRelativePath,
+        string? expectedRevision,
+        string? actualRevision,
+        CancellationToken cancellationToken)
+    {
+        var record = new MirrorPulseConflictRecord(command.OperationId,
+            command.InstanceId, command.OperationId.ToString("D"),
+            syncRootRelativePath, MirrorPulseConflictReason.StaleRemoteRevision,
+            MirrorPulseVersionComparison.Diverged, expectedRevision,
+            actualRevision, DateTimeOffset.UtcNow);
+        try
+        {
+            await _catalog.SaveUploadConflictAsync(record, cancellationToken).ConfigureAwait(false);
+            _conflicts?.Upsert(record);
+            if (_notifications is not null)
+            {
+                try
+                {
+                    await _notifications.NotifyAsync(record, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    // Notification delivery cannot turn a durable conflict into an upload retry.
+                }
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Keep the CfSharp journal operation pending if catalog persistence fails.
+        }
+
+        await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
+            cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     public async ValueTask DisposeAsync()
