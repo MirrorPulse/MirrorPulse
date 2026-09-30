@@ -16,6 +16,7 @@ public static class MirrorPulseControlCommands
 
     public const string InstanceList = "instance.list";
     public const string InstanceCreate = "instance.create";
+    public const string InstanceConfigure = "instance.configure";
     public const string InstanceEnable = "instance.enable";
     public const string InstanceSelectVersion = "instance.selectVersion";
 
@@ -44,6 +45,7 @@ public static class MirrorPulseControlCommands
         new(AdapterRemove, "adapter", true, false),
         new(InstanceList, "instance", false, false),
         new(InstanceCreate, "instance", true, true),
+        new(InstanceConfigure, "instance", true, false),
         new(InstanceEnable, "instance", true, false),
         new(InstanceSelectVersion, "instance", true, false),
         new(SyncStatus, "sync", false, false),

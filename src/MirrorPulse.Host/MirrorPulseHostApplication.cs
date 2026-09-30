@@ -388,7 +388,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             ReadSettingsAsync,
             UpdateSettingsAsync,
             CollectDiagnosticsAsync,
-            RefreshAsync)
+            RefreshAsync,
+            ConfigureInstanceAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
     }
@@ -611,6 +612,16 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         {
             CreatedInstanceId = instance.InstanceId.ToString(),
         };
+    }
+
+    private async Task<MirrorPulseAppStatusResponse> ConfigureInstanceAsync(
+        InstanceId instanceId,
+        InstanceConfigureArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        await _catalog.ConfigureInstanceAsync(instanceId, arguments.DisplayName,
+            arguments.Configuration, arguments.RootLabels, cancellationToken).ConfigureAwait(false);
+        return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<MirrorPulseAppStatusResponse> SnoozeConflictAsync(

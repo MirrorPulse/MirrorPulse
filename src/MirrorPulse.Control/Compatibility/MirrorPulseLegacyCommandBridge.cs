@@ -21,6 +21,8 @@ public sealed class MirrorPulseLegacyCommandBridge
     private readonly Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _install;
     private readonly Func<MirrorPulseCreateInstanceRequest, CancellationToken,
         Task<MirrorPulseAppStatusResponse>>? _createInstance;
+    private readonly Func<InstanceId, InstanceConfigureArguments, CancellationToken,
+        Task<MirrorPulseAppStatusResponse>>? _configureInstance;
     private readonly Func<CancellationToken, Task<MirrorPulseHostStatus>>? _hostStatus;
     private readonly Func<HostLifecycleArguments, CancellationToken,
         Task<MirrorPulseHostStatus>>? _hostStart;
@@ -62,7 +64,9 @@ public sealed class MirrorPulseLegacyCommandBridge
         Func<DiagnosticsArguments, CancellationToken,
             Task<MirrorPulseControlDiagnosticsResult>>? diagnostics = null,
         Func<SyncRefreshArguments, CancellationToken,
-            Task<MirrorPulseAppStatusResponse>>? refresh = null)
+            Task<MirrorPulseAppStatusResponse>>? refresh = null,
+        Func<InstanceId, InstanceConfigureArguments, CancellationToken,
+            Task<MirrorPulseAppStatusResponse>>? configureInstance = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -71,6 +75,7 @@ public sealed class MirrorPulseLegacyCommandBridge
         _selectVersion = selectVersion;
         _install = install;
         _createInstance = createInstance;
+        _configureInstance = configureInstance;
         _hostStatus = hostStatus;
         _hostStart = hostStart;
         _hostStop = hostStop;
@@ -209,6 +214,14 @@ public sealed class MirrorPulseLegacyCommandBridge
                         arguments.Secret,
                         arguments.Enabled),
                     cancellationToken)));
+        }
+
+        if (_configureInstance is not null)
+        {
+            dispatcher.Register<InstanceConfigureArguments, MirrorPulseAppStatusResponse>(
+                MirrorPulseControlCommands.InstanceConfigure,
+                (arguments, cancellationToken) => new(_configureInstance(
+                    InstanceId.Parse(arguments.InstanceId), arguments, cancellationToken)));
         }
     }
 

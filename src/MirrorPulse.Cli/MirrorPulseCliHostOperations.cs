@@ -150,6 +150,33 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                     human = $"Adapter package installed: " +
                         ((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result).InstalledAdapterId;
                     break;
+                case ("instance", "list"):
+                    result = await _client.GetInstancesAsync(cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    human = FormatTopology((MirrorPulseControlTopology)result);
+                    break;
+                case ("instance", "create"):
+                    result = await _client.CreateInstanceAsync(new InstanceCreateArguments(
+                        GetRequiredOption(command.Arguments, "install-id"),
+                        GetRequiredOption(command.Arguments, "name"),
+                        ParseMap(command.Arguments, "config"),
+                        ParseMap(command.Arguments, "root"),
+                        GetOptionalOption(command.Arguments, "secret"),
+                        !HasFlag(command.Arguments, "disabled")), cancellationToken)
+                        .ConfigureAwait(false);
+                    human = "Adapter instance created: " +
+                        ((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result).CreatedInstanceId;
+                    break;
+                case ("instance", "configure"):
+                    string instanceId = GetRequiredOption(command.Arguments, "instance-id");
+                    result = await _client.ConfigureInstanceAsync(new InstanceConfigureArguments(
+                        instanceId,
+                        GetRequiredOption(command.Arguments, "name"),
+                        ParseMap(command.Arguments, "config"),
+                        ParseMap(command.Arguments, "root")), cancellationToken)
+                        .ConfigureAwait(false);
+                    human = "Adapter instance configured: " + instanceId;
+                    break;
                 default:
                     await MirrorPulseCliOutputFormatter.WriteErrorAsync(
                         MirrorPulseControlExitCodes.Unsupported,
@@ -205,6 +232,48 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
         if (positionalIndex < positional.Length && !string.IsNullOrWhiteSpace(positional[positionalIndex]))
             return positional[positionalIndex];
         throw new ArgumentException(error);
+    }
+
+    private static string GetRequiredOption(IReadOnlyList<string> arguments, string name) =>
+        GetOptionalOption(arguments, name) ??
+        throw new ArgumentException($"The --{name} option is required.");
+
+    private static string? GetOptionalOption(IReadOnlyList<string> arguments, string name)
+    {
+        string prefix = "--" + name + "=";
+        for (int index = 0; index < arguments.Count; index++)
+        {
+            string value = arguments[index];
+            if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return value[prefix.Length..];
+            if (value.Equals("--" + name, StringComparison.OrdinalIgnoreCase))
+                return index + 1 < arguments.Count ? arguments[index + 1] : null;
+        }
+
+        return null;
+    }
+
+    private static bool HasFlag(IReadOnlyList<string> arguments, string name) =>
+        arguments.Any(value => value.Equals("--" + name, StringComparison.OrdinalIgnoreCase));
+
+    private static Dictionary<string, string> ParseMap(
+        IReadOnlyList<string> arguments, string option)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int index = 0; index < arguments.Count; index++)
+        {
+            if (!arguments[index].Equals("--" + option, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (++index >= arguments.Count)
+                throw new ArgumentException($"The --{option} option requires key=value.");
+            string item = arguments[index];
+            int separator = item.IndexOf('=');
+            if (separator <= 0)
+                throw new ArgumentException($"The --{option} option requires key=value.");
+            map[item[..separator]] = item[(separator + 1)..];
+        }
+
+        return map;
     }
 
     private async Task<MirrorPulseHostStatus> StartAsync(CancellationToken cancellationToken)

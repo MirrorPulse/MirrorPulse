@@ -254,6 +254,12 @@ public sealed class MirrorPulseControlClient
             MirrorPulseControlCommands.InstanceEnable,
             new(instanceId, enabled), cancellationToken);
 
+    public Task<MirrorPulseAppStatusResponse> ConfigureInstanceAsync(
+        InstanceConfigureArguments arguments,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<InstanceConfigureArguments, MirrorPulseAppStatusResponse>(
+            MirrorPulseControlCommands.InstanceConfigure, arguments, cancellationToken);
+
     public Task<MirrorPulseAppStatusResponse> SelectInstallationAsync(
         string instanceId,
         string installId,

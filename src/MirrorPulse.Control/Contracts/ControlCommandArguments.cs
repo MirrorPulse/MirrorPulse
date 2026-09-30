@@ -102,6 +102,12 @@ public sealed record InstanceCreateArguments(
     [property: MirrorPulseSensitiveData] string? Secret,
     bool Enabled) : IMirrorPulseControlArguments;
 
+public sealed record InstanceConfigureArguments(
+    string InstanceId,
+    string DisplayName,
+    IReadOnlyDictionary<string, string> Configuration,
+    IReadOnlyDictionary<string, string> RootLabels) : IMirrorPulseControlArguments;
+
 public sealed record InstanceIdArguments(string InstanceId) : IMirrorPulseControlArguments;
 
 public sealed record InstanceEnableArguments(string InstanceId, bool Enabled) : IMirrorPulseControlArguments;
