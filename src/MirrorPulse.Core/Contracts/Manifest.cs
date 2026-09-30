@@ -65,7 +65,8 @@ public sealed record AdapterManifest
         IReadOnlyList<string> locales,
         string minimumMirrorPulseVersion,
         IReadOnlyList<AdapterRootDefinition>? rootDefinitions = null,
-        IReadOnlyList<AdapterLocaleMetadata>? localeMetadata = null)
+        IReadOnlyList<AdapterLocaleMetadata>? localeMetadata = null,
+        IReadOnlyList<AdapterConfigurationField>? configurationFields = null)
     {
         SchemaVersion = schemaVersion;
         AdapterId = adapterId;
@@ -82,6 +83,7 @@ public sealed record AdapterManifest
         RootDefinitions = (rootDefinitions ?? []).ToArray();
         LocaleMetadata = new ReadOnlyDictionary<string, AdapterLocaleMetadata>(
             (localeMetadata ?? []).ToDictionary(item => item.Locale, StringComparer.OrdinalIgnoreCase));
+        ConfigurationFields = (configurationFields ?? []).ToArray();
     }
 
     public int SchemaVersion { get; }
@@ -115,4 +117,7 @@ public sealed record AdapterManifest
     /// Optional display and resource metadata keyed by locale.
     /// </summary>
     public IReadOnlyDictionary<string, AdapterLocaleMetadata> LocaleMetadata { get; }
+
+    /// <summary>Optional per-instance fields rendered and validated by MirrorPulse.</summary>
+    public IReadOnlyList<AdapterConfigurationField> ConfigurationFields { get; }
 }

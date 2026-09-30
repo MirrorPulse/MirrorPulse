@@ -356,7 +356,8 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         string[] Locales,
         string MinimumMirrorPulseVersion,
         AdapterRootDefinition[] RootDefinitions,
-        AdapterLocaleMetadata[] LocaleMetadata);
+        AdapterLocaleMetadata[] LocaleMetadata,
+        AdapterConfigurationField[]? ConfigurationFields);
 
     private sealed class CatalogManifestConverter : JsonConverter<AdapterManifest>
     {
@@ -371,7 +372,8 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
                 document.Publisher, document.Version, document.Protocol, document.Entrypoints,
                 document.InstallPolicy, document.InstancePolicy, document.Capabilities,
                 document.Locales, document.MinimumMirrorPulseVersion,
-                document.RootDefinitions, document.LocaleMetadata);
+                document.RootDefinitions, document.LocaleMetadata,
+                document.ConfigurationFields);
         }
 
         public override void Write(Utf8JsonWriter writer, AdapterManifest value, JsonSerializerOptions options) =>
@@ -380,7 +382,7 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
                 new Dictionary<string, string>(value.Entrypoints, StringComparer.OrdinalIgnoreCase),
                 value.InstallPolicy, value.InstancePolicy, value.Capabilities, value.Locales.ToArray(),
                 value.MinimumMirrorPulseVersion, value.RootDefinitions.ToArray(),
-                value.LocaleMetadata.Values.ToArray()), options);
+                value.LocaleMetadata.Values.ToArray(), value.ConfigurationFields.ToArray()), options);
     }
 
     private sealed class StringValueConverter<T>(Func<string, T> parse) : JsonConverter<T>

@@ -71,6 +71,13 @@ public sealed class SignedThirdPartyPackageTests
                         resourcePath = "locales/en-US.json"
                     },
                 },
+                configurationFields = new List<object>
+                {
+                    new { key = "endpoint", label = "Server endpoint", kind = "Text",
+                        required = true },
+                    new { key = "credentialReference", label = "Password", kind = "Secret",
+                        required = false },
+                },
                 minimumMirrorPulseVersion = "1.0.0",
             }));
 
@@ -107,6 +114,9 @@ public sealed class SignedThirdPartyPackageTests
             Assert.AreEqual(adapterId, installed.AdapterId.ToString());
             Assert.IsTrue(installed.IsSigned);
             Assert.AreEqual("cloud", installed.Manifest.RootDefinitions.Single().Key);
+            Assert.AreEqual("endpoint", installed.Manifest.ConfigurationFields[0].Key);
+            Assert.AreEqual(AdapterConfigurationFieldKind.Secret,
+                installed.Manifest.ConfigurationFields[1].Kind);
             Assert.IsTrue(File.Exists(Path.Combine(installed.InstallationDirectory,
                 worker.Replace('/', Path.DirectorySeparatorChar))));
         }

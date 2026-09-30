@@ -71,6 +71,29 @@ public sealed class ManifestValidatorTests
         CollectionAssert.Contains(codes, "manifest.locales.missingFallback");
     }
 
+    [TestMethod]
+    public void InvalidConfigurationFormMetadataIsRejectedBeforeInstallation()
+    {
+        var manifest = new AdapterManifest(1, AdapterId.Parse("example.webdav"),
+            "Example", "1.0.0", new ProtocolVersionRange(1, 1), ValidEntrypoints,
+            new AdapterInstallPolicy(null), new AdapterInstancePolicy(null, null),
+            new AdapterCapabilities(true, true, true, true), ValidLocales, "1.0.0",
+            configurationFields:
+            [
+                new("endpoint", "Endpoint", AdapterConfigurationFieldKind.Choice,
+                    true, "missing", ["https"]),
+                new("endpoint", "Duplicate", AdapterConfigurationFieldKind.Text,
+                    false, null, []),
+                new("credentialReference", "Password", AdapterConfigurationFieldKind.Secret,
+                    true, "unsafe-default", []),
+            ]);
+
+        string[] codes = AdapterManifestValidator.Validate(manifest)
+            .Select(diagnostic => diagnostic.Code).ToArray();
+        CollectionAssert.Contains(codes, "manifest.configurationFields.invalid");
+        CollectionAssert.Contains(codes, "manifest.configurationField.invalid");
+    }
+
     private static AdapterManifest CreateManifest() => new(
         1,
         AdapterId.Parse("example.webdav"),

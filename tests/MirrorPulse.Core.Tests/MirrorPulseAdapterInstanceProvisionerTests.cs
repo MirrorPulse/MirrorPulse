@@ -25,7 +25,16 @@ public sealed class MirrorPulseAdapterInstanceProvisionerTests
             },
             new AdapterInstallPolicy(null), new AdapterInstancePolicy(null, null),
             new AdapterCapabilities(true, false, true, true), ["en-US"], "1.0.0",
-            [new AdapterRootDefinition("files", "Files", "Files", false)]);
+            [new AdapterRootDefinition("files", "Files", "Files", false)],
+            configurationFields:
+            [
+                new("endpoint", "Server endpoint", AdapterConfigurationFieldKind.Text,
+                    true, null, []),
+                new("mode", "Transfer mode", AdapterConfigurationFieldKind.Choice,
+                    false, "safe", ["safe", "fast"]),
+                new("credentialReference", "Password", AdapterConfigurationFieldKind.Secret,
+                    false, null, []),
+            ]);
         var installation = new InstalledAdapter(manifest, InstallId.New(),
             Path.Combine(root, "installed"), new Sha256Digest(new string('A', 64)),
             AdapterInstallSource.LocalFile, null, true, DateTimeOffset.UtcNow,
@@ -43,6 +52,7 @@ public sealed class MirrorPulseAdapterInstanceProvisionerTests
                 new Dictionary<string, string> { ["files"] = "Personal files" }, "password-one", true);
             AdapterInstance first = await provisioner.CreateAsync(firstRequest);
             Assert.AreEqual("Personal files", (await catalog.ReadAdapterTopologyAsync()).Roots.Single().Label);
+            Assert.AreEqual("safe", first.Configuration["mode"]);
             Assert.HasCount(1, first.CredentialReferences);
             Assert.AreEqual(first.CredentialReferences.Single(),
                 first.Configuration["credentialReference"]);
@@ -55,6 +65,16 @@ public sealed class MirrorPulseAdapterInstanceProvisionerTests
             Assert.HasCount(1, (await catalog.ReadAdapterTopologyAsync()).Instances);
             Assert.AreEqual("password-one", credentials.Read(first.CredentialReferences.Single()));
             Assert.AreEqual(1, credentials.DeletionCount);
+
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => provisioner.CreateAsync(
+                firstRequest with
+                {
+                    Configuration = new Dictionary<string, string>
+                    {
+                        ["endpoint"] = "https://example.test/",
+                        ["mode"] = "unknown",
+                    },
+                }));
 
             AdapterInstance second = await provisioner.CreateAsync(firstRequest with
             {

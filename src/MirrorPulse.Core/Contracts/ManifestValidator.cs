@@ -48,6 +48,7 @@ public static class AdapterManifestValidator
         ValidateInstancePolicy(manifest.InstancePolicy, diagnostics);
         ValidateRootDefinitions(manifest.RootDefinitions, manifest.InstancePolicy, diagnostics);
         ValidateLocaleMetadata(manifest.Locales, manifest.LocaleMetadata, diagnostics);
+        ValidateConfigurationFields(manifest.ConfigurationFields, diagnostics);
 
         if (manifest.Capabilities is null)
         {
@@ -162,6 +163,42 @@ public static class AdapterManifestValidator
         if (!metadata.Keys.Contains("en-US", StringComparer.OrdinalIgnoreCase))
         {
             diagnostics.Add(Error("manifest.localeMetadata.missingFallback", "Locale metadata must include en-US when metadata is declared."));
+        }
+    }
+
+    private static void ValidateConfigurationFields(
+        IReadOnlyList<AdapterConfigurationField> fields,
+        List<Diagnostic> diagnostics)
+    {
+        if (fields.Count > 32 || fields.GroupBy(field => field.Key, StringComparer.Ordinal)
+            .Any(group => group.Count() > 1) ||
+            fields.Count(field => field.Kind == AdapterConfigurationFieldKind.Secret) > 1)
+        {
+            diagnostics.Add(Error("manifest.configurationFields.invalid",
+                "Configuration field keys must be unique, with at most one secret field and 32 fields."));
+        }
+
+        foreach (AdapterConfigurationField field in fields)
+        {
+            if (string.IsNullOrWhiteSpace(field.Key) || field.Key.Length > 64 ||
+                !field.Key.All(character => char.IsAsciiLetterOrDigit(character) ||
+                    character is '_' or '-' or '.') ||
+                string.IsNullOrWhiteSpace(field.Label) || field.Label.Length > 128 ||
+                (field.Key == "credentialReference") !=
+                    (field.Kind == AdapterConfigurationFieldKind.Secret) ||
+                (field.Kind == AdapterConfigurationFieldKind.Secret && field.DefaultValue is not null) ||
+                (field.Kind == AdapterConfigurationFieldKind.Choice &&
+                    (field.Options.Count == 0 || field.Options.Any(string.IsNullOrWhiteSpace) ||
+                     field.Options.Distinct(StringComparer.Ordinal).Count() != field.Options.Count ||
+                     (field.DefaultValue is not null && !field.Options.Contains(field.DefaultValue,
+                         StringComparer.Ordinal)))) ||
+                (field.Kind != AdapterConfigurationFieldKind.Choice && field.Options.Count > 0) ||
+                (field.Kind == AdapterConfigurationFieldKind.Toggle && field.DefaultValue is not null &&
+                    !bool.TryParse(field.DefaultValue, out _)))
+            {
+                diagnostics.Add(Error("manifest.configurationField.invalid",
+                    $"The configuration field '{field.Key}' has invalid metadata."));
+            }
         }
     }
 

@@ -31,6 +31,19 @@ public static class AdapterPackageManifestReader
             .Select(item => new AdapterLocaleMetadata(item.Name,
                 item.Value.GetProperty("displayName").GetString() ?? string.Empty,
                 item.Value.GetProperty("resourcePath").GetString() ?? string.Empty)).ToArray();
+        AdapterConfigurationField[] configurationFields = root.TryGetProperty("configurationFields",
+            out JsonElement fields) ? fields.EnumerateArray().Select(item =>
+            new AdapterConfigurationField(
+                item.GetProperty("key").GetString() ?? string.Empty,
+                item.GetProperty("label").GetString() ?? string.Empty,
+                Enum.Parse<AdapterConfigurationFieldKind>(
+                    item.GetProperty("kind").GetString() ?? string.Empty, ignoreCase: true),
+                item.TryGetProperty("required", out JsonElement required) && required.GetBoolean(),
+                item.TryGetProperty("defaultValue", out JsonElement defaultValue) &&
+                    defaultValue.ValueKind != JsonValueKind.Null ? defaultValue.GetString() : null,
+                item.TryGetProperty("options", out JsonElement options) ? options.EnumerateArray()
+                    .Select(option => option.GetString() ?? string.Empty).ToArray() : []))
+                .ToArray() : [];
         var manifest = new AdapterManifest(root.GetProperty("schemaVersion").GetInt32(),
             AdapterId.Parse(root.GetProperty("adapterId").GetString() ?? string.Empty),
             root.GetProperty("publisher").GetString() ?? string.Empty,
@@ -47,7 +60,7 @@ public static class AdapterPackageManifestReader
             root.GetProperty("locales").EnumerateArray()
                 .Select(item => item.GetString() ?? string.Empty).ToArray(),
             root.GetProperty("minimumMirrorPulseVersion").GetString() ?? string.Empty,
-            roots, locales);
+            roots, locales, configurationFields);
         Diagnostic[] errors = AdapterManifestValidator.Validate(manifest)
             .Where(item => item.Severity == DiagnosticSeverity.Error).ToArray();
         if (errors.Length > 0)

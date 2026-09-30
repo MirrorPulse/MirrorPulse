@@ -34,11 +34,9 @@ public sealed class MirrorPulseAdapterInstanceProvisioner
         InstalledAdapter installation = await _catalog.FindAsync(installId, cancellationToken)
             .ConfigureAwait(false) ?? throw new FileNotFoundException(
                 "The selected Adapter installation is not registered.");
-        var configuration = new Dictionary<string, string>(request.Configuration, StringComparer.Ordinal);
-        if (configuration.ContainsKey("credentialReference"))
-        {
-            throw new InvalidDataException("Credential references are managed by MirrorPulse.");
-        }
+        var configuration = new Dictionary<string, string>(
+            AdapterConfigurationFieldValidator.ValidateAndApplyDefaults(
+                installation.Manifest, request.Configuration, request.Secret), StringComparer.Ordinal);
 
         var references = new List<string>();
         CredentialReference? credential = null;
