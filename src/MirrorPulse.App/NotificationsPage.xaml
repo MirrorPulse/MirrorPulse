@@ -15,6 +15,11 @@
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button Content="Refresh" Click="RefreshButton_Click" />
                 <Button x:Name="SnoozeButton" Content="Snooze selected" IsEnabled="False" Click="SnoozeButton_Click" />
+                <Button x:Name="KeepLocalButton" Content="Keep local" IsEnabled="False" Click="KeepLocalButton_Click" />
+                <Button x:Name="KeepRemoteButton" Content="Keep remote" IsEnabled="False" Click="KeepRemoteButton_Click" />
+                <Button x:Name="KeepBothButton" Content="Keep both" IsEnabled="False" Click="KeepBothButton_Click" />
+                <Button x:Name="RetryButton" Content="Retry" IsEnabled="False" Click="RetryButton_Click" />
+                <Button x:Name="DeleteLocalButton" Content="Delete local" IsEnabled="False" Click="DeleteLocalButton_Click" />
             </StackPanel>
             <TextBlock x:Name="NotificationsMessageText" TextWrapping="Wrap" Opacity="0.75" />
         </StackPanel>

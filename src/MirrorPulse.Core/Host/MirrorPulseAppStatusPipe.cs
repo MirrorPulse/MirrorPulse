@@ -51,6 +51,8 @@ public sealed class MirrorPulseAppStatusPipe
     private const int MaximumFrameBytes = 1024 * 1024;
     private readonly Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> _readStatus;
     private readonly Func<Guid, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _snooze;
+    private readonly Func<Guid, MirrorPulseConflictAction, CancellationToken,
+        Task<MirrorPulseAppStatusResponse>>? _resolveConflict;
     private readonly Func<InstanceId, bool, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _setEnabled;
     private readonly Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _selectVersion;
     private readonly Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? _install;
@@ -64,10 +66,13 @@ public sealed class MirrorPulseAppStatusPipe
         Func<InstanceId, InstallId, CancellationToken, Task<MirrorPulseAppStatusResponse>>? selectVersion = null,
         Func<string, CancellationToken, Task<MirrorPulseAppStatusResponse>>? install = null,
         Func<MirrorPulseCreateInstanceRequest, CancellationToken,
-            Task<MirrorPulseAppStatusResponse>>? createInstance = null)
+            Task<MirrorPulseAppStatusResponse>>? createInstance = null,
+        Func<Guid, MirrorPulseConflictAction, CancellationToken,
+            Task<MirrorPulseAppStatusResponse>>? resolveConflict = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
+        _resolveConflict = resolveConflict;
         _setEnabled = setEnabled;
         _selectVersion = selectVersion;
         _install = install;
@@ -111,6 +116,20 @@ public sealed class MirrorPulseAppStatusPipe
                     try
                     {
                         response = await _snooze(conflictId, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        response = new(0, 0, [], [], exception.Message);
+                    }
+                }
+                else if (request.StartsWith("conflict:", StringComparison.Ordinal) &&
+                    _resolveConflict is not null && TryParseConflict(request,
+                        out Guid resolveId, out MirrorPulseConflictAction resolveAction))
+                {
+                    try
+                    {
+                        response = await _resolveConflict(resolveId, resolveAction, cancellationToken)
+                            .ConfigureAwait(false);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
@@ -212,6 +231,19 @@ public sealed class MirrorPulseAppStatusPipe
         return await SendRequestAsync($"snooze:{conflictId:D}", cancellationToken).ConfigureAwait(false);
     }
 
+    public static Task<MirrorPulseAppStatusResponse> ResolveConflictAsync(
+        Guid conflictId,
+        MirrorPulseConflictAction action,
+        CancellationToken cancellationToken = default)
+    {
+        if (conflictId == Guid.Empty || action is MirrorPulseConflictAction.Defer)
+        {
+            throw new ArgumentException("The conflict action is invalid.");
+        }
+
+        return SendRequestAsync($"conflict:{conflictId:D}:{action}", cancellationToken);
+    }
+
     public static Task<MirrorPulseAppStatusResponse> SetInstanceEnabledAsync(
         InstanceId instanceId,
         bool enabled,
@@ -249,6 +281,19 @@ public sealed class MirrorPulseAppStatusPipe
         enabled = parts.Length == 3 && parts[2] == "1";
         return parts.Length == 3 && (parts[2] is "0" or "1") &&
             InstanceId.TryParse(parts[1], out instanceId);
+    }
+
+    private static bool TryParseConflict(
+        string request,
+        out Guid conflictId,
+        out MirrorPulseConflictAction action)
+    {
+        string[] parts = request.Split(':', 3);
+        conflictId = default;
+        action = default;
+        return parts.Length == 3 && Guid.TryParseExact(parts[1], "D", out conflictId) &&
+            Enum.TryParse(parts[2], ignoreCase: true, out action) &&
+            action is not MirrorPulseConflictAction.Defer;
     }
 
     private static bool TryParseVersion(string request, out InstanceId instanceId, out InstallId installId)

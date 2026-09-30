@@ -191,7 +191,14 @@ try
                     await catalog.SelectInstanceInstallationAsync(instanceId, installId, cancellationToken);
                     return await ReadStatusAsync(cancellationToken);
                 },
-                InstallAdapterAsync, CreateInstanceAsync);
+                InstallAdapterAsync, CreateInstanceAsync,
+                async (conflictId, action, cancellationToken) =>
+                {
+                    await session.ApplyUploadConflictAsync(conflictId, action, cancellationToken)
+                        .ConfigureAwait(false);
+                    conflictCenter.Remove(conflictId);
+                    return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+                });
             await statusPipe.ServeAsync(shutdown.Token);
         }
 

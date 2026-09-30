@@ -18,6 +18,7 @@ public sealed class MirrorPulseAppStatusPipeTests
         InstallId? selectedInstallation = null;
         string? installedPackage = null;
         MirrorPulseCreateInstanceRequest? created = null;
+        MirrorPulseConflictAction? resolvedAction = null;
         var expected = new MirrorPulseAppStatusResponse(3, 1,
             [new("instance-1", "Personal drive", true, "Healthy", "ABCDEF012345", null, null)],
             [new(conflictId.ToString("D"), "note.txt", DateTimeOffset.UtcNow, false,
@@ -48,6 +49,12 @@ public sealed class MirrorPulseAppStatusPipeTests
             {
                 created = request;
                 return Task.FromResult(expected with { CreatedInstanceId = instanceId.ToString() });
+            },
+            (id, action, _) =>
+            {
+                Assert.AreEqual(conflictId, id);
+                resolvedAction = action;
+                return Task.FromResult(expected with { PendingUploadConflicts = 0 });
             });
         Task serving = server.ServeAsync(shutdown.Token);
         try
@@ -62,6 +69,10 @@ public sealed class MirrorPulseAppStatusPipeTests
             MirrorPulseAppStatusResponse snoozed = await MirrorPulseAppStatusPipe.SnoozeAsync(conflictId,
                 shutdown.Token);
             Assert.IsTrue(snoozed.Notifications[0].Snoozed);
+            MirrorPulseAppStatusResponse resolved = await MirrorPulseAppStatusPipe.ResolveConflictAsync(
+                conflictId, MirrorPulseConflictAction.KeepLocal, shutdown.Token);
+            Assert.AreEqual(0, resolved.PendingUploadConflicts);
+            Assert.AreEqual(MirrorPulseConflictAction.KeepLocal, resolvedAction);
             await MirrorPulseAppStatusPipe.SetInstanceEnabledAsync(instanceId, false, shutdown.Token);
             await MirrorPulseAppStatusPipe.SelectInstallationAsync(instanceId, installId, shutdown.Token);
             string packagePath = Path.Combine(Path.GetTempPath(), "MirrorPulse-status-test.mpadapter");

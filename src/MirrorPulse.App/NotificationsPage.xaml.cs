@@ -23,7 +23,14 @@ public sealed partial class NotificationsPage : Page
     private void NotificationsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         int index = NotificationsList.SelectedIndex;
-        SnoozeButton.IsEnabled = index >= 0 && index < _notifications.Count && !_notifications[index].Snoozed;
+        bool selected = index >= 0 && index < _notifications.Count;
+        bool uploadConflict = selected && _notifications[index].Source == MirrorPulseConflictSource.Upload;
+        SnoozeButton.IsEnabled = selected && !_notifications[index].Snoozed;
+        KeepLocalButton.IsEnabled = uploadConflict;
+        KeepRemoteButton.IsEnabled = uploadConflict;
+        KeepBothButton.IsEnabled = uploadConflict;
+        RetryButton.IsEnabled = uploadConflict;
+        DeleteLocalButton.IsEnabled = uploadConflict;
     }
 
     private async void SnoozeButton_Click(object sender, RoutedEventArgs e)
@@ -46,6 +53,44 @@ public sealed partial class NotificationsPage : Page
         }
     }
 
+    private Task ResolveSelectedAsync(MirrorPulseConflictAction action) => ResolveAsync(action);
+
+    private async Task ResolveAsync(MirrorPulseConflictAction action)
+    {
+        int index = NotificationsList.SelectedIndex;
+        if (index < 0 || index >= _notifications.Count ||
+            _notifications[index].Source != MirrorPulseConflictSource.Upload)
+        {
+            return;
+        }
+
+        try
+        {
+            MirrorPulseAppStatusResponse status = await MirrorPulseAppStatusPipe.ResolveConflictAsync(
+                Guid.Parse(_notifications[index].ConflictId), action);
+            Show(status);
+        }
+        catch (Exception exception)
+        {
+            NotificationsMessageText.Text = $"Could not resolve conflict: {exception.Message}";
+        }
+    }
+
+    private async void KeepLocalButton_Click(object sender, RoutedEventArgs e) =>
+        await ResolveSelectedAsync(MirrorPulseConflictAction.KeepLocal);
+
+    private async void KeepRemoteButton_Click(object sender, RoutedEventArgs e) =>
+        await ResolveSelectedAsync(MirrorPulseConflictAction.KeepRemote);
+
+    private async void KeepBothButton_Click(object sender, RoutedEventArgs e) =>
+        await ResolveSelectedAsync(MirrorPulseConflictAction.KeepBoth);
+
+    private async void RetryButton_Click(object sender, RoutedEventArgs e) =>
+        await ResolveSelectedAsync(MirrorPulseConflictAction.Retry);
+
+    private async void DeleteLocalButton_Click(object sender, RoutedEventArgs e) =>
+        await ResolveSelectedAsync(MirrorPulseConflictAction.DeleteLocal);
+
     private async Task RefreshAsync()
     {
         try
@@ -66,6 +111,11 @@ public sealed partial class NotificationsPage : Page
             $"{item.RelativePath}  ·  {item.DetectedAt:yyyy-MM-dd HH:mm}  ·  " +
             (item.Snoozed ? "Snoozed" : "Needs attention")).ToArray();
         SnoozeButton.IsEnabled = false;
+        KeepLocalButton.IsEnabled = false;
+        KeepRemoteButton.IsEnabled = false;
+        KeepBothButton.IsEnabled = false;
+        RetryButton.IsEnabled = false;
+        DeleteLocalButton.IsEnabled = false;
         NotificationsMessageText.Text = _notifications.Count == 0
             ? "No pending conflict notifications."
             : $"{_notifications.Count(item => !item.Snoozed)} conflict notifications need attention.";
