@@ -22,6 +22,8 @@ public sealed class MirrorPulseSyncRootRegistrationTests
         Assert.AreEqual("MirrorPulse", registrar.Options.ProviderName);
         Assert.IsTrue(registrar.Options.UpdateExisting);
         Assert.IsTrue(registrar.Options.MarkRootInSync);
+        Assert.AreEqual(CloudHydrationPolicy.Full, registrar.Options.HydrationPolicy);
+        Assert.AreEqual(CloudHydrationPolicyModifiers.None, registrar.Options.HydrationModifiers);
         CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, registrar.Options.SyncRootIdentity.ToArray());
         Assert.IsTrue(Directory.Exists(path));
         Directory.Delete(path, recursive: true);

@@ -90,8 +90,8 @@ public static class MirrorPulseShellSyncRootRegistrar
             ProviderId = profile.ProviderId,
             DisplayNameResource = profile.DisplayName,
             IconResource = profile.IconResource,
-            HydrationPolicy = StorageProviderHydrationPolicy.Progressive,
-            HydrationPolicyModifier = StorageProviderHydrationPolicyModifier.AutoDehydrationAllowed,
+            HydrationPolicy = StorageProviderHydrationPolicy.Full,
+            HydrationPolicyModifier = StorageProviderHydrationPolicyModifier.None,
             PopulationPolicy = StorageProviderPopulationPolicy.Full,
             InSyncPolicy = StorageProviderInSyncPolicy.FileCreationTime |
                 StorageProviderInSyncPolicy.DirectoryCreationTime,

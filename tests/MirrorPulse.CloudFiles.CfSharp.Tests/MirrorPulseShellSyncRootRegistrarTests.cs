@@ -55,6 +55,8 @@ public sealed class MirrorPulseShellSyncRootRegistrarTests
             StorageProviderSyncRootInfo customInfo =
                 StorageProviderSyncRootManager.GetSyncRootInformationForId(custom.RegistrationId);
             Assert.AreEqual("Personal drive", customInfo.DisplayNameResource);
+            Assert.AreEqual(StorageProviderHydrationPolicy.Full, customInfo.HydrationPolicy);
+            Assert.AreEqual(StorageProviderHydrationPolicyModifier.None, customInfo.HydrationPolicyModifier);
 
             await MirrorPulseShellSyncRootRegistrar.RegisterAsync(unified);
             StorageProviderSyncRootInfo unifiedInfo =
