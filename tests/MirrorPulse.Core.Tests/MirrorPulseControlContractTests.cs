@@ -1,4 +1,6 @@
 using MirrorPulse.Control.Contracts;
+using System.Text.Json;
+using MirrorPulse.Core.Contracts;
 
 namespace MirrorPulse.Core.Tests;
 
@@ -45,4 +47,57 @@ public sealed class MirrorPulseControlContractTests
             command.Name == MirrorPulseControlCommands.AdapterList);
         Assert.IsFalse(list.AcceptsSensitiveInput);
     }
+
+    [TestMethod]
+    public void RequestResponseAndEventEnvelopesRoundTripThroughCanonicalJson()
+    {
+        using var argumentsDocument = JsonDocument.Parse("{\"enabled\":true}");
+        var request = new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion,
+            Guid.NewGuid(),
+            MirrorPulseControlCommands.InstanceEnable,
+            argumentsDocument.RootElement,
+            "test-client");
+        var requestRoundTrip = MirrorPulseControlJsonCodec.Deserialize<ControlRequestEnvelope>(
+            MirrorPulseControlJsonCodec.Serialize(request));
+
+        Assert.AreEqual(request.RequestId, requestRoundTrip.RequestId);
+        Assert.AreEqual(request.Command, requestRoundTrip.Command);
+        Assert.IsTrue(requestRoundTrip.Arguments.GetProperty("enabled").GetBoolean());
+
+        var response = ControlResponseEnvelope.Failure(
+            request.RequestId,
+            new ControlError(MirrorPulseControlErrorCodes.HostUnavailable,
+                "Host is unavailable.", ErrorCategory.Network, retryable: true, "diag-1"));
+        var responseRoundTrip = MirrorPulseControlJsonCodec.Deserialize<ControlResponseEnvelope>(
+            MirrorPulseControlJsonCodec.Serialize(response));
+        Assert.IsFalse(responseRoundTrip.Succeeded);
+        Assert.AreEqual(MirrorPulseControlErrorCodes.HostUnavailable, responseRoundTrip.Error!.Code);
+        Assert.IsTrue(responseRoundTrip.Error.Retryable);
+
+        using var dataDocument = JsonDocument.Parse("{\"phase\":\"running\"}");
+        var @event = new ControlEventEnvelope(
+            MirrorPulseControlSchema.CurrentVersion,
+            request.RequestId,
+            0,
+            "sync.progress",
+            dataDocument.RootElement,
+            isTerminal: false);
+        var eventRoundTrip = MirrorPulseControlJsonCodec.Deserialize<ControlEventEnvelope>(
+            MirrorPulseControlControlJson(@event));
+        Assert.AreEqual("sync.progress", eventRoundTrip.EventType);
+    }
+
+    [TestMethod]
+    public void EnvelopesRejectUnsupportedVersionAndInvalidResponseShape()
+    {
+        using var arguments = JsonDocument.Parse("{}");
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new ControlRequestEnvelope(
+            0, Guid.NewGuid(), MirrorPulseControlCommands.HostStatus, arguments.RootElement));
+        Assert.ThrowsExactly<ArgumentException>(() => new ControlResponseEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(), false));
+    }
+
+    private static byte[] MirrorPulseControlControlJson(ControlEventEnvelope value) =>
+        MirrorPulseControlJsonCodec.Serialize(value);
 }
