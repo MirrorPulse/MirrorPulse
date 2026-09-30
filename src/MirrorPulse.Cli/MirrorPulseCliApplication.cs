@@ -23,33 +23,58 @@ public sealed class MirrorPulseCliApplication
         MirrorPulseCliParseResult parsed = MirrorPulseCliCommandLine.Parse(arguments);
         if (!parsed.Succeeded)
         {
-            await error.WriteLineAsync(parsed.Error).ConfigureAwait(false);
+            await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+                1,
+                "mp.cli.usage",
+                parsed.Error!,
+                parsed.Options.Json,
+                error,
+                cancellationToken).ConfigureAwait(false);
             return 1;
         }
 
         if (parsed.ShowHelp)
         {
-            await output.WriteLineAsync(MirrorPulseCliHelp.Text).ConfigureAwait(false);
+            await MirrorPulseCliOutputFormatter.WriteHelpAsync(
+                MirrorPulseCliHelp.Text, parsed.Options.Json, output, cancellationToken)
+                .ConfigureAwait(false);
             return 0;
         }
 
         if (parsed.ShowVersion)
         {
-            await output.WriteLineAsync($"MirrorPulse mp {ProductVersion}").ConfigureAwait(false);
+            await MirrorPulseCliOutputFormatter.WriteVersionAsync(
+                ProductVersion, parsed.Options.Json, output, cancellationToken)
+                .ConfigureAwait(false);
             return 0;
         }
 
         if (parsed.Command is { Name: "help" or "version" })
         {
-            await output.WriteLineAsync(parsed.Command.Name.Equals("version", StringComparison.OrdinalIgnoreCase)
-                ? $"MirrorPulse mp {ProductVersion}"
-                : MirrorPulseCliHelp.Text).ConfigureAwait(false);
+            if (parsed.Command.Name.Equals("version", StringComparison.OrdinalIgnoreCase))
+            {
+                await MirrorPulseCliOutputFormatter.WriteVersionAsync(
+                    ProductVersion, parsed.Options.Json, output, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await MirrorPulseCliOutputFormatter.WriteHelpAsync(
+                    MirrorPulseCliHelp.Text, parsed.Options.Json, output, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return 0;
         }
 
-        await error.WriteLineAsync(
-            $"Command '{parsed.Command!.Name}' is recognized but is not available in this milestone.")
-            .ConfigureAwait(false);
+        string message = $"Command '{parsed.Command!.Name}' is recognized but is not available in this milestone.";
+        await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+            8,
+            "mp.control.unsupported",
+            message,
+            parsed.Options.Json,
+            error,
+            cancellationToken).ConfigureAwait(false);
         return 8;
     }
 }

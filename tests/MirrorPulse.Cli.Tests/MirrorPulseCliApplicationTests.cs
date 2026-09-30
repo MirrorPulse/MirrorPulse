@@ -1,4 +1,5 @@
 using MirrorPulse.Cli;
+using System.Text.Json;
 
 namespace MirrorPulse.Cli.Tests;
 
@@ -55,5 +56,37 @@ public sealed class MirrorPulseCliApplicationTests
 
         Assert.AreEqual(8, exitCode);
         StringAssert.Contains(error.ToString(), "recognized");
+    }
+
+    [TestMethod]
+    public async Task JsonVersionUsesVersionedSchema()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exitCode = await MirrorPulseCliApplication.RunAsync(
+            ["--json", "--version"], output, error);
+
+        Assert.AreEqual(0, exitCode);
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        Assert.AreEqual("1", document.RootElement.GetProperty("schemaVersion").GetString());
+        Assert.AreEqual("version", document.RootElement.GetProperty("kind").GetString());
+        Assert.AreEqual(string.Empty, error.ToString());
+    }
+
+    [TestMethod]
+    public async Task JsonErrorsStayOnStderr()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exitCode = await MirrorPulseCliApplication.RunAsync(
+            ["--json", "host", "status"], output, error);
+
+        Assert.AreEqual(8, exitCode);
+        Assert.AreEqual(string.Empty, output.ToString());
+        using JsonDocument document = JsonDocument.Parse(error.ToString());
+        Assert.AreEqual("error", document.RootElement.GetProperty("kind").GetString());
+        Assert.AreEqual("mp.control.unsupported", document.RootElement.GetProperty("code").GetString());
     }
 }

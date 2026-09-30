@@ -20,6 +20,8 @@ public sealed record MirrorPulseCliParseResult(
     string? Error)
 {
     public bool Succeeded => Error is null;
+
+    public MirrorPulseCliGlobalOptions Options { get; init; } = new();
 }
 
 public static class MirrorPulseCliCommandLine
@@ -84,14 +86,14 @@ public static class MirrorPulseCliCommandLine
             {
                 if (++index >= arguments.Count)
                 {
-                    return Failure("Option --timeout requires a value in seconds.");
+                    return Failure("Option --timeout requires a value in seconds.", options);
                 }
 
                 if (!double.TryParse(arguments[index], System.Globalization.NumberStyles.Float,
                         System.Globalization.CultureInfo.InvariantCulture, out double seconds) ||
                     seconds <= 0 || double.IsInfinity(seconds) || double.IsNaN(seconds))
                 {
-                    return Failure("Option --timeout requires a positive number of seconds.");
+                    return Failure("Option --timeout requires a positive number of seconds.", options);
                 }
 
                 options = options with { Timeout = TimeSpan.FromSeconds(seconds) };
@@ -100,7 +102,7 @@ public static class MirrorPulseCliCommandLine
 
             if (!commandStarted && token.StartsWith('-'))
             {
-                return Failure($"Unknown option '{token}'.");
+                return Failure($"Unknown option '{token}'.", options);
             }
 
             if (!commandStarted)
@@ -114,7 +116,7 @@ public static class MirrorPulseCliCommandLine
             {
                 if (!subcommands.Contains(token))
                 {
-                    return Failure($"Unknown subcommand '{token}' for '{commandPath[0]}'.");
+                    return Failure($"Unknown subcommand '{token}' for '{commandPath[0]}'.", options);
                 }
 
                 commandPath.Add(token);
@@ -126,30 +128,35 @@ public static class MirrorPulseCliCommandLine
 
         if (showHelp || showVersion)
         {
-            return new(null, showHelp, showVersion, null);
+            return new(null, showHelp, showVersion, null) { Options = options };
         }
 
         if (commandPath.Count == 0)
         {
-            return new(null, true, false, null);
+            return new(null, true, false, null) { Options = options };
         }
 
         if (!Commands.Contains(commandPath[0]))
         {
-            return Failure($"Unknown command '{commandPath[0]}'.");
+            return Failure($"Unknown command '{commandPath[0]}'.", options);
         }
 
         if (commandPath[0] is "help" or "version")
         {
             return new(new(commandPath, commandArguments, options),
                 commandPath[0].Equals("help", StringComparison.OrdinalIgnoreCase),
-                commandPath[0].Equals("version", StringComparison.OrdinalIgnoreCase), null);
+                commandPath[0].Equals("version", StringComparison.OrdinalIgnoreCase), null)
+            { Options = options };
         }
 
-        return new(new(commandPath, commandArguments, options), false, false, null);
+        return new(new(commandPath, commandArguments, options), false, false, null)
+        { Options = options };
     }
 
-    private static MirrorPulseCliParseResult Failure(string message) => new(null, false, false, message);
+    private static MirrorPulseCliParseResult Failure(
+        string message,
+        MirrorPulseCliGlobalOptions options) =>
+        new(null, false, false, message) { Options = options };
 
     private static HashSet<string> NewSet(params string[] values) =>
         new HashSet<string>(values, StringComparer.OrdinalIgnoreCase);
