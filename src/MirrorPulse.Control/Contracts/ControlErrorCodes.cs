@@ -10,6 +10,10 @@ public static class MirrorPulseControlErrorCodes
     public const string ProtocolVersionUnsupported = "mp.control.protocolVersionUnsupported";
     public const string FrameTooLarge = "mp.control.frameTooLarge";
     public const string HostUnavailable = "mp.control.hostUnavailable";
+    public const string HostExecutableNotFound = "mp.control.hostExecutableNotFound";
+    public const string HostPathUntrusted = "mp.control.hostPathUntrusted";
+    public const string HostStartFailed = "mp.control.hostStartFailed";
+    public const string HostStartTimeout = "mp.control.hostStartTimeout";
     public const string RequestTimeout = "mp.control.requestTimeout";
     public const string Unauthorized = "mp.control.unauthorized";
     public const string Forbidden = "mp.control.forbidden";

@@ -327,4 +327,40 @@ public sealed class MirrorPulseControlContractTests
 
         Assert.IsFalse(running);
     }
+
+    [TestMethod]
+    public async Task HostStartupCoordinatorRejectsUntrustedDevelopmentPath()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-host-start", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        string executable = Path.Combine(root, "MirrorPulse.Host.exe");
+        await File.WriteAllTextAsync(executable, "test");
+        await using var coordinator = new MirrorPulseHostStartupCoordinator(
+            options: new MirrorPulseHostStartupOptions
+            {
+                DevelopmentHostPath = executable,
+                DeveloperMode = false,
+            });
+
+        var exception = await Assert.ThrowsExactlyAsync<MirrorPulseControlException>(async () =>
+            await coordinator.EnsureStartedAsync());
+
+        Assert.AreEqual(MirrorPulseControlErrorCodes.HostPathUntrusted, exception.Error.Code);
+        Directory.Delete(root, recursive: true);
+    }
+
+    [TestMethod]
+    public async Task HostStartupCoordinatorReportsMissingTrustedHost()
+    {
+        await using var coordinator = new MirrorPulseHostStartupCoordinator(
+            options: new MirrorPulseHostStartupOptions
+            {
+                InstalledHostPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "Host.exe"),
+            });
+
+        var exception = await Assert.ThrowsExactlyAsync<MirrorPulseControlException>(async () =>
+            await coordinator.EnsureStartedAsync());
+
+        Assert.AreEqual(MirrorPulseControlErrorCodes.HostExecutableNotFound, exception.Error.Code);
+    }
 }
