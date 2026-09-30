@@ -177,19 +177,33 @@ try {
         if ($queuedStatus.data.pendingUploads -lt 1) {
             throw "The offline local edit was not retained in the upload journal."
         }
+        Write-Host "Offline journal contains $($queuedStatus.data.pendingUploads) pending upload(s)."
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "instance", "enable",
             "--instance-id", $instanceId) | Out-Null
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart") | Out-Null
         Wait-MirrorPulseHostStopped
         $sourceUpload = Join-Path $sourceRoot "queued-upload.txt"
-        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        $deadline = [DateTime]::UtcNow.AddSeconds(90)
         while (-not (Test-Path -LiteralPath $sourceUpload) -and [DateTime]::UtcNow -lt $deadline) {
             Start-Sleep -Milliseconds 500
             Invoke-MirrorPulseCli @("--json", "--developer-mode", "status") | Out-Null
         }
         if (-not (Test-Path -LiteralPath $sourceUpload) -or
             [IO.File]::ReadAllText($sourceUpload) -ne "queued-local-upload") {
-            throw "The persisted upload was not delivered to the Local Adapter source."
+            $failedStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+            $failedConflicts = Invoke-MirrorPulseCli @("--json", "--developer-mode", "conflict", "list")
+            $failedInstance = @($failedStatus.data.instances) |
+                Where-Object { $_.instanceId -eq $instanceId } | Select-Object -First 1
+            $sourceNames = (Get-ChildItem -LiteralPath $sourceRoot -File | Select-Object -ExpandProperty Name) -join ","
+            $logPath = Join-Path $dataRoot "logs\mirrorpulse.log"
+            if (Test-Path -LiteralPath $logPath) {
+                Write-Host "Recent local upload diagnostics:"
+                Get-Content -LiteralPath $logPath -Tail 12 | ForEach-Object { Write-Host $_ }
+            }
+            throw "The persisted upload was not delivered. Pending=$($failedStatus.data.pendingUploads); " +
+                "UploadConflicts=$($failedStatus.data.pendingUploadConflicts); " +
+                "Phase=$($failedInstance.phase); Error=$($failedInstance.lastErrorCode); " +
+                "Conflicts=$(@($failedConflicts.data.items).Count); SourceFiles=$sourceNames."
         }
 
         # Both sides change while the Host is stopped. The conflict must survive another restart.

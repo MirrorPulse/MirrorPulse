@@ -3,6 +3,7 @@ using CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Diagnostics;
 using MirrorPulse.Core.State;
 using MirrorPulse.Core.Sync;
 
@@ -28,6 +29,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
     private readonly MirrorPulseConflictCenter? _conflicts;
     private readonly MirrorPulseConflictNotificationBridge? _notifications;
     private readonly string _syncRootPath;
+    private readonly LocalRollingLogWriter _log;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _loop;
 
@@ -39,6 +41,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         IMirrorPulseWorkerStatTransport stats,
         MirrorPulseCfSharpStateSession state,
         string syncRootPath,
+        string dataRootPath,
         Func<InstanceId, bool> mayDispatch,
         MirrorPulseJournalUploadCompletion completion,
         MirrorPulseConflictCenter? conflicts = null,
@@ -57,6 +60,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(syncRootPath);
         ArgumentNullException.ThrowIfNull(mayDispatch);
         _syncRootPath = Path.GetFullPath(syncRootPath);
+        _log = new LocalRollingLogWriter(Path.Combine(dataRootPath, "logs"));
         _completion = completion ?? throw new ArgumentNullException(nameof(completion));
         _source = new MirrorPulseJournalUploadSource(feed, router, catalog, mayDispatch, _completion);
     }
@@ -85,6 +89,8 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
+                    await LogFailureAsync("Local journal read failed", exception, null,
+                        cancellationToken).ConfigureAwait(false);
                     await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
@@ -171,6 +177,8 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            await LogFailureAsync("Local upload failed", exception, command,
+                cancellationToken).ConfigureAwait(false);
             await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
                 cancellationToken).ConfigureAwait(false);
             return true;
@@ -232,6 +240,8 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            await LogFailureAsync("Local mutation failed", exception, command,
+                cancellationToken).ConfigureAwait(false);
             await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
                 cancellationToken).ConfigureAwait(false);
             return true;
@@ -285,6 +295,33 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         }
 
         await _feed.DisposeAsync().ConfigureAwait(false);
+        _log.Dispose();
         _shutdown.Dispose();
+    }
+
+    private async ValueTask LogFailureAsync(string message, Exception exception,
+        MirrorPulseWorkerChangeCommand? command, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var fields = new List<LogField>
+            {
+                new("exceptionType", exception.GetType().FullName ?? exception.GetType().Name),
+                new("hresult", exception.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture)),
+            };
+            if (command is not null)
+            {
+                fields.Add(new("operationId", command.OperationId.ToString("D")));
+                fields.Add(new("kind", command.Kind.ToString()));
+                fields.Add(new("relativePath", command.RelativePath));
+            }
+
+            await _log.WriteAsync(new LogEntry(LogLevel.Warning, "CloudFiles.Upload",
+                message, DateTimeOffset.UtcNow, fields), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception logException) when (logException is not OperationCanceledException)
+        {
+            // Local diagnostics must not stop the durable upload pump.
+        }
     }
 }
