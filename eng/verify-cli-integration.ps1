@@ -4,6 +4,7 @@ param(
     [string]$Runtime = "win-x64",
     [Parameter(Mandatory = $true)]
     [string]$PackagePath,
+    [switch]$Regression,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release"
 )
@@ -89,6 +90,38 @@ try {
 
     $refresh = Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh")
     if ($refresh.kind -ne "result") { throw "The CLI refresh response is invalid." }
+
+    if ($Regression) {
+        $topology = Invoke-MirrorPulseCli @("--json", "--developer-mode", "adapter", "list")
+        $rootDirectory = @($topology.data.roots) |
+            Where-Object { $_.instanceId -eq $instanceId } |
+            Select-Object -First 1 -ExpandProperty directoryName
+        if ([string]::IsNullOrWhiteSpace($rootDirectory)) {
+            throw "The Adapter instance did not register a first-level root."
+        }
+
+        $mappedRoot = Join-Path $syncRoot $rootDirectory
+        $roundTrip = Join-Path $sourceRoot "cli-roundtrip.txt"
+        Set-Content -LiteralPath $roundTrip -Value "remote-before-local" -NoNewline
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh") | Out-Null
+        $remoteFile = Join-Path $mappedRoot "cli-roundtrip.txt"
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while (-not (Test-Path -LiteralPath $remoteFile) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh") | Out-Null
+        }
+        if (-not (Test-Path -LiteralPath $remoteFile)) {
+            throw "The remote Local Adapter change did not reach the Cloud Files root."
+        }
+
+        Set-Content -LiteralPath $remoteFile -Value "local-before-remote" -NoNewline
+        Set-Content -LiteralPath $roundTrip -Value "remote-after-local" -NoNewline
+        Invoke-MirrorPulseCli @("--json", "--developer-mode", "sync", "refresh") | Out-Null
+        $conflicts = Invoke-MirrorPulseCli @("--json", "--developer-mode", "conflict", "list")
+        if ($conflicts.kind -ne "result" -or $null -eq $conflicts.data.items) {
+            throw "The CLI conflict center response is invalid after the local/remote race."
+        }
+    }
 
     $restart = Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart")
     if ($restart.kind -ne "result") { throw "The CLI Host restart response is invalid." }
