@@ -60,6 +60,9 @@ jobs:
       - name: Test
         run: dotnet test MirrorPulse.sln --configuration Release --no-build
 
+      - name: Verify CLI completion gate
+        run: pwsh ./eng/verify-cli-complete.ps1 -Configuration Release
+
       - name: Verify Host publishes
         run: pwsh ./eng/verify-publish.ps1
 
