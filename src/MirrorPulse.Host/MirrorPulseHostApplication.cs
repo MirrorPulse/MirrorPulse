@@ -390,7 +390,10 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             CollectDiagnosticsAsync,
             RefreshAsync,
             ConfigureInstanceAsync,
-            ReadConflictsAsync)
+            ReadConflictsAsync,
+            GetOperationAsync,
+            GetOperationAsync,
+            CancelOperationAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
     }
@@ -645,6 +648,32 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         new(conflict.ConflictId.ToString("D"), conflict.InstanceId.ToString(), conflict.RelativePath,
             conflict.Reason.ToString(), conflict.Status.ToString(), conflict.Source.ToString(),
             conflict.LocalRevision, conflict.RemoteRevision, conflict.DetectedAt);
+
+    private async Task<MirrorPulseControlOperation> GetOperationAsync(
+        OperationIdArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(arguments.OperationId, out Guid id) || id == Guid.Empty)
+            throw new ArgumentException("The operation ID is invalid.", nameof(arguments));
+        MirrorPulseUserCommandRecord record = await _catalog.ReadUserCommandAsync(id, cancellationToken)
+            .ConfigureAwait(false) ?? throw new FileNotFoundException("The operation was not found.");
+        return new(record.CommandId.ToString("D"), record.Action, record.TargetId, record.State);
+    }
+
+    private async Task<MirrorPulseControlOperation> CancelOperationAsync(
+        OperationIdArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        MirrorPulseControlOperation current = await GetOperationAsync(arguments, cancellationToken)
+            .ConfigureAwait(false);
+        if (current.State is "completed" or "failed" or "cancelled")
+            return current;
+        Guid id = Guid.Parse(current.OperationId);
+        await _catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(
+            id, current.Action, current.TargetId, "cancelled"), cancellationToken)
+            .ConfigureAwait(false);
+        return current with { State = "cancelled" };
+    }
 
     private async Task<MirrorPulseAppStatusResponse> SnoozeConflictAsync(
         Guid conflictId,

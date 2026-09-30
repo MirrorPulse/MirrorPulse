@@ -223,6 +223,21 @@ public sealed class MirrorPulseControlClient
         SendAsync<ConflictListArguments, MirrorPulseControlConflictList>(
             MirrorPulseControlCommands.ConflictList, new(limit, cursor), cancellationToken);
 
+    public Task<MirrorPulseControlOperation> GetOperationAsync(
+        string operationId, CancellationToken cancellationToken = default) =>
+        SendAsync<OperationIdArguments, MirrorPulseControlOperation>(
+            MirrorPulseControlCommands.OperationGet, new(operationId), cancellationToken);
+
+    public Task<MirrorPulseControlOperation> WatchOperationAsync(
+        string operationId, CancellationToken cancellationToken = default) =>
+        SendAsync<OperationIdArguments, MirrorPulseControlOperation>(
+            MirrorPulseControlCommands.OperationWatch, new(operationId), cancellationToken);
+
+    public Task<MirrorPulseControlOperation> CancelOperationAsync(
+        string operationId, CancellationToken cancellationToken = default) =>
+        SendAsync<OperationIdArguments, MirrorPulseControlOperation>(
+            MirrorPulseControlCommands.OperationCancel, new(operationId), cancellationToken);
+
     public Task<MirrorPulseControlSettings> GetSettingsAsync(
         CancellationToken cancellationToken = default) =>
         SendAsync<ControlEmptyArguments, MirrorPulseControlSettings>(

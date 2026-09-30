@@ -25,6 +25,12 @@ public sealed class MirrorPulseLegacyCommandBridge
         Task<MirrorPulseAppStatusResponse>>? _configureInstance;
     private readonly Func<ConflictListArguments, CancellationToken,
         Task<MirrorPulseControlConflictList>>? _listConflicts;
+    private readonly Func<OperationIdArguments, CancellationToken,
+        Task<MirrorPulseControlOperation>>? _getOperation;
+    private readonly Func<OperationIdArguments, CancellationToken,
+        Task<MirrorPulseControlOperation>>? _watchOperation;
+    private readonly Func<OperationIdArguments, CancellationToken,
+        Task<MirrorPulseControlOperation>>? _cancelOperation;
     private readonly Func<CancellationToken, Task<MirrorPulseHostStatus>>? _hostStatus;
     private readonly Func<HostLifecycleArguments, CancellationToken,
         Task<MirrorPulseHostStatus>>? _hostStart;
@@ -70,7 +76,13 @@ public sealed class MirrorPulseLegacyCommandBridge
         Func<InstanceId, InstanceConfigureArguments, CancellationToken,
             Task<MirrorPulseAppStatusResponse>>? configureInstance = null,
         Func<ConflictListArguments, CancellationToken,
-            Task<MirrorPulseControlConflictList>>? listConflicts = null)
+            Task<MirrorPulseControlConflictList>>? listConflicts = null,
+        Func<OperationIdArguments, CancellationToken,
+            Task<MirrorPulseControlOperation>>? getOperation = null,
+        Func<OperationIdArguments, CancellationToken,
+            Task<MirrorPulseControlOperation>>? watchOperation = null,
+        Func<OperationIdArguments, CancellationToken,
+            Task<MirrorPulseControlOperation>>? cancelOperation = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -90,6 +102,9 @@ public sealed class MirrorPulseLegacyCommandBridge
         _diagnostics = diagnostics;
         _refresh = refresh;
         _listConflicts = listConflicts;
+        _getOperation = getOperation;
+        _watchOperation = watchOperation;
+        _cancelOperation = cancelOperation;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
@@ -150,6 +165,10 @@ public sealed class MirrorPulseLegacyCommandBridge
                 MirrorPulseControlCommands.ConflictList,
                 (arguments, cancellationToken) => new(_listConflicts(arguments, cancellationToken)));
         }
+
+        RegisterOperation(dispatcher, MirrorPulseControlCommands.OperationGet, _getOperation);
+        RegisterOperation(dispatcher, MirrorPulseControlCommands.OperationWatch, _watchOperation);
+        RegisterOperation(dispatcher, MirrorPulseControlCommands.OperationCancel, _cancelOperation);
 
         if (_settingsGet is not null)
         {
@@ -265,5 +284,15 @@ public sealed class MirrorPulseLegacyCommandBridge
         }
 
         return value.Trim();
+    }
+
+    private static void RegisterOperation(
+        MirrorPulseControlDispatcher dispatcher,
+        string command,
+        Func<OperationIdArguments, CancellationToken, Task<MirrorPulseControlOperation>>? handler)
+    {
+        if (handler is null) return;
+        dispatcher.Register<OperationIdArguments, MirrorPulseControlOperation>(
+            command, (arguments, cancellationToken) => new(handler(arguments, cancellationToken)));
     }
 }

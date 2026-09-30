@@ -140,6 +140,12 @@ public sealed record ConflictResolveArguments(
 
 public sealed record OperationIdArguments(string OperationId) : IMirrorPulseControlArguments;
 
+public sealed record MirrorPulseControlOperation(
+    string OperationId,
+    string Action,
+    string TargetId,
+    string State);
+
 public sealed record SettingsSetArguments(
     [property: MirrorPulseSensitiveData] IReadOnlyDictionary<string, string> Values) : IMirrorPulseControlArguments;
 

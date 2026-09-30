@@ -225,6 +225,22 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                         .ConfigureAwait(false);
                     human = $"Conflict resolved: {conflictId}";
                     break;
+                case ("operation", "get"):
+                case ("operation", "watch"):
+                    string operationId = GetRequiredOption(command.Arguments, "operation-id");
+                    result = command.Path[1].Equals("watch", StringComparison.OrdinalIgnoreCase)
+                        ? await _client.WatchOperationAsync(operationId, cancellationToken)
+                            .ConfigureAwait(false)
+                        : await _client.GetOperationAsync(operationId, cancellationToken)
+                            .ConfigureAwait(false);
+                    human = $"Operation {operationId}: {((MirrorPulseControlOperation)result).State}";
+                    break;
+                case ("operation", "cancel"):
+                    operationId = GetRequiredOption(command.Arguments, "operation-id");
+                    result = await _client.CancelOperationAsync(operationId, cancellationToken)
+                        .ConfigureAwait(false);
+                    human = $"Operation cancelled: {operationId}";
+                    break;
                 default:
                     await MirrorPulseCliOutputFormatter.WriteErrorAsync(
                         MirrorPulseControlExitCodes.Unsupported,
