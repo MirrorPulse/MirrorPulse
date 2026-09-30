@@ -23,6 +23,7 @@ $fixtureBytes = [Text.Encoding]::ASCII.GetBytes("0123456789ABCDEF-local-fixture"
 function Invoke-MirrorPulseCli {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
+    Write-Host "CLI command: $($Arguments -join ' ')"
     $text = (& $script:cliExecutable @Arguments 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {
         throw "CLI command failed ($LASTEXITCODE): $($Arguments -join ' ')`n$text"

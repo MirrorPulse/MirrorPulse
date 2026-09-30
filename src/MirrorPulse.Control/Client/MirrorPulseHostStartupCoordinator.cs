@@ -78,8 +78,11 @@ public sealed class MirrorPulseHostStartupCoordinator : IAsyncDisposable
                 process = Process.Start(new ProcessStartInfo
                 {
                     FileName = executable,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
+                    // The Host outlives this CLI invocation. Shell execution keeps its
+                    // console handles separate, so a caller piping `mp` output does not
+                    // wait forever for the Host to close the inherited pipe.
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
                     WorkingDirectory = Path.GetDirectoryName(executable) ?? AppContext.BaseDirectory,
                 }) ?? throw new InvalidOperationException("The Host process did not start.");
             }
