@@ -3,6 +3,8 @@ using MirrorPulse.Control.Transport;
 using MirrorPulse.Control.Dispatch;
 using MirrorPulse.Control.Compatibility;
 using MirrorPulse.Core.Host;
+using MirrorPulse.Control.Client;
+using MirrorPulse.Core.Transport;
 using System.Text.Json;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Conflicts;
@@ -214,5 +216,76 @@ public sealed class MirrorPulseControlContractTests
         Assert.IsTrue(dispatcher.RegisteredCommands.Contains(MirrorPulseControlCommands.InstanceCreate));
         Assert.IsTrue(response.Succeeded);
         Assert.AreEqual(3, response.Data!.Value.GetProperty("pendingUploads").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task TypedClientSendsRequestAndDeserializesResponse()
+    {
+        var pipeName = $"MirrorPulse-control-test-{Guid.NewGuid():N}";
+        var dispatcher = new MirrorPulseControlDispatcher();
+        dispatcher.Register<ControlEmptyArguments, MirrorPulseAppStatusResponse>(
+            MirrorPulseControlCommands.HostStatus,
+            (_, _) => ValueTask.FromResult(new MirrorPulseAppStatusResponse(4, 0, [], [])));
+        using var shutdown = new CancellationTokenSource();
+        var server = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync, pipeName);
+        var serverTask = server.ServeAsync(shutdown.Token);
+        var client = new MirrorPulseControlClient(new MirrorPulseControlClientOptions
+        {
+            PipeName = pipeName,
+            ConnectTimeout = TimeSpan.FromSeconds(2),
+            RequestTimeout = TimeSpan.FromSeconds(5)
+        });
+
+        var result = await client.GetStatusAsync();
+
+        Assert.AreEqual(4, result.PendingUploads);
+        shutdown.Cancel();
+        await serverTask;
+    }
+
+    [TestMethod]
+    public async Task TypedClientCanInvokeHostStarterAfterInitialConnectionFailure()
+    {
+        var started = false;
+        var client = new MirrorPulseControlClient(new MirrorPulseControlClientOptions
+        {
+            PipeName = $"MirrorPulse-control-missing-{Guid.NewGuid():N}",
+            ConnectTimeout = TimeSpan.FromMilliseconds(50),
+            RequestTimeout = TimeSpan.FromSeconds(2),
+            EnsureHostStartedAsync = _ =>
+            {
+                started = true;
+                return Task.CompletedTask;
+            }
+        });
+
+        var exception = await Assert.ThrowsExactlyAsync<MirrorPulseControlException>(async () =>
+            await client.GetStatusAsync());
+
+        Assert.IsTrue(started);
+        Assert.AreEqual(MirrorPulseControlErrorCodes.HostUnavailable, exception.Error.Code);
+    }
+
+    [TestMethod]
+    public async Task TypedClientConvertsHostDisconnectToStructuredError()
+    {
+        var pipeName = $"MirrorPulse-control-disconnect-{Guid.NewGuid():N}";
+        var acceptTask = Task.Run(async () =>
+        {
+            await using var server = SecureNamedPipeServerFactory.Create(new NamedPipeServerOptions(pipeName));
+            await server.WaitForConnectionAsync();
+        });
+        var client = new MirrorPulseControlClient(new MirrorPulseControlClientOptions
+        {
+            PipeName = pipeName,
+            ConnectTimeout = TimeSpan.FromSeconds(2),
+            RequestTimeout = TimeSpan.FromSeconds(5)
+        });
+
+        var exception = await Assert.ThrowsExactlyAsync<MirrorPulseControlException>(async () =>
+            await client.GetStatusAsync());
+        await acceptTask;
+
+        Assert.AreEqual(MirrorPulseControlErrorCodes.HostUnavailable, exception.Error.Code);
     }
 }
