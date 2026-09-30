@@ -55,6 +55,12 @@ public sealed class SftpWorkerTransferTests
             Assert.IsTrue(File.Exists(renamed));
 
             string renamedRevision = moved.Payload.GetProperty("revision").GetString()!;
+            ControlFrameEnvelope conflict = await worker.UploadAsync(Guid.NewGuid(),
+                "renamed.bin", oldRevision, [8, 8, 8]);
+            Assert.AreEqual("OperationError", conflict.MessageType);
+            Assert.AreEqual("RemoteConflict", conflict.Payload.GetProperty("code").GetString());
+            CollectionAssert.AreEqual(new byte[] { 1, 4, 9, 16 }, await File.ReadAllBytesAsync(renamed));
+
             await worker.SendAsync("Delete", Guid.NewGuid(), new
             {
                 path = "renamed.bin",
@@ -64,12 +70,6 @@ public sealed class SftpWorkerTransferTests
             ControlFrameEnvelope deleted = await worker.ReadAsync();
             Assert.AreEqual("MutationComplete", deleted.MessageType, deleted.Payload.ToString());
             Assert.IsFalse(File.Exists(renamed));
-
-            ControlFrameEnvelope conflict = await worker.UploadAsync(Guid.NewGuid(),
-                "report.bin", oldRevision, [8, 8, 8]);
-            Assert.AreEqual("OperationError", conflict.MessageType);
-            Assert.AreEqual("RemoteConflict", conflict.Payload.GetProperty("code").GetString());
-            CollectionAssert.AreEqual(new byte[] { 1, 4, 9, 16 }, await File.ReadAllBytesAsync(file));
 
             await worker.SendAsync("ReadRange", Guid.NewGuid(),
                 new { path = "../outside", offset = 0, length = 1 });
