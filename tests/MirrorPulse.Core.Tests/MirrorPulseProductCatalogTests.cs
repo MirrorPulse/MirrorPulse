@@ -396,6 +396,12 @@ public sealed class MirrorPulseProductCatalogTests
             MirrorPulseInstanceRuntimeState? restored = await reopened.ReadInstanceRuntimeStateAsync(instanceId);
             Assert.AreEqual("upload", restored?.TransferProgress?.Operation);
             Assert.AreEqual(512, restored?.TransferProgress?.TotalBytes);
+            IReadOnlyList<MirrorPulseInstanceRuntimeState> snapshot =
+                await MirrorPulseProductCatalog.ReadRuntimeSnapshotAsync(paths);
+            Assert.HasCount(1, snapshot);
+            Assert.AreEqual("upload", snapshot[0].TransferProgress?.Operation);
+            Assert.AreEqual(128, snapshot[0].TransferProgress?.BytesTransferred);
+            Assert.AreEqual(512, snapshot[0].TransferProgress?.TotalBytes);
         }
         finally
         {

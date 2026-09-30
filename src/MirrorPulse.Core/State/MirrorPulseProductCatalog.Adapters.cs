@@ -147,13 +147,14 @@ public sealed partial class MirrorPulseProductCatalog : IInstalledAdapterCatalog
         var states = new List<MirrorPulseInstanceRuntimeState>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            MirrorPulseTransferProgress? progress = reader.IsDBNull(6) || reader.IsDBNull(7)
+            MirrorPulseTransferProgress? progress = reader.IsDBNull(5) || reader.IsDBNull(6) ||
+                reader.IsDBNull(8)
                 ? null
                 : new MirrorPulseTransferProgress(
-                    reader.GetString(6),
-                    reader.GetInt64(7),
-                    reader.IsDBNull(8) ? null : reader.GetInt64(8),
-                    DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture));
+                    reader.GetString(5),
+                    reader.GetInt64(6),
+                    reader.IsDBNull(7) ? null : reader.GetInt64(7),
+                    DateTimeOffset.Parse(reader.GetString(8), System.Globalization.CultureInfo.InvariantCulture));
             states.Add(new MirrorPulseInstanceRuntimeState(
                 InstanceId.Parse(reader.GetString(0)), reader.GetString(1), reader.GetInt32(2) != 0,
                 reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3),
