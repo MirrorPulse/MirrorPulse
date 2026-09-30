@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MirrorPulse.Control.Client;
 using MirrorPulse.Control.Contracts;
 
@@ -84,6 +85,11 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                     .ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unknown Host action '{action}'.")
             };
+            if (action.Equals("stop", StringComparison.OrdinalIgnoreCase) ||
+                action.Equals("restart", StringComparison.OrdinalIgnoreCase))
+            {
+                await WaitForHostExitAsync(status.ProcessId, cancellationToken).ConfigureAwait(false);
+            }
 
             string human =
                 $"{status.State} (pid {status.ProcessId}, pipe {status.ControlPipeName})";
@@ -113,6 +119,37 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                 errorWriter,
                 cancellationToken).ConfigureAwait(false);
             return MirrorPulseControlExitCodes.Cancelled;
+        }
+    }
+
+    private static async Task WaitForHostExitAsync(int processId, CancellationToken cancellationToken)
+    {
+        Process process;
+        try
+        {
+            process = Process.GetProcessById(processId);
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        using (process)
+        using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new MirrorPulseControlException(new ControlError(
+                    MirrorPulseControlErrorCodes.RequestTimeout,
+                    "The MirrorPulse Host did not exit after its lifecycle command.",
+                    MirrorPulse.Core.Contracts.ErrorCategory.Native,
+                    retryable: true));
+            }
         }
     }
 

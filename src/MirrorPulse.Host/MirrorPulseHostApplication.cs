@@ -91,7 +91,9 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(paths);
         var hostLease = MirrorPulseHostLease.CreateDefault();
-        if (!hostLease.TryAcquire(TimeSpan.Zero))
+        // A prior Host may have closed its control pipe while still releasing the
+        // Cloud Files session. Give a CLI-initiated restart time to finish teardown.
+        if (!hostLease.TryAcquire(TimeSpan.FromSeconds(5)))
         {
             hostLease.Dispose();
             throw new InvalidOperationException("Another MirrorPulse Host owns this current user's Host lease.");
