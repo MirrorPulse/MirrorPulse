@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using MirrorPulse.Core.Contracts;
 
 namespace MirrorPulse.Core.Diagnostics;
@@ -76,9 +77,8 @@ public sealed class DiagnosticPackageExporter
                     }
 
                     var logEntry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
-                    await using var input = File.OpenRead(source);
                     await using var destination = logEntry.Open();
-                    await input.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+                    await CopySanitizedLogAsync(source, destination, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -90,6 +90,67 @@ public sealed class DiagnosticPackageExporter
             if (File.Exists(temporary))
             {
                 File.Delete(temporary);
+            }
+        }
+    }
+
+    private static async Task CopySanitizedLogAsync(
+        string source,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        using var input = new StreamReader(source, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        await using var output = new StreamWriter(destination, new UTF8Encoding(false), leaveOpen: true);
+        while (await input.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string sanitized;
+            try
+            {
+                JsonNode node = JsonNode.Parse(line)
+                    ?? throw new InvalidDataException("The diagnostic log line is empty.");
+                RedactNode(node);
+                sanitized = node.ToJsonString();
+            }
+            catch (JsonException)
+            {
+                sanitized = JsonSerializer.Serialize(new { message = LogFieldPolicy.RedactedValue });
+            }
+            catch (InvalidDataException)
+            {
+                sanitized = JsonSerializer.Serialize(new { message = LogFieldPolicy.RedactedValue });
+            }
+
+            await output.WriteLineAsync(sanitized.AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+
+        await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void RedactNode(JsonNode node)
+    {
+        if (node is JsonObject objectNode)
+        {
+            foreach (KeyValuePair<string, JsonNode?> property in objectNode.ToArray())
+            {
+                if (LogFieldPolicy.IsSensitiveName(property.Key))
+                {
+                    objectNode[property.Key] = LogFieldPolicy.RedactedValue;
+                }
+                else if (property.Value is not null)
+                {
+                    RedactNode(property.Value);
+                }
+            }
+        }
+        else if (node is JsonArray arrayNode)
+        {
+            foreach (JsonNode? item in arrayNode)
+            {
+                if (item is not null)
+                {
+                    RedactNode(item);
+                }
             }
         }
     }

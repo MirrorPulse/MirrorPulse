@@ -203,6 +203,12 @@ public sealed class MirrorPulseControlClient
         SendAsync<MirrorPulseSettingsUpdateArguments, MirrorPulseControlSettings>(
             MirrorPulseControlCommands.SettingsSet, arguments, cancellationToken);
 
+    public Task<MirrorPulseControlDiagnosticsResult> CollectDiagnosticsAsync(
+        DiagnosticsArguments arguments,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<DiagnosticsArguments, MirrorPulseControlDiagnosticsResult>(
+            MirrorPulseControlCommands.DiagnosticsCollect, arguments, cancellationToken);
+
     public Task<MirrorPulseAppStatusResponse> InstallAsync(
         string packagePath,
         CancellationToken cancellationToken = default) =>

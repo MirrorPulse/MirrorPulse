@@ -135,4 +135,11 @@ public sealed record MirrorPulseControlSettings(
     IReadOnlyList<string> EnabledInstallations,
     string SyncRootDisplayName);
 
-public sealed record DiagnosticsArguments(bool IncludeLogs = false) : IMirrorPulseControlArguments;
+public sealed record DiagnosticsArguments(
+    bool IncludeLogs = false,
+    string? OutputPath = null) : IMirrorPulseControlArguments;
+
+public sealed record MirrorPulseControlDiagnosticsResult(
+    string PackagePath,
+    DateTimeOffset CreatedAt,
+    bool IncludedLogs);

@@ -308,6 +308,26 @@ public sealed class MirrorPulseControlContractTests
     }
 
     [TestMethod]
+    public async Task LegacyBridgeExposesDiagnosticsCollectionCommand()
+    {
+        var dispatcher = new MirrorPulseControlDispatcher();
+        new MirrorPulseLegacyCommandBridge(
+            _ => Task.FromResult(new MirrorPulseAppStatusResponse(0, 0, [], [])),
+            diagnostics: (arguments, _) => Task.FromResult(new MirrorPulseControlDiagnosticsResult(
+                arguments.OutputPath ?? "diagnostics.zip", DateTimeOffset.UtcNow, arguments.IncludeLogs)))
+            .Register(dispatcher);
+        using var document = JsonDocument.Parse("{\"includeLogs\":true,\"outputPath\":\"diagnostics.zip\"}");
+
+        var response = await dispatcher.DispatchAsync(new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
+            MirrorPulseControlCommands.DiagnosticsCollect, document.RootElement));
+
+        Assert.IsTrue(response.Succeeded);
+        Assert.IsTrue(response.Data!.Value.GetProperty("includedLogs").GetBoolean());
+        Assert.AreEqual("diagnostics.zip", response.Data.Value.GetProperty("packagePath").GetString());
+    }
+
+    [TestMethod]
     public async Task TypedClientSendsRequestAndDeserializesResponse()
     {
         var pipeName = $"MirrorPulse-control-test-{Guid.NewGuid():N}";

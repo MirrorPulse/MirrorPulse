@@ -17,7 +17,9 @@ public sealed class DiagnosticPackageExporterTests
         {
             Directory.CreateDirectory(root);
             var log = Path.Combine(root, "mirrorpulse.log");
-            await File.WriteAllTextAsync(log, "local log");
+            await File.WriteAllTextAsync(log,
+                "{\"message\":\"normal\",\"access_token\":\"private-value\"}\n" +
+                "raw private-value line");
             var eventData = new DiagnosticEvent(
                 Guid.NewGuid(),
                 "host",
@@ -31,6 +33,10 @@ public sealed class DiagnosticPackageExporterTests
             var diagnostics = await new StreamReader(archive.GetEntry("diagnostics.jsonl")!.Open()).ReadToEndAsync();
             StringAssert.Contains(diagnostics, LogFieldPolicy.RedactedValue);
             Assert.IsFalse(diagnostics.Contains("private-value", StringComparison.Ordinal));
+            var logContent = await new StreamReader(archive.GetEntry("logs/mirrorpulse.log")!.Open())
+                .ReadToEndAsync();
+            StringAssert.Contains(logContent, LogFieldPolicy.RedactedValue);
+            Assert.IsFalse(logContent.Contains("private-value", StringComparison.Ordinal));
         }
         finally
         {

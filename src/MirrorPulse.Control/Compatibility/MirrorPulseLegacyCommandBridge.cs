@@ -32,6 +32,8 @@ public sealed class MirrorPulseLegacyCommandBridge
     private readonly Func<CancellationToken, Task<MirrorPulseControlSettings>>? _settingsGet;
     private readonly Func<MirrorPulseSettingsUpdateArguments, CancellationToken,
         Task<MirrorPulseControlSettings>>? _settingsSet;
+    private readonly Func<DiagnosticsArguments, CancellationToken,
+        Task<MirrorPulseControlDiagnosticsResult>>? _diagnostics;
 
     public MirrorPulseLegacyCommandBridge(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
@@ -54,7 +56,9 @@ public sealed class MirrorPulseLegacyCommandBridge
         Func<CancellationToken, Task<MirrorPulseControlTopology>>? topology = null,
         Func<CancellationToken, Task<MirrorPulseControlSettings>>? settingsGet = null,
         Func<MirrorPulseSettingsUpdateArguments, CancellationToken,
-            Task<MirrorPulseControlSettings>>? settingsSet = null)
+            Task<MirrorPulseControlSettings>>? settingsSet = null,
+        Func<DiagnosticsArguments, CancellationToken,
+            Task<MirrorPulseControlDiagnosticsResult>>? diagnostics = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -70,6 +74,7 @@ public sealed class MirrorPulseLegacyCommandBridge
         _topology = topology;
         _settingsGet = settingsGet;
         _settingsSet = settingsSet;
+        _diagnostics = diagnostics;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
@@ -129,6 +134,13 @@ public sealed class MirrorPulseLegacyCommandBridge
             dispatcher.Register<MirrorPulseSettingsUpdateArguments, MirrorPulseControlSettings>(
                 MirrorPulseControlCommands.SettingsSet,
                 (arguments, cancellationToken) => new(_settingsSet(arguments, cancellationToken)));
+        }
+
+        if (_diagnostics is not null)
+        {
+            dispatcher.Register<DiagnosticsArguments, MirrorPulseControlDiagnosticsResult>(
+                MirrorPulseControlCommands.DiagnosticsCollect,
+                (arguments, cancellationToken) => new(_diagnostics(arguments, cancellationToken)));
         }
 
         if (_snooze is not null)

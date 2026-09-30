@@ -11,6 +11,7 @@ using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Diagnostics;
 using MirrorPulse.Core.Host;
 using MirrorPulse.Core.Packaging;
 using MirrorPulse.Core.Security;
@@ -385,7 +386,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             RestartRequestedAsync,
             ReadTopologyAsync,
             ReadSettingsAsync,
-            UpdateSettingsAsync)
+            UpdateSettingsAsync,
+            CollectDiagnosticsAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
     }
@@ -467,6 +469,47 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         await _configurationStore.SaveAsync(next, cancellationToken).ConfigureAwait(false);
         _configuration = next;
         return ToControlSettings(next);
+    }
+
+    private async Task<MirrorPulseControlDiagnosticsResult> CollectDiagnosticsAsync(
+        DiagnosticsArguments arguments,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        string outputPath = string.IsNullOrWhiteSpace(arguments.OutputPath)
+            ? Path.Combine(_paths.DataRootPath, "diagnostics",
+                $"mirrorpulse-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.zip")
+            : Path.GetFullPath(arguments.OutputPath);
+        if (!string.Equals(Path.GetExtension(outputPath), ".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Diagnostic packages must use the .zip extension.", nameof(arguments));
+        }
+
+        var topology = await _catalog.ReadAdapterTopologyAsync(cancellationToken).ConfigureAwait(false);
+        var events = new[]
+        {
+            new DiagnosticEvent(
+                Guid.NewGuid(),
+                "host",
+                new Diagnostic("host.snapshot", "MirrorPulse Host diagnostic snapshot.",
+                    DiagnosticSeverity.Information),
+                DateTimeOffset.UtcNow,
+                properties: new Dictionary<string, string>
+                {
+                    ["state"] = _state.ToString(),
+                    ["processId"] = Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["installationCount"] = topology.Installations.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["instanceCount"] = topology.Instances.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                })
+        };
+        string logDirectory = Path.Combine(_paths.DataRootPath, "logs");
+        IReadOnlyList<string> logs = arguments.IncludeLogs && Directory.Exists(logDirectory)
+            ? Directory.EnumerateFiles(logDirectory, "mirrorpulse.log*").ToArray()
+            : [];
+        string packagePath = await DiagnosticPackageExporter.ExportAsync(
+            outputPath, events, logs, cancellationToken).ConfigureAwait(false);
+        return new MirrorPulseControlDiagnosticsResult(
+            packagePath, DateTimeOffset.UtcNow, arguments.IncludeLogs);
     }
 
     private static MirrorPulseControlSettings ToControlSettings(MirrorPulseConfiguration configuration) =>
