@@ -56,6 +56,18 @@ class Storage(paramiko.SFTPServerInterface):
     def lstat(self, path):
         return self.stat(path)
 
+    def list_folder(self, path):
+        try:
+            entries = []
+            for name in os.listdir(self._local(path)):
+                local = os.path.join(self._local(path), name)
+                attributes = paramiko.SFTPAttributes.from_stat(os.stat(local))
+                attributes.filename = name
+                entries.append(attributes)
+            return entries
+        except OSError as error:
+            return paramiko.SFTPServer.convert_errno(error.errno)
+
     def open(self, path, flags, attr):
         try:
             if flags & (os.O_WRONLY | os.O_RDWR) and os.path.exists(os.path.join(self.root, "fail-first-write")):
