@@ -54,6 +54,13 @@ public sealed class MirrorPulseJournalUploadSource
             return new([], 0, true);
         }
 
+        if (plan.RootMetadataOperationIds.Count != 0)
+        {
+            await _feed.AcknowledgeAsync(plan.RootMetadataOperationIds.Select(operationId =>
+                    new CloudLocalChangeAcknowledgement(operationId, null)), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var ready = new List<MirrorPulseWorkerChangeCommand>(plan.Commands.Count);
         int deferred = 0;
         foreach (MirrorPulseWorkerChangeCommand command in plan.Commands)
