@@ -2,6 +2,8 @@
 
 `mp` is the no-UI control surface for MirrorPulse. It sends versioned requests to the current-user Host over a per-user named pipe. If the Host is not running, the CLI starts the installed Host automatically. `--no-start` disables that behavior for callers that require an already-running service.
 
+`mp host stop` and `mp host restart` return after the previous Host process has exited. A later ordinary command can then start the Host with the updated instance topology.
+
 ## Installation and builds
 
 The MSIX package exposes an `mp.exe` app execution alias and carries the architecture-matched Host under `host\MirrorPulse.Host.exe`. Development builds can run the published executable directly:
