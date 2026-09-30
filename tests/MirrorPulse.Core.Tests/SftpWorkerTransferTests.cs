@@ -40,6 +40,31 @@ public sealed class SftpWorkerTransferTests
             worker.AssertTransferCacheEmpty();
             CollectionAssert.AreEqual(new byte[] { 1, 4, 9, 16 }, await File.ReadAllBytesAsync(file));
 
+            string uploadedRevision = complete.Payload.GetProperty("revision").GetString()!;
+            await worker.SendAsync("Move", Guid.NewGuid(), new
+            {
+                sourcePath = "report.bin",
+                destinationPath = "renamed.bin",
+                expectedRevision = uploadedRevision,
+                isDirectory = false,
+            });
+            ControlFrameEnvelope moved = await worker.ReadAsync();
+            Assert.AreEqual("MutationComplete", moved.MessageType, moved.Payload.ToString());
+            Assert.IsFalse(File.Exists(file));
+            string renamed = Path.Combine(fixture.StorageDirectory, "renamed.bin");
+            Assert.IsTrue(File.Exists(renamed));
+
+            string renamedRevision = moved.Payload.GetProperty("revision").GetString()!;
+            await worker.SendAsync("Delete", Guid.NewGuid(), new
+            {
+                path = "renamed.bin",
+                expectedRevision = renamedRevision,
+                isDirectory = false,
+            });
+            ControlFrameEnvelope deleted = await worker.ReadAsync();
+            Assert.AreEqual("MutationComplete", deleted.MessageType, deleted.Payload.ToString());
+            Assert.IsFalse(File.Exists(renamed));
+
             ControlFrameEnvelope conflict = await worker.UploadAsync(Guid.NewGuid(),
                 "report.bin", oldRevision, [8, 8, 8]);
             Assert.AreEqual("OperationError", conflict.MessageType);

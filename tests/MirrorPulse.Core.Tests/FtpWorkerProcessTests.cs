@@ -95,9 +95,10 @@ public sealed class FtpWorkerProcessTests
             CollectionAssert.AreEqual(new byte[] { 5, 7, 11 }, range);
 
             byte[] replacement = [1, 4, 9, 16];
+            string updated;
             await using (var content = new MemoryStream(replacement, writable: false))
             {
-                string updated = await supervisor.UploadAsync(new MirrorPulseWorkerUploadRequest(
+                updated = await supervisor.UploadAsync(new MirrorPulseWorkerUploadRequest(
                     instance.InstanceId, "report.bin", revision, content, replacement.Length), timeout.Token);
                 Assert.IsFalse(string.IsNullOrWhiteSpace(updated));
             }
@@ -111,6 +112,15 @@ public sealed class FtpWorkerProcessTests
             }
 
             CollectionAssert.AreEqual(replacement, fixture.ReadStoredFile("/report.bin"));
+
+            string movedRevision = await supervisor.MoveAsync(new MirrorPulseWorkerMoveRequest(
+                instance.InstanceId, "report.bin", "renamed.bin", updated, false), timeout.Token);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(movedRevision));
+            CollectionAssert.AreEqual(replacement, fixture.ReadStoredFile("/renamed.bin"));
+            await supervisor.DeleteAsync(new MirrorPulseWorkerDeleteRequest(
+                instance.InstanceId, "renamed.bin", movedRevision, false), timeout.Token);
+            Assert.IsNull(await supervisor.StatAsync(new MirrorPulseWorkerStatRequest(
+                instance.InstanceId, "renamed.bin"), timeout.Token));
         }
         finally
         {
