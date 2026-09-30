@@ -2,6 +2,7 @@ using MirrorPulse.Control.Contracts;
 using MirrorPulse.Control.Transport;
 using System.Text.Json;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Conflicts;
 
 namespace MirrorPulse.Core.Tests;
 
@@ -118,6 +119,27 @@ public sealed class MirrorPulseControlContractTests
         var pipeName = MirrorPulseControlPipeNames.CurrentUserV1();
 
         StringAssert.StartsWith(pipeName, "MirrorPulse-control-v1-");
+    }
+
+    [TestMethod]
+    public void CommandArgumentsExposeTypedInstanceAndConflictShapes()
+    {
+        var instance = new InstanceCreateArguments(
+            Guid.NewGuid().ToString("D"),
+            "Documents",
+            new Dictionary<string, string> { ["sourceDirectory"] = "C:\\Documents" },
+            new Dictionary<string, string> { ["default"] = "Documents" },
+            "secret",
+            true);
+        var conflict = new ConflictResolveArguments(
+            Guid.NewGuid(), MirrorPulseConflictAction.KeepBoth, "conflicts/file.txt");
+
+        Assert.AreEqual("Documents", instance.DisplayName);
+        Assert.AreEqual(MirrorPulseConflictAction.KeepBoth, conflict.Action);
+        Assert.IsTrue(typeof(MirrorPulseSensitiveDataAttribute).IsAssignableFrom(
+            typeof(InstanceCreateArguments).GetProperty(nameof(InstanceCreateArguments.Secret))!
+                .GetCustomAttributes(typeof(MirrorPulseSensitiveDataAttribute), inherit: true)
+                .Single().GetType()));
     }
 
     private static byte[] MirrorPulseControlControlJson(ControlEventEnvelope value) =>
