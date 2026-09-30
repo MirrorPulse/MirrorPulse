@@ -14,12 +14,12 @@ if (args.Length > 1 || (args.Length == 1 && args[0] != "--run-once"))
     return 2;
 }
 
-string dataRoot = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    ProductInfo.Name);
-string syncRoot = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-    ProductInfo.Name);
+string dataRoot = Environment.GetEnvironmentVariable("MIRRORPULSE_DATA_ROOT") is { Length: > 0 } configuredDataRoot
+    ? Path.GetFullPath(configuredDataRoot)
+    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductInfo.Name);
+string syncRoot = Environment.GetEnvironmentVariable("MIRRORPULSE_SYNC_ROOT") is { Length: > 0 } configuredSyncRoot
+    ? Path.GetFullPath(configuredSyncRoot)
+    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ProductInfo.Name);
 var paths = new MirrorPulseStoragePaths(syncRoot, dataRoot);
 
 try
