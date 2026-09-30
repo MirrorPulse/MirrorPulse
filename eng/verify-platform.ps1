@@ -9,6 +9,7 @@ $specialTargetFrameworks = @{
     "MirrorPulse.CloudFiles.CfSharp.csproj" = "net10.0-windows10.0.26100.0"
     "MirrorPulse.Host.csproj" = "net10.0-windows10.0.26100.0"
     "MirrorPulse.Core.Tests.csproj" = "net10.0-windows10.0.26100.0"
+    "MirrorPulse.Cli.Tests.csproj" = "net10.0-windows10.0.26100.0"
     "MirrorPulse.CloudFiles.CfSharp.Tests.csproj" = "net10.0-windows10.0.26100.0"
     "MirrorPulse.CfSharp.CrashProbe.csproj" = "net10.0-windows10.0.26100.0"
 }
