@@ -17,22 +17,24 @@ $package = $null
 
 try {
     New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
-    $certificate = New-SelfSignedCertificate -Type Custom -Subject "CN=AppPublisher" `
-        -KeyUsage DigitalSignature -CertStoreLocation "Cert:\CurrentUser\My" `
-        -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+    $certificate = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=AppPublisher" `
+        -CertStoreLocation "Cert:\CurrentUser\My" -HashAlgorithm SHA256 -KeyLength 2048
     $pfxPath = Join-Path $packageRoot "MirrorPulse.TestSigning.pfx"
     $cerPath = Join-Path $packageRoot "MirrorPulse.TestSigning.cer"
     $passwordText = [guid]::NewGuid().ToString('N')
     $password = ConvertTo-SecureString -String $passwordText -AsPlainText -Force
     Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $password | Out-Null
     Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
-    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\LocalMachine\TrustedPeople" | Out-Null
+    # Keep the verification self-contained for a non-administrator CI runner. A
+    # package signed by a certificate trusted by the current user is sufficient
+    # for Add-AppxPackage and for app-execution-alias registration.
+    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
+    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
 
     & dotnet build $project --configuration $Configuration --runtime win-x64 `
         -p:GenerateAppxPackageOnBuild=true `
         -p:AppxPackageSigningEnabled=true `
-        -p:PackageCertificateKeyFile=$pfxPath `
-        -p:PackageCertificatePassword=$passwordText `
+        -p:PackageCertificateThumbprint=$($certificate.Thumbprint) `
         -p:AppxPackageDir="$packageRoot\" `
         -p:MirrorPulseShellProbe=$($VerifyShell.IsPresent.ToString().ToLowerInvariant()) `
         --no-restore
@@ -46,6 +48,21 @@ try {
         throw "The packaged build did not produce an MSIX file."
     }
 
+    Add-Type -AssemblyName System.IO.Compression
+    $archive = [IO.Compression.ZipFile]::OpenRead($package.FullName)
+    try {
+        $packageEntries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('/', '\') })
+        if ($packageEntries -notcontains "mp.exe") {
+            throw "The MSIX payload does not contain the root-level mp.exe CLI alias target."
+        }
+        if ($packageEntries -notcontains "host\MirrorPulse.Host.exe") {
+            throw "The MSIX payload does not contain host\MirrorPulse.Host.exe."
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+
     Add-AppxPackage -Path $package.FullName -ForceApplicationShutdown
     $installed = Get-AppxPackage -Name "0B72358D-6DC9-479D-8C28-F0232B42A0B3" |
         Select-Object -First 1
@@ -57,6 +74,8 @@ try {
     $namespace = New-Object System.Xml.XmlNamespaceManager($manifest.NameTable)
     $namespace.AddNamespace("f", "http://schemas.microsoft.com/appx/manifest/foundation/windows10")
     $namespace.AddNamespace("desktop3", "http://schemas.microsoft.com/appx/manifest/desktop/windows10/3")
+    $namespace.AddNamespace("uap3", "http://schemas.microsoft.com/appx/manifest/uap/windows10/3")
+    $namespace.AddNamespace("desktop", "http://schemas.microsoft.com/appx/manifest/desktop/windows10")
     $namespace.AddNamespace("uap", "http://schemas.microsoft.com/appx/manifest/uap/windows10")
     $cloudFiles = $manifest.SelectSingleNode(
         "/f:Package/f:Applications/f:Application/f:Extensions/desktop3:Extension[@Category='windows.cloudFiles']",
@@ -69,6 +88,21 @@ try {
         $namespace)
     if ($null -eq $adapterAssociation) {
         throw "The installed MSIX does not associate .mpadapter files."
+    }
+    $executionAlias = $manifest.SelectSingleNode(
+        "/f:Package/f:Applications/f:Application/f:Extensions/uap3:Extension[@Category='windows.appExecutionAlias']/uap3:AppExecutionAlias/desktop:ExecutionAlias[@Alias='mp.exe']",
+        $namespace)
+    if ($null -eq $executionAlias) {
+        throw "The installed MSIX does not expose the mp.exe app execution alias."
+    }
+
+    $mpCommand = Get-Command mp.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $mpCommand) {
+        throw "The installed MSIX did not register the mp.exe app execution alias."
+    }
+    $versionOutput = (& $mpCommand.Source --version 2>&1 | Out-String).Trim()
+    if ($versionOutput -notmatch "MirrorPulse mp") {
+        throw "The registered mp.exe alias did not return the CLI version: $versionOutput"
     }
 
     if ($VerifyShell) {
@@ -111,7 +145,8 @@ finally {
     }
     if ($null -ne $certificate) {
         Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath "Cert:\LocalMachine\TrustedPeople\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "Cert:\CurrentUser\TrustedPeople\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "Cert:\CurrentUser\Root\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $packageRoot) {
         Remove-Item -LiteralPath $packageRoot -Recurse -Force -ErrorAction SilentlyContinue

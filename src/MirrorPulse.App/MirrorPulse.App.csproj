@@ -15,6 +15,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <DefineConstants Condition="'$(MirrorPulseShellProbe)'=='true'">$(DefineConstants);MIRRORPULSE_SHELL_PROBE</DefineConstants>
+    <MirrorPulseMsixPayloadRoot>$(IntermediateOutputPath)MirrorPulseMsixPayload\</MirrorPulseMsixPayloadRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -69,6 +70,36 @@
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
+
+  <Target Name="PrepareMirrorPulseCliHostPayload" BeforeTargets="PrepareForBuild"
+          Condition="'$(RuntimeIdentifier)' != '' and '$(DesignTimeBuild)' != 'true'">
+    <RemoveDir Directories="$(MirrorPulseMsixPayloadRoot)" />
+    <MakeDir Directories="$(MirrorPulseMsixPayloadRoot)cli;$(MirrorPulseMsixPayloadRoot)host" />
+    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)..\MirrorPulse.Cli\MirrorPulse.Cli.csproj&quot; --configuration $(Configuration) --runtime $(RuntimeIdentifier) --self-contained true --no-restore --output &quot;$(MirrorPulseMsixPayloadRoot)cli&quot;" />
+    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)..\MirrorPulse.Host\MirrorPulse.Host.csproj&quot; --configuration $(Configuration) --runtime $(RuntimeIdentifier) --self-contained true --no-restore --output &quot;$(MirrorPulseMsixPayloadRoot)host&quot;" />
+    <ItemGroup>
+      <_MirrorPulseCliPayload Include="$(MirrorPulseMsixPayloadRoot)cli\**\*" />
+      <_MirrorPulseHostPayload Include="$(MirrorPulseMsixPayloadRoot)host\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_MirrorPulseCliPayload)"
+          DestinationFiles="@(_MirrorPulseCliPayload-&gt;'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_MirrorPulseHostPayload)"
+          DestinationFiles="@(_MirrorPulseHostPayload-&gt;'$(TargetDir)host\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="AddMirrorPulseCliHostMsixPayload" BeforeTargets="_ComputeAppxPackagePayload"
+          Condition="'$(RuntimeIdentifier)' != '' and '$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <AppxPackagePayload Include="@(_MirrorPulseCliPayload)">
+        <TargetPath>%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+      </AppxPackagePayload>
+      <AppxPackagePayload Include="@(_MirrorPulseHostPayload)">
+        <TargetPath>host\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+      </AppxPackagePayload>
+    </ItemGroup>
+  </Target>
 
   <!-- Publish Properties -->
   <PropertyGroup>

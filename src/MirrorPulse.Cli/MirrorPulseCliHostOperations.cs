@@ -31,6 +31,7 @@ public static class MirrorPulseCliHostPathResolver
     public static MirrorPulseHostStartupOptions CreateDefault(bool developerMode)
     {
         string siblingHost = Path.Combine(AppContext.BaseDirectory, "MirrorPulse.Host.exe");
+        string packagedHost = Path.Combine(AppContext.BaseDirectory, "host", "MirrorPulse.Host.exe");
         string? explicitHost = Environment.GetEnvironmentVariable("MIRRORPULSE_HOST_PATH");
         bool developer = developerMode ||
             string.Equals(Environment.GetEnvironmentVariable("MIRRORPULSE_DEVELOPER_MODE"),
@@ -40,7 +41,9 @@ public static class MirrorPulseCliHostPathResolver
 
         return new MirrorPulseHostStartupOptions
         {
-            InstalledHostPath = !developer && File.Exists(siblingHost) ? siblingHost : null,
+            InstalledHostPath = !developer && File.Exists(siblingHost)
+                ? siblingHost
+                : !developer && File.Exists(packagedHost) ? packagedHost : null,
             DevelopmentHostPath = explicitHost ?? siblingHost,
             DeveloperMode = developer
         };
