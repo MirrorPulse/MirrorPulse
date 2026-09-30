@@ -71,4 +71,19 @@ public sealed class MirrorPulseJournalUploadCompletion
         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
         return entry?.RetryAfter;
     }
+
+    public async ValueTask PrepareRetryAsync(
+        Guid operationId,
+        CancellationToken cancellationToken = default)
+    {
+        await using ICloudStateTransaction transaction = await _state.OpenStore
+            .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        CloudOperationJournalEntry existing = await transaction.Operations
+            .GetAsync(operationId, cancellationToken).ConfigureAwait(false)
+            ?? throw new FileNotFoundException("The CfSharp local operation is no longer pending.");
+        await transaction.Operations.UpdateAsync(new CloudOperationJournalEntry(
+            existing.OperationId, existing.Kind, existing.ItemId, existing.Payload.Span,
+            existing.CreatedAt, 0, null, existing.Sequence), cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
 }

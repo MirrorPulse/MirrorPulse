@@ -29,6 +29,13 @@ public interface IMirrorPulseCloudRuntime : IAsyncDisposable
         CancellationToken cancellationToken) =>
         ValueTask.FromException<CloudRemoteApplyResult>(
             new NotSupportedException("This Cloud Files runtime does not apply remote batches."));
+
+    ValueTask<MirrorPulseConflictResolution> ApplyUploadConflictAsync(
+        Guid conflictId,
+        MirrorPulseConflictAction action,
+        CancellationToken cancellationToken) =>
+        ValueTask.FromException<MirrorPulseConflictResolution>(
+            new NotSupportedException("This Cloud Files runtime does not resolve upload conflicts."));
 }
 
 public interface IMirrorPulseCloudRuntimeFactory
@@ -75,7 +82,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         return new CfSharpRuntime(new MirrorPulseCloudFileSystemBuilder(paths)
             .WithStateStore(state)
             .WithContentProvider(_provider ?? MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath))
-            .Build(), state, paths.SyncRootPath, _uploads, _stats, _router, _catalog,
+            .Build(), state, paths.SyncRootPath, paths.DataRootPath, _uploads, _stats, _router, _catalog,
             _mayDispatch, _conflicts, _notifications);
     }
 
@@ -83,6 +90,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         CloudFileSystem fileSystem,
         MirrorPulseCfSharpStateSession state,
         string syncRootPath,
+        string dataRootPath,
         IMirrorPulseWorkerUploadTransport? uploads,
         IMirrorPulseWorkerStatTransport? stats,
         MirrorPulseRootRouter? router,
@@ -93,6 +101,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         : IMirrorPulseCloudRuntime
     {
         private MirrorPulseJournalUploadPump? _uploadPump;
+        private MirrorPulseUploadConflictActions? _conflictActions;
 
         public async ValueTask StartAsync(CancellationToken cancellationToken)
         {
@@ -105,9 +114,20 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
                     feed, state, new BackoffPolicy(TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(5)));
                 _uploadPump = new MirrorPulseJournalUploadPump(feed, router, catalog, uploads, stats, state,
                     syncRootPath, mayDispatch, completion, conflicts, notifications);
+                _conflictActions = new MirrorPulseUploadConflictActions(catalog, state, feed,
+                    new BackoffPolicy(TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(5)),
+                    new MirrorPulseStoragePaths(syncRootPath, dataRootPath));
                 await _uploadPump.StartAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+
+        public ValueTask<MirrorPulseConflictResolution> ApplyUploadConflictAsync(
+            Guid conflictId,
+            MirrorPulseConflictAction action,
+            CancellationToken cancellationToken) =>
+            (_conflictActions ?? throw new InvalidOperationException(
+                "The upload conflict action service has not started.")).ApplyAsync(
+                    conflictId, action, cancellationToken);
 
         public async ValueTask<MirrorPulseCloudStatusSnapshot> ReadStatusAsync(
             IEnumerable<InstanceId> instanceIds,
@@ -333,6 +353,19 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
 
         return _runtime.ApplyRemoteBatchAsync(instanceId, batch, catalog, center, notifications,
             options, cancellationToken);
+    }
+
+    public ValueTask<MirrorPulseConflictResolution> ApplyUploadConflictAsync(
+        Guid conflictId,
+        MirrorPulseConflictAction action,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_started || _runtime is null)
+        {
+            throw new InvalidOperationException("The Cloud Files Host session has not started.");
+        }
+
+        return _runtime.ApplyUploadConflictAsync(conflictId, action, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

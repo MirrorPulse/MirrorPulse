@@ -7,6 +7,52 @@ namespace MirrorPulse.Core.State;
 
 public sealed partial class MirrorPulseProductCatalog
 {
+    public async Task<MirrorPulseConflictRecord?> ReadUploadConflictAsync(
+        Guid conflictId,
+        CancellationToken cancellationToken = default)
+    {
+        if (conflictId == Guid.Empty)
+        {
+            throw new ArgumentException("The conflict ID cannot be empty.", nameof(conflictId));
+        }
+
+        IReadOnlyList<MirrorPulseConflictRecord> records =
+            await ReadUploadConflictsAsync(pendingOnly: false, cancellationToken).ConfigureAwait(false);
+        return records.SingleOrDefault(item => item.ConflictId == conflictId);
+    }
+
+    public async Task SetUploadConflictStatusAsync(
+        Guid conflictId,
+        MirrorPulseConflictStatus status,
+        CancellationToken cancellationToken = default)
+    {
+        if (conflictId == Guid.Empty)
+        {
+            throw new ArgumentException("The conflict ID cannot be empty.", nameof(conflictId));
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            await using SqliteCommand command = _connection.CreateCommand();
+            command.CommandText = """
+                UPDATE upload_conflicts SET status = $status
+                WHERE conflict_id = $id;
+                """;
+            command.Parameters.AddWithValue("$id", conflictId.ToString("D"));
+            command.Parameters.AddWithValue("$status", (int)status);
+            if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 0)
+            {
+                throw new FileNotFoundException("The upload conflict was not found.");
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     /// <summary>Persists an upload conflict independently of the CfSharp journal operation.</summary>
     public async Task SaveUploadConflictAsync(
         MirrorPulseConflictRecord conflict,
