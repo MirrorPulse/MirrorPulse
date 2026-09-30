@@ -45,6 +45,8 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
     private readonly MirrorPulseRootRouter? _router;
     private readonly MirrorPulseProductCatalog? _catalog;
     private readonly Func<InstanceId, bool>? _mayDispatch;
+    private readonly MirrorPulseConflictCenter? _conflicts;
+    private readonly MirrorPulseConflictNotificationBridge? _notifications;
 
     public CfSharpMirrorPulseCloudRuntimeFactory(
         ICloudDemandProvider? provider = null,
@@ -52,7 +54,9 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         IMirrorPulseWorkerStatTransport? stats = null,
         MirrorPulseRootRouter? router = null,
         MirrorPulseProductCatalog? catalog = null,
-        Func<InstanceId, bool>? mayDispatch = null)
+        Func<InstanceId, bool>? mayDispatch = null,
+        MirrorPulseConflictCenter? conflicts = null,
+        MirrorPulseConflictNotificationBridge? notifications = null)
     {
         _provider = provider;
         _uploads = uploads;
@@ -60,6 +64,8 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         _router = router;
         _catalog = catalog;
         _mayDispatch = mayDispatch;
+        _conflicts = conflicts;
+        _notifications = notifications;
     }
 
     public IMirrorPulseCloudRuntime Create(MirrorPulseStoragePaths paths)
@@ -69,7 +75,8 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         return new CfSharpRuntime(new MirrorPulseCloudFileSystemBuilder(paths)
             .WithStateStore(state)
             .WithContentProvider(_provider ?? MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath))
-            .Build(), state, paths.SyncRootPath, _uploads, _stats, _router, _catalog, _mayDispatch);
+            .Build(), state, paths.SyncRootPath, _uploads, _stats, _router, _catalog,
+            _mayDispatch, _conflicts, _notifications);
     }
 
     private sealed class CfSharpRuntime(
@@ -80,7 +87,9 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         IMirrorPulseWorkerStatTransport? stats,
         MirrorPulseRootRouter? router,
         MirrorPulseProductCatalog? catalog,
-        Func<InstanceId, bool>? mayDispatch)
+        Func<InstanceId, bool>? mayDispatch,
+        MirrorPulseConflictCenter? conflicts,
+        MirrorPulseConflictNotificationBridge? notifications)
         : IMirrorPulseCloudRuntime
     {
         private MirrorPulseJournalUploadPump? _uploadPump;
@@ -95,7 +104,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
                 var completion = new MirrorPulseJournalUploadCompletion(
                     feed, state, new BackoffPolicy(TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(5)));
                 _uploadPump = new MirrorPulseJournalUploadPump(feed, router, catalog, uploads, stats, state,
-                    syncRootPath, mayDispatch, completion);
+                    syncRootPath, mayDispatch, completion, conflicts, notifications);
                 await _uploadPump.StartAsync(cancellationToken).ConfigureAwait(false);
             }
         }
@@ -232,7 +241,9 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
         IMirrorPulseWorkerStatTransport stats,
         MirrorPulseRootRouter router,
         MirrorPulseProductCatalog catalog,
-        Func<InstanceId, bool> mayDispatch)
+        Func<InstanceId, bool> mayDispatch,
+        MirrorPulseConflictCenter? conflicts = null,
+        MirrorPulseConflictNotificationBridge? notifications = null)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(uploads);
@@ -243,7 +254,8 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
         string sid = identity.User?.Value ?? throw new InvalidOperationException("The current Windows user has no SID.");
         return new(paths, MirrorPulseSyncRootRegistrationCoordinator.CreateDefault(),
-            new CfSharpMirrorPulseCloudRuntimeFactory(provider, uploads, stats, router, catalog, mayDispatch),
+            new CfSharpMirrorPulseCloudRuntimeFactory(provider, uploads, stats, router, catalog,
+                mayDispatch, conflicts, notifications),
             MirrorPulseSyncRootOwner.CreateDefault(), sid, instances, registrations);
     }
 

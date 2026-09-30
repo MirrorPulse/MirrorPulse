@@ -1,3 +1,4 @@
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.Host;
 
@@ -19,7 +20,8 @@ public sealed class MirrorPulseAppStatusPipeTests
         MirrorPulseCreateInstanceRequest? created = null;
         var expected = new MirrorPulseAppStatusResponse(3, 1,
             [new("instance-1", "Personal drive", true, "Healthy", "ABCDEF012345", null, null)],
-            [new(conflictId.ToString("D"), "note.txt", DateTimeOffset.UtcNow, false)]);
+            [new(conflictId.ToString("D"), "note.txt", DateTimeOffset.UtcNow, false,
+                MirrorPulseConflictSource.Upload)], PendingUploadConflicts: 1);
         var server = new MirrorPulseAppStatusPipe(_ => Task.FromResult(expected),
             (id, _) => Task.FromResult(expected with
             {
@@ -53,6 +55,8 @@ public sealed class MirrorPulseAppStatusPipeTests
             MirrorPulseAppStatusResponse received = await MirrorPulseAppStatusPipe.RequestAsync(shutdown.Token);
             Assert.AreEqual(3, received.PendingUploads);
             Assert.AreEqual(1, received.PendingRemoteConflicts);
+            Assert.AreEqual(1, received.PendingUploadConflicts);
+            Assert.AreEqual(MirrorPulseConflictSource.Upload, received.Notifications[0].Source);
             Assert.HasCount(1, received.Instances);
             Assert.AreEqual("Personal drive", received.Instances[0].DisplayName);
             MirrorPulseAppStatusResponse snoozed = await MirrorPulseAppStatusPipe.SnoozeAsync(conflictId,

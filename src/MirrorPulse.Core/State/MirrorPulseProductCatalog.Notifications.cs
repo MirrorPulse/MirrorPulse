@@ -4,8 +4,8 @@ namespace MirrorPulse.Core.State;
 
 public sealed partial class MirrorPulseProductCatalog
 {
-    /// <summary>Persists whether a projected CfSharp conflict should stop interrupting the user.</summary>
-    public async Task SetRemoteConflictSnoozedAsync(
+    /// <summary>Persists whether a pending conflict should stop interrupting the user.</summary>
+    public async Task SetConflictSnoozedAsync(
         Guid conflictId,
         bool snoozed,
         CancellationToken cancellationToken = default)
@@ -41,7 +41,7 @@ public sealed partial class MirrorPulseProductCatalog
         }
     }
 
-    public async Task<IReadOnlySet<Guid>> ReadSnoozedRemoteConflictIdsAsync(
+    public async Task<IReadOnlySet<Guid>> ReadSnoozedConflictIdsAsync(
         CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);

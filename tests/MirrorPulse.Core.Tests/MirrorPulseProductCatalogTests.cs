@@ -5,8 +5,10 @@ using CfSharp.Storage.Sqlite;
 using Microsoft.Data.Sqlite;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
+using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.Core.Tests;
 
@@ -117,15 +119,53 @@ public sealed class MirrorPulseProductCatalogTests
         {
             await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
             {
-                await catalog.SetRemoteConflictSnoozedAsync(conflictId, true);
-                Assert.Contains(conflictId, await catalog.ReadSnoozedRemoteConflictIdsAsync());
+                await catalog.SetConflictSnoozedAsync(conflictId, true);
+                Assert.Contains(conflictId, await catalog.ReadSnoozedConflictIdsAsync());
             }
 
             await using (var reopened = await MirrorPulseProductCatalog.OpenAsync(paths))
             {
-                Assert.Contains(conflictId, await reopened.ReadSnoozedRemoteConflictIdsAsync());
-                await reopened.SetRemoteConflictSnoozedAsync(conflictId, false);
-                Assert.DoesNotContain(conflictId, await reopened.ReadSnoozedRemoteConflictIdsAsync());
+                Assert.Contains(conflictId, await reopened.ReadSnoozedConflictIdsAsync());
+                await reopened.SetConflictSnoozedAsync(conflictId, false);
+                Assert.DoesNotContain(conflictId, await reopened.ReadSnoozedConflictIdsAsync());
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task UploadConflictSurvivesCatalogRestartAndKeepsJournalOperationPending()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        Guid operationId = Guid.NewGuid();
+        var conflict = new MirrorPulseConflictRecord(operationId, InstanceId.New(),
+            operationId.ToString("D"), "Documents/note.txt",
+            MirrorPulseConflictReason.StaleRemoteRevision,
+            MirrorPulseVersionComparison.Diverged, "base", "changed", DateTimeOffset.UtcNow);
+        try
+        {
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                await catalog.SaveUploadConflictAsync(conflict);
+                await catalog.SaveUploadConflictAsync(conflict);
+                Assert.IsTrue(await catalog.HasPendingUploadConflictAsync(operationId));
+                await catalog.SetConflictSnoozedAsync(operationId, true);
+            }
+
+            await using (var reopened = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                Assert.IsTrue(await reopened.HasPendingUploadConflictAsync(operationId));
+                MirrorPulseConflictRecord stored = (await reopened.ReadUploadConflictsAsync()).Single();
+                Assert.AreEqual(conflict.InstanceId, stored.InstanceId);
+                Assert.AreEqual(conflict.RelativePath, stored.RelativePath);
+                Assert.AreEqual(conflict.LocalRevision, stored.LocalRevision);
+                Assert.AreEqual(conflict.RemoteRevision, stored.RemoteRevision);
+                Assert.AreEqual(MirrorPulseConflictSource.Upload, stored.Source);
+                Assert.Contains(operationId, await reopened.ReadSnoozedConflictIdsAsync());
             }
         }
         finally

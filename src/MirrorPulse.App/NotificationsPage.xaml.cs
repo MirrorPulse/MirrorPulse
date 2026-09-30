@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Host;
 
 namespace MirrorPulse.App;
@@ -61,6 +62,7 @@ public sealed partial class NotificationsPage : Page
     {
         _notifications = status.Notifications;
         NotificationsList.ItemsSource = _notifications.Select(item =>
+            $"{(item.Source == MirrorPulseConflictSource.Upload ? "Upload" : "Remote")}  ·  " +
             $"{item.RelativePath}  ·  {item.DetectedAt:yyyy-MM-dd HH:mm}  ·  " +
             (item.Snoozed ? "Snoozed" : "Needs attention")).ToArray();
         SnoozeButton.IsEnabled = false;

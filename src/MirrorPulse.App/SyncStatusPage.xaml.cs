@@ -26,7 +26,9 @@ public sealed partial class SyncStatusPage : Page
         {
             MirrorPulseAppStatusResponse status = await MirrorPulseAppStatusPipe.RequestAsync();
             PendingUploadsText.Text = $"Pending uploads: {status.PendingUploads}";
-            PendingConflictsText.Text = $"Pending remote conflicts: {status.PendingRemoteConflicts}";
+            PendingConflictsText.Text =
+                $"Pending conflicts: {status.PendingRemoteConflicts} remote, " +
+                $"{status.PendingUploadConflicts} upload";
             var offline = status.Instances.Where(instance => !instance.Enabled).ToArray();
             OfflineNotice.IsOpen = offline.Length > 0;
             OfflineNotice.Message = offline.Length == 0

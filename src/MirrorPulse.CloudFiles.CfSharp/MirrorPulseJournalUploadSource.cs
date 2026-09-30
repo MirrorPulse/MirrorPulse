@@ -69,6 +69,8 @@ public sealed class MirrorPulseJournalUploadSource
                 : await _completion.GetRetryAfterAsync(command.OperationId, cancellationToken)
                     .ConfigureAwait(false);
             if (_mayDispatch(command.InstanceId) &&
+                !await _catalog.HasPendingUploadConflictAsync(command.OperationId, cancellationToken)
+                    .ConfigureAwait(false) &&
                 (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow))
             {
                 ready.Add(command);

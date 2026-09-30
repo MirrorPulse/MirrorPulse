@@ -35,8 +35,8 @@ public sealed record MirrorPulseInstanceRuntimeState(
 
 /// <summary>
 /// MP's separate product catalog. CfSharp owns Cloud Files journal, batch, conflict and checkpoint
-/// tables in its own database; this catalog tracks Worker idempotency, user intent, and
-/// non-authoritative conflict UI projections.
+/// tables in its own database; this catalog tracks Worker idempotency, user intent, upload
+/// conflicts, and non-authoritative CfSharp remote-conflict UI projections.
 /// </summary>
 public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
 {
@@ -100,7 +100,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                 version.CommandText = "PRAGMA user_version;";
                 long currentVersion = (long)(await version.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false) ?? 0L);
-                if (currentVersion > 7)
+                if (currentVersion > 8)
                 {
                     throw new InvalidDataException("The MP product catalog schema is newer than this Host supports.");
                 }
@@ -132,6 +132,18 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
                         local_revision TEXT NULL,
                         remote_revision TEXT NULL,
                         detected_utc TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS upload_conflicts (
+                        conflict_id TEXT PRIMARY KEY,
+                        instance_id TEXT NOT NULL,
+                        change_id TEXT NOT NULL,
+                        relative_path TEXT NOT NULL,
+                        reason INTEGER NOT NULL,
+                        version_comparison INTEGER NOT NULL,
+                        local_revision TEXT NULL,
+                        remote_revision TEXT NULL,
+                        detected_utc TEXT NOT NULL,
+                        status INTEGER NOT NULL
                     );
                     CREATE TABLE IF NOT EXISTS instance_runtime (
                         instance_id TEXT PRIMARY KEY,
@@ -187,7 +199,7 @@ public sealed partial class MirrorPulseProductCatalog : IAsyncDisposable
 
             await using (SqliteCommand version = connection.CreateCommand())
             {
-                version.CommandText = "PRAGMA user_version=7;";
+                version.CommandText = "PRAGMA user_version=8;";
                 await version.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 

@@ -81,7 +81,8 @@ try
         await using var session = MirrorPulseCloudHostSession.CreateDefault(
             paths, topology.Instances, topology.Roots, provider, workers, workers,
             rootRouter, catalog, instanceId => topology.Instances.Any(instance =>
-                instance.InstanceId == instanceId && instance.Enabled));
+                instance.InstanceId == instanceId && instance.Enabled),
+            conflictCenter, conflictNotifications);
         currentSession = session;
         await session.StartAsync(shutdown.Token);
         await workers.StartAsync(topology);
@@ -107,16 +108,23 @@ try
                         runtime?.LastErrorCode, runtime?.TransferProgress));
                 }
 
-                IReadOnlySet<Guid> snoozed = await catalog.ReadSnoozedRemoteConflictIdsAsync(cancellationToken);
-                var notifications = (await catalog.ReadRemoteConflictProjectionsAsync(cancellationToken))
+                IReadOnlySet<Guid> snoozed = await catalog.ReadSnoozedConflictIdsAsync(cancellationToken);
+                IReadOnlyList<MirrorPulseConflictRecord> uploadConflicts =
+                    await catalog.ReadUploadConflictsAsync(cancellationToken: cancellationToken);
+                var remoteNotifications = (await catalog.ReadRemoteConflictProjectionsAsync(cancellationToken))
                     .Where(conflict => cloud.PendingRemoteConflictIds.Contains(conflict.ConflictId))
                     .Select(conflict => new MirrorPulseAppNotification(
                         conflict.ConflictId.ToString("D"), conflict.RelativePath,
-                        conflict.DetectedAt, snoozed.Contains(conflict.ConflictId)))
+                        conflict.DetectedAt, snoozed.Contains(conflict.ConflictId)));
+                var notifications = remoteNotifications.Concat(uploadConflicts.Select(conflict =>
+                        new MirrorPulseAppNotification(conflict.ConflictId.ToString("D"),
+                            conflict.RelativePath, conflict.DetectedAt,
+                            snoozed.Contains(conflict.ConflictId), MirrorPulseConflictSource.Upload)))
                     .OrderByDescending(item => item.DetectedAt)
                     .ToArray();
                 return new MirrorPulseAppStatusResponse(cloud.PendingUploadCount,
-                    cloud.PendingRemoteConflictCount, entries, notifications);
+                    cloud.PendingRemoteConflictCount, entries, notifications,
+                    PendingUploadConflicts: uploadConflicts.Count);
             }
 
             async Task<MirrorPulseAppStatusResponse> InstallAdapterAsync(
@@ -175,7 +183,7 @@ try
                         throw new FileNotFoundException("The pending conflict notification was not found.");
                     }
 
-                    await catalog.SetRemoteConflictSnoozedAsync(conflictId, true, cancellationToken);
+                    await catalog.SetConflictSnoozedAsync(conflictId, true, cancellationToken);
                     return await ReadStatusAsync(cancellationToken);
                 },
                 async (instanceId, enabled, cancellationToken) =>

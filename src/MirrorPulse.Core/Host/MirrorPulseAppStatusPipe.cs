@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text.Json;
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
 using MirrorPulse.Core.Transport;
@@ -23,7 +24,8 @@ public sealed record MirrorPulseAppNotification(
     string ConflictId,
     string RelativePath,
     DateTimeOffset DetectedAt,
-    bool Snoozed);
+    bool Snoozed,
+    MirrorPulseConflictSource Source = MirrorPulseConflictSource.CfSharpRemote);
 
 public sealed record MirrorPulseAppStatusResponse(
     int PendingUploads,
@@ -32,7 +34,8 @@ public sealed record MirrorPulseAppStatusResponse(
     IReadOnlyList<MirrorPulseAppNotification> Notifications,
     string? Error = null,
     string? InstalledAdapterId = null,
-    string? CreatedInstanceId = null);
+    string? CreatedInstanceId = null,
+    int PendingUploadConflicts = 0);
 
 public sealed record MirrorPulseCreateInstanceRequest(
     string InstallId,
