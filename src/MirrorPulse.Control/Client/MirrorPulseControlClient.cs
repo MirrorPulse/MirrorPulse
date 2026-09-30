@@ -192,6 +192,17 @@ public sealed class MirrorPulseControlClient
             MirrorPulseControlCommands.InstanceList,
             new(limit, cursor), cancellationToken);
 
+    public Task<MirrorPulseControlSettings> GetSettingsAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ControlEmptyArguments, MirrorPulseControlSettings>(
+            MirrorPulseControlCommands.SettingsGet, new(), cancellationToken);
+
+    public Task<MirrorPulseControlSettings> SetSettingsAsync(
+        MirrorPulseSettingsUpdateArguments arguments,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<MirrorPulseSettingsUpdateArguments, MirrorPulseControlSettings>(
+            MirrorPulseControlCommands.SettingsSet, arguments, cancellationToken);
+
     public Task<MirrorPulseAppStatusResponse> InstallAsync(
         string packagePath,
         CancellationToken cancellationToken = default) =>

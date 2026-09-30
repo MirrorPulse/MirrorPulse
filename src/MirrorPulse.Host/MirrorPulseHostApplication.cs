@@ -24,6 +24,8 @@ namespace MirrorPulse.Host;
 public sealed class MirrorPulseHostApplication : IAsyncDisposable
 {
     private readonly MirrorPulseStoragePaths _paths;
+    private readonly MirrorPulseConfigurationStore _configurationStore;
+    private MirrorPulseConfiguration _configuration;
     private readonly MirrorPulseHostLease _hostLease;
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly MirrorPulseConflictCenter _conflictCenter;
@@ -43,6 +45,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
 
     private MirrorPulseHostApplication(
         MirrorPulseStoragePaths paths,
+        MirrorPulseConfigurationStore configurationStore,
+        MirrorPulseConfiguration configuration,
         MirrorPulseHostLease hostLease,
         MirrorPulseProductCatalog catalog,
         MirrorPulseConflictCenter conflictCenter,
@@ -53,6 +57,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         MirrorPulseAdapterTopology topology)
     {
         _paths = paths;
+        _configurationStore = configurationStore;
+        _configuration = configuration;
         _hostLease = hostLease;
         _catalog = catalog;
         _conflictCenter = conflictCenter;
@@ -97,9 +103,12 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         MirrorPulseActiveRemotePoller? remotePoller = null;
         try
         {
-            _ = await new MirrorPulseConfigurationStore(
-                Path.Combine(paths.DataRootPath, "config.json")).LoadAsync(cancellationToken)
-                .ConfigureAwait(false);
+            var configurationStore = new MirrorPulseConfigurationStore(
+                Path.Combine(paths.DataRootPath, "config.json"));
+            MirrorPulseConfiguration configuration = await configurationStore.LoadAsync(cancellationToken)
+                .ConfigureAwait(false) ?? new MirrorPulseConfiguration(
+                    MirrorPulseConfiguration.CurrentSchemaVersion,
+                    "en-US", false, false, []);
             catalog = await MirrorPulseProductCatalog.OpenAsync(paths, cancellationToken)
                 .ConfigureAwait(false);
             MirrorPulseAdapterTopology topology = await catalog.ReadAdapterTopologyAsync(cancellationToken)
@@ -157,7 +166,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
                 snapshotStore: remoteSnapshotStore);
 
             var application = new MirrorPulseHostApplication(
-                paths, hostLease, catalog, conflictCenter, systemNotifications,
+                paths, configurationStore, configuration, hostLease, catalog, conflictCenter, systemNotifications,
                 workers, session, remotePoller, topology);
             application.InitializeControlPlane(credentialStore);
             return application;
@@ -342,6 +351,13 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
                 state.TransferProgress?.UpdatedAt)).ToArray());
     }
 
+    public Task<MirrorPulseControlSettings> ReadSettingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ToControlSettings(_configuration));
+    }
+
     private void InitializeControlPlane(ISecureCredentialStore credentialStore)
     {
         var provisioner = new MirrorPulseAdapterInstanceProvisioner(
@@ -367,7 +383,9 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             StartRequestedAsync,
             StopRequestedAsync,
             RestartRequestedAsync,
-            ReadTopologyAsync)
+            ReadTopologyAsync,
+            ReadSettingsAsync,
+            UpdateSettingsAsync)
             .Register(dispatcher);
         _controlPipe = new MirrorPulseControlPipeServer(dispatcher.DispatchAsync);
     }
@@ -387,6 +405,75 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
 
         return GetHostStatus();
     }
+
+    private async Task<MirrorPulseControlSettings> UpdateSettingsAsync(
+        MirrorPulseSettingsUpdateArguments update,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        string locale = update.Locale ?? _configuration.Locale;
+        if (!LocaleCode.TryParse(locale, out LocaleCode parsedLocale))
+        {
+            throw new ArgumentException("The locale is invalid.", nameof(update));
+        }
+
+        IReadOnlyList<InstallId> enabledInstallations;
+        if (update.EnabledInstallations is null)
+        {
+            enabledInstallations = _configuration.EnabledInstallations;
+        }
+        else
+        {
+            var parsed = new List<InstallId>(update.EnabledInstallations.Count);
+            foreach (string value in update.EnabledInstallations)
+            {
+                if (!InstallId.TryParse(value, out InstallId installId))
+                {
+                    throw new ArgumentException("Enabled installation IDs must be valid.", nameof(update));
+                }
+
+                parsed.Add(installId);
+            }
+
+            if (parsed.Distinct().Count() != parsed.Count)
+            {
+                throw new ArgumentException("Enabled installation IDs must be unique.", nameof(update));
+            }
+
+            MirrorPulseAdapterTopology topology = await _catalog.ReadAdapterTopologyAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (parsed.Any(id => topology.Installations.All(installation => installation.InstallId != id)))
+            {
+                throw new ArgumentException("Every enabled installation must be installed.", nameof(update));
+            }
+
+            enabledInstallations = parsed;
+        }
+
+        string displayName = update.SyncRootDisplayName ?? _configuration.SyncRootDisplayName;
+        if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > 128 ||
+            displayName.Any(character => character < ' '))
+        {
+            throw new ArgumentException("The sync-root display name is invalid.", nameof(update));
+        }
+
+        var next = new MirrorPulseConfiguration(
+            MirrorPulseConfiguration.CurrentSchemaVersion,
+            parsedLocale.Value,
+            update.DeveloperMode ?? _configuration.DeveloperMode,
+            update.StartWithWindows ?? _configuration.StartWithWindows,
+            enabledInstallations,
+            displayName.Trim());
+        await _configurationStore.SaveAsync(next, cancellationToken).ConfigureAwait(false);
+        _configuration = next;
+        return ToControlSettings(next);
+    }
+
+    private static MirrorPulseControlSettings ToControlSettings(MirrorPulseConfiguration configuration) =>
+        new(configuration.SchemaVersion, configuration.Locale, configuration.DeveloperMode,
+            configuration.StartWithWindows,
+            configuration.EnabledInstallations.Select(installId => installId.ToString()).ToArray(),
+            configuration.SyncRootDisplayName);
 
     private Task<MirrorPulseHostStatus> StopRequestedAsync(
         HostLifecycleArguments arguments,

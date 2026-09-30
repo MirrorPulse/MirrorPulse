@@ -280,6 +280,34 @@ public sealed class MirrorPulseControlContractTests
     }
 
     [TestMethod]
+    public async Task LegacyBridgeExposesSettingsReadAndWriteCommands()
+    {
+        var settings = new MirrorPulseControlSettings(1, "en-US", false, false, [], "MirrorPulse");
+        var dispatcher = new MirrorPulseControlDispatcher();
+        new MirrorPulseLegacyCommandBridge(
+            _ => Task.FromResult(new MirrorPulseAppStatusResponse(0, 0, [], [])),
+            settingsGet: _ => Task.FromResult(settings),
+            settingsSet: (update, _) => Task.FromResult(settings with
+            {
+                DeveloperMode = update.DeveloperMode ?? settings.DeveloperMode,
+                Locale = update.Locale ?? settings.Locale,
+            })).Register(dispatcher);
+        using var getDocument = JsonDocument.Parse("{}");
+        using var setDocument = JsonDocument.Parse("{\"developerMode\":true,\"locale\":\"zh-CN\"}");
+
+        var get = await dispatcher.DispatchAsync(new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
+            MirrorPulseControlCommands.SettingsGet, getDocument.RootElement));
+        var set = await dispatcher.DispatchAsync(new ControlRequestEnvelope(
+            MirrorPulseControlSchema.CurrentVersion, Guid.NewGuid(),
+            MirrorPulseControlCommands.SettingsSet, setDocument.RootElement));
+
+        Assert.AreEqual("en-US", get.Data!.Value.GetProperty("locale").GetString());
+        Assert.IsTrue(set.Data!.Value.GetProperty("developerMode").GetBoolean());
+        Assert.AreEqual("zh-CN", set.Data.Value.GetProperty("locale").GetString());
+    }
+
+    [TestMethod]
     public async Task TypedClientSendsRequestAndDeserializesResponse()
     {
         var pipeName = $"MirrorPulse-control-test-{Guid.NewGuid():N}";

@@ -120,4 +120,19 @@ public sealed record OperationIdArguments(string OperationId) : IMirrorPulseCont
 public sealed record SettingsSetArguments(
     [property: MirrorPulseSensitiveData] IReadOnlyDictionary<string, string> Values) : IMirrorPulseControlArguments;
 
+public sealed record MirrorPulseSettingsUpdateArguments(
+    string? Locale = null,
+    bool? DeveloperMode = null,
+    bool? StartWithWindows = null,
+    IReadOnlyList<string>? EnabledInstallations = null,
+    string? SyncRootDisplayName = null) : IMirrorPulseControlArguments;
+
+public sealed record MirrorPulseControlSettings(
+    int SchemaVersion,
+    string Locale,
+    bool DeveloperMode,
+    bool StartWithWindows,
+    IReadOnlyList<string> EnabledInstallations,
+    string SyncRootDisplayName);
+
 public sealed record DiagnosticsArguments(bool IncludeLogs = false) : IMirrorPulseControlArguments;

@@ -29,6 +29,9 @@ public sealed class MirrorPulseLegacyCommandBridge
     private readonly Func<HostLifecycleArguments, CancellationToken,
         Task<MirrorPulseHostStatus>>? _hostRestart;
     private readonly Func<CancellationToken, Task<MirrorPulseControlTopology>>? _topology;
+    private readonly Func<CancellationToken, Task<MirrorPulseControlSettings>>? _settingsGet;
+    private readonly Func<MirrorPulseSettingsUpdateArguments, CancellationToken,
+        Task<MirrorPulseControlSettings>>? _settingsSet;
 
     public MirrorPulseLegacyCommandBridge(
         Func<CancellationToken, Task<MirrorPulseAppStatusResponse>> readStatus,
@@ -48,7 +51,10 @@ public sealed class MirrorPulseLegacyCommandBridge
             Task<MirrorPulseHostStatus>>? hostStop = null,
         Func<HostLifecycleArguments, CancellationToken,
             Task<MirrorPulseHostStatus>>? hostRestart = null,
-        Func<CancellationToken, Task<MirrorPulseControlTopology>>? topology = null)
+        Func<CancellationToken, Task<MirrorPulseControlTopology>>? topology = null,
+        Func<CancellationToken, Task<MirrorPulseControlSettings>>? settingsGet = null,
+        Func<MirrorPulseSettingsUpdateArguments, CancellationToken,
+            Task<MirrorPulseControlSettings>>? settingsSet = null)
     {
         _readStatus = readStatus ?? throw new ArgumentNullException(nameof(readStatus));
         _snooze = snooze;
@@ -62,6 +68,8 @@ public sealed class MirrorPulseLegacyCommandBridge
         _hostStop = hostStop;
         _hostRestart = hostRestart;
         _topology = topology;
+        _settingsGet = settingsGet;
+        _settingsSet = settingsSet;
     }
 
     public void Register(MirrorPulseControlDispatcher dispatcher)
@@ -107,6 +115,20 @@ public sealed class MirrorPulseLegacyCommandBridge
             dispatcher.Register<InstanceListArguments, MirrorPulseControlTopology>(
                 MirrorPulseControlCommands.InstanceList,
                 (_, cancellationToken) => new(_topology(cancellationToken)));
+        }
+
+        if (_settingsGet is not null)
+        {
+            dispatcher.Register<ControlEmptyArguments, MirrorPulseControlSettings>(
+                MirrorPulseControlCommands.SettingsGet,
+                (_, cancellationToken) => new(_settingsGet(cancellationToken)));
+        }
+
+        if (_settingsSet is not null)
+        {
+            dispatcher.Register<MirrorPulseSettingsUpdateArguments, MirrorPulseControlSettings>(
+                MirrorPulseControlCommands.SettingsSet,
+                (arguments, cancellationToken) => new(_settingsSet(arguments, cancellationToken)));
         }
 
         if (_snooze is not null)
