@@ -167,17 +167,26 @@ try {
             "--instance-id", $instanceId) | Out-Null
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart") | Out-Null
         Wait-MirrorPulseHostStopped
+        $offlineStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+        $offlineInstance = @($offlineStatus.data.instances) |
+            Where-Object { $_.instanceId -eq $instanceId } | Select-Object -First 1
+        if ($null -eq $offlineInstance -or $offlineInstance.phase -ne "Offline") {
+            throw "The disabled Adapter instance did not remain offline after the Host restarted."
+        }
+        Start-Sleep -Seconds 1
+        $baselineStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+        $pendingBeforeWrite = $baselineStatus.data.pendingUploads
         $queuedFile = Join-Path $mappedRoot "queued-upload.txt"
         [IO.File]::WriteAllText($queuedFile, "queued-local-upload")
         $deadline = [DateTime]::UtcNow.AddSeconds(15)
         do {
             Start-Sleep -Milliseconds 250
             $queuedStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
-        } while ($queuedStatus.data.pendingUploads -lt 1 -and [DateTime]::UtcNow -lt $deadline)
-        if ($queuedStatus.data.pendingUploads -lt 1) {
+        } while ($queuedStatus.data.pendingUploads -le $pendingBeforeWrite -and [DateTime]::UtcNow -lt $deadline)
+        if ($queuedStatus.data.pendingUploads -le $pendingBeforeWrite) {
             throw "The offline local edit was not retained in the upload journal."
         }
-        Write-Host "Offline journal contains $($queuedStatus.data.pendingUploads) pending upload(s)."
+        Write-Host "Offline journal grew from $pendingBeforeWrite to $($queuedStatus.data.pendingUploads) pending upload(s)."
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "instance", "enable",
             "--instance-id", $instanceId) | Out-Null
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart") | Out-Null
@@ -199,25 +208,6 @@ try {
             if (Test-Path -LiteralPath $logPath) {
                 Write-Host "Recent local upload diagnostics:"
                 Get-Content -LiteralPath $logPath -Tail 12 | ForEach-Object { Write-Host $_ }
-            }
-            $stateDatabase = Join-Path $dataRoot "state\cfsharp.db"
-            if (Test-Path -LiteralPath $stateDatabase) {
-                $journalProbe = @'
-import sqlite3, sys
-with sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True) as database:
-    for table in ('operations', 'items'):
-        columns = [row[1] for row in database.execute(f'pragma table_info("{table}")')]
-        print(f"CfSharp {table} columns: {columns}")
-        if not columns:
-            continue
-        for row in database.execute(f'select * from "{table}" limit 12'):
-            fields = dict(zip(columns, row))
-            for name, value in list(fields.items()):
-                if isinstance(value, bytes):
-                    fields[name] = repr(value[:160])
-            print(fields)
-'@
-                & python -c $journalProbe $stateDatabase | ForEach-Object { Write-Host $_ }
             }
             throw "The persisted upload was not delivered. Pending=$($failedStatus.data.pendingUploads); " +
                 "UploadConflicts=$($failedStatus.data.pendingUploadConflicts); " +
