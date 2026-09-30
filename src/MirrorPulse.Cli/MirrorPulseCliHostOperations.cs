@@ -93,6 +93,13 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
             return await WriteControlErrorAsync(exception.Error, json, errorWriter, cancellationToken)
                 .ConfigureAwait(false);
         }
+        catch (ArgumentException exception)
+        {
+            await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+                MirrorPulseControlExitCodes.Validation, "mp.cli.validation", exception.Message,
+                json, errorWriter, cancellationToken).ConfigureAwait(false);
+            return MirrorPulseControlExitCodes.Validation;
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             await MirrorPulseCliOutputFormatter.WriteErrorAsync(
@@ -132,6 +139,17 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                         .ConfigureAwait(false);
                     human = FormatStatus((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result);
                     break;
+                case ("adapter", "list"):
+                    result = await _client.GetAdapterTopologyAsync(cancellationToken).ConfigureAwait(false);
+                    human = FormatTopology((MirrorPulseControlTopology)result);
+                    break;
+                case ("adapter", "install"):
+                    string packagePath = GetRequiredValue(command.Arguments, "package", 0,
+                        "adapter install requires a .mpadapter package path.");
+                    result = await _client.InstallAsync(packagePath, cancellationToken).ConfigureAwait(false);
+                    human = $"Adapter package installed: " +
+                        ((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result).InstalledAdapterId;
+                    break;
                 default:
                     await MirrorPulseCliOutputFormatter.WriteErrorAsync(
                         MirrorPulseControlExitCodes.Unsupported,
@@ -162,6 +180,32 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
     private static string FormatStatus(MirrorPulse.Core.Host.MirrorPulseAppStatusResponse status) =>
         $"Pending uploads: {status.PendingUploads}; remote conflicts: {status.PendingRemoteConflicts}; " +
         $"instances: {status.Instances.Count}";
+
+    private static string FormatTopology(MirrorPulseControlTopology topology) =>
+        $"Installations: {topology.Installations.Count}; instances: {topology.Instances.Count}; " +
+        $"roots: {topology.Roots.Count}";
+
+    private static string GetRequiredValue(
+        IReadOnlyList<string> arguments,
+        string option,
+        int positionalIndex,
+        string error)
+    {
+        for (int index = 0; index < arguments.Count; index++)
+        {
+            if (!arguments[index].Equals("--" + option, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (index + 1 >= arguments.Count || string.IsNullOrWhiteSpace(arguments[index + 1]))
+                throw new ArgumentException(error);
+            return arguments[index + 1];
+        }
+
+        string[] positional = arguments.Where(item => !item.StartsWith("--", StringComparison.Ordinal))
+            .ToArray();
+        if (positionalIndex < positional.Length && !string.IsNullOrWhiteSpace(positional[positionalIndex]))
+            return positional[positionalIndex];
+        throw new ArgumentException(error);
+    }
 
     private async Task<MirrorPulseHostStatus> StartAsync(CancellationToken cancellationToken)
     {

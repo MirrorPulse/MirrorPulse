@@ -37,7 +37,7 @@ public static class MirrorPulseCliCommandLine
     private static readonly Dictionary<string, IReadOnlySet<string>> Subcommands =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["adapter"] = NewSet("list", "install", "remove"),
+            ["adapter"] = NewSet("list", "install", "remove", "update", "uninstall"),
             ["conflict"] = NewSet("list", "show", "snooze", "resolve"),
             ["host"] = NewSet("status", "start", "stop", "restart"),
             ["instance"] = NewSet("list", "create", "configure", "enable", "disable", "select-version"),
@@ -189,7 +189,8 @@ public static class MirrorPulseCliHelp
           status                         Show sync status.
           host status|start|stop|restart Manage the current-user Host.
           sync status|refresh             Inspect or refresh synchronization.
-          adapter list|install|remove     Manage installed Adapters.
+          adapter list|install|update|remove|uninstall
+                                         Manage installed Adapters.
           instance list|create|configure|enable|disable|select-version
                                          Manage Adapter instances.
           conflict list|show|snooze|resolve
