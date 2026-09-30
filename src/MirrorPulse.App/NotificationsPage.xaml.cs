@@ -24,13 +24,13 @@ public sealed partial class NotificationsPage : Page
     {
         int index = NotificationsList.SelectedIndex;
         bool selected = index >= 0 && index < _notifications.Count;
-        bool uploadConflict = selected && _notifications[index].Source == MirrorPulseConflictSource.Upload;
+        bool conflict = selected;
         SnoozeButton.IsEnabled = selected && !_notifications[index].Snoozed;
-        KeepLocalButton.IsEnabled = uploadConflict;
-        KeepRemoteButton.IsEnabled = uploadConflict;
-        KeepBothButton.IsEnabled = uploadConflict;
-        RetryButton.IsEnabled = uploadConflict;
-        DeleteLocalButton.IsEnabled = uploadConflict;
+        KeepLocalButton.IsEnabled = conflict;
+        KeepRemoteButton.IsEnabled = conflict;
+        KeepBothButton.IsEnabled = conflict;
+        RetryButton.IsEnabled = conflict;
+        DeleteLocalButton.IsEnabled = conflict;
     }
 
     private async void SnoozeButton_Click(object sender, RoutedEventArgs e)
@@ -58,8 +58,7 @@ public sealed partial class NotificationsPage : Page
     private async Task ResolveAsync(MirrorPulseConflictAction action)
     {
         int index = NotificationsList.SelectedIndex;
-        if (index < 0 || index >= _notifications.Count ||
-            _notifications[index].Source != MirrorPulseConflictSource.Upload)
+        if (index < 0 || index >= _notifications.Count)
         {
             return;
         }

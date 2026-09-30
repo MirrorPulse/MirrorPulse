@@ -36,6 +36,14 @@ public interface IMirrorPulseCloudRuntime : IAsyncDisposable
         CancellationToken cancellationToken) =>
         ValueTask.FromException<MirrorPulseConflictResolution>(
             new NotSupportedException("This Cloud Files runtime does not resolve upload conflicts."));
+
+    ValueTask<MirrorPulseRemoteConflictActionOutcome> ApplyRemoteConflictAsync(
+        Guid conflictId,
+        MirrorPulseConflictAction action,
+        MirrorPulseProductCatalog catalog,
+        CancellationToken cancellationToken) =>
+        ValueTask.FromException<MirrorPulseRemoteConflictActionOutcome>(
+            new NotSupportedException("This Cloud Files runtime does not resolve remote conflicts."));
 }
 
 public interface IMirrorPulseCloudRuntimeFactory
@@ -102,6 +110,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
     {
         private MirrorPulseJournalUploadPump? _uploadPump;
         private MirrorPulseUploadConflictActions? _conflictActions;
+        private MirrorPulseRemoteConflictActions? _remoteConflictActions;
 
         public async ValueTask StartAsync(CancellationToken cancellationToken)
         {
@@ -119,6 +128,13 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
                     new MirrorPulseStoragePaths(syncRootPath, dataRootPath));
                 await _uploadPump.StartAsync(cancellationToken).ConfigureAwait(false);
             }
+
+            if (catalog is not null && conflicts is not null)
+            {
+                _remoteConflictActions = MirrorPulseRemoteConflictActions.For(fileSystem,
+                    new MirrorPulseConflictCopyStore(new MirrorPulseStoragePaths(syncRootPath, dataRootPath)),
+                    catalog, conflicts);
+            }
         }
 
         public ValueTask<MirrorPulseConflictResolution> ApplyUploadConflictAsync(
@@ -128,6 +144,24 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
             (_conflictActions ?? throw new InvalidOperationException(
                 "The upload conflict action service has not started.")).ApplyAsync(
                     conflictId, action, cancellationToken);
+
+        public async ValueTask<MirrorPulseRemoteConflictActionOutcome> ApplyRemoteConflictAsync(
+            Guid conflictId,
+            MirrorPulseConflictAction action,
+            MirrorPulseProductCatalog catalog,
+            CancellationToken cancellationToken)
+        {
+            MirrorPulseRemoteConflictActions actions = _remoteConflictActions ?? throw new InvalidOperationException(
+                "The remote conflict action service has not started.");
+            MirrorPulseConflictRecord conflict = (await catalog.ReadRemoteConflictProjectionsAsync(
+                cancellationToken).ConfigureAwait(false)).SingleOrDefault(item =>
+                    item.ConflictId == conflictId) ?? throw new FileNotFoundException(
+                        "The remote conflict was not found.");
+            return await actions.ApplyAsync(Guid.NewGuid(), conflict, action,
+                action == MirrorPulseConflictAction.KeepBoth
+                    ? MirrorPulseConflictPreservedSide.Local
+                    : null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
 
         public async ValueTask<MirrorPulseCloudStatusSnapshot> ReadStatusAsync(
             IEnumerable<InstanceId> instanceIds,
@@ -366,6 +400,20 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
         }
 
         return _runtime.ApplyUploadConflictAsync(conflictId, action, cancellationToken);
+    }
+
+    public ValueTask<MirrorPulseRemoteConflictActionOutcome> ApplyRemoteConflictAsync(
+        Guid conflictId,
+        MirrorPulseConflictAction action,
+        MirrorPulseProductCatalog catalog,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_started || _runtime is null)
+        {
+            throw new InvalidOperationException("The Cloud Files Host session has not started.");
+        }
+
+        return _runtime.ApplyRemoteConflictAsync(conflictId, action, catalog, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

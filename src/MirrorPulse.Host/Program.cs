@@ -194,9 +194,24 @@ try
                 InstallAdapterAsync, CreateInstanceAsync,
                 async (conflictId, action, cancellationToken) =>
                 {
-                    await session.ApplyUploadConflictAsync(conflictId, action, cancellationToken)
-                        .ConfigureAwait(false);
-                    conflictCenter.Remove(conflictId);
+                    if (await catalog.ReadUploadConflictAsync(conflictId, cancellationToken)
+                        .ConfigureAwait(false) is not null)
+                    {
+                        await session.ApplyUploadConflictAsync(conflictId, action, cancellationToken)
+                            .ConfigureAwait(false);
+                        conflictCenter.Remove(conflictId);
+                    }
+                    else
+                    {
+                        MirrorPulseRemoteConflictActionOutcome outcome =
+                            await session.ApplyRemoteConflictAsync(conflictId, action, catalog,
+                                cancellationToken).ConfigureAwait(false);
+                        if (outcome.Resolved)
+                        {
+                            conflictCenter.Remove(conflictId);
+                        }
+                    }
+
                     return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
                 });
             await statusPipe.ServeAsync(shutdown.Token);
