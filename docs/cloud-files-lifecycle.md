@@ -44,7 +44,11 @@ of the same Adapter require distinct first-level folder names.
   MirrorPulse reads CfSharp's last mutually acknowledged item revision and
   compares it with a fresh Worker Stat. The acknowledged revision, never the
   fresh Stat value, is passed to the Worker's conditional upload. A mismatch
-  defers the journal entry without overwriting the remote file.
+  persists an upload conflict in MP's separate catalog and stops automatic
+  dispatch of that journal operation across restarts. The local content and
+  remote file remain in place, and the Host exposes the pending conflict in
+  status and notifications. Upload-conflict resolution actions are still a
+  product gate.
 - Adapter remote batches map once to CfSharp batches. CfSharp persists applied
   progress and conflicts; MirrorPulse advances its named checkpoint only after
   a safe result. Replaying the same batch covers a crash between those writes.
@@ -64,7 +68,7 @@ not. It also performs a SQLite integrity check.
 CfSharp `0.1.0-preview.2` provides the remote conflict and keep-local APIs
 used here. The remaining product gates include Explorer Shell registration in
 an interactive installed MSIX session, live WinUI configuration, and continuous
-remote polling plus local move/delete dispatch.
+remote polling plus local move/delete dispatch and upload-conflict resolution.
 
 Run `pwsh ./eng/verify-native.ps1` for the opt-in native checks. The ordinary CI
 workflow runs the portable Release tests and both Host publish targets.
