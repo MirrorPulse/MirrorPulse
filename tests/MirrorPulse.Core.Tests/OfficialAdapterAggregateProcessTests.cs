@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using CfSharp;
@@ -16,7 +17,7 @@ namespace MirrorPulse.Core.Tests;
 public sealed class OfficialAdapterAggregateProcessTests
 {
     [TestMethod]
-    public async Task LatestOfficialReleasesInstallWithTheBuiltInTrustAnchor()
+    public async Task LatestOfficialReleasesInstallWithoutDetachedSignatureFiles()
     {
         string? aggregateDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_OFFICIAL_AGGREGATE");
         if (string.IsNullOrWhiteSpace(aggregateDirectory))
@@ -38,10 +39,15 @@ public sealed class OfficialAdapterAggregateProcessTests
                 string adapterId = entry.GetProperty("adapterId").GetString()!;
                 string version = entry.GetProperty("version").GetString()!;
                 string packageName = entry.GetProperty("package").GetString()!;
-                string signatureName = entry.GetProperty("signature").GetString()!;
                 string directory = Path.Combine(aggregateDirectory, adapterId);
+                string packagePath = Path.Combine(directory, packageName);
+                using (var archive = ZipFile.OpenRead(packagePath))
+                {
+                    Assert.IsNotNull(archive.GetEntry(SignedProcessAdapterInstaller.EmbeddedSignaturePath));
+                }
+
                 SignedProcessAdapterInstallation installed = await SignedProcessAdapterInstaller.InstallAsync(
-                    Path.Combine(directory, packageName), Path.Combine(directory, signatureName),
+                    packagePath, Path.Combine(directory, "absent.signature.json"),
                     installationRoot, "win-x64", trustedKey, MirrorPulseOfficialAdapterTrust.Signer);
                 Assert.AreEqual(adapterId, installed.AdapterId);
                 Assert.AreEqual(version, installed.Version);
