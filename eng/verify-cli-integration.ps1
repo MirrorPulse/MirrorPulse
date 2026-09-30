@@ -167,7 +167,15 @@ try {
             "--instance-id", $instanceId) | Out-Null
         Invoke-MirrorPulseCli @("--json", "--developer-mode", "host", "restart") | Out-Null
         Wait-MirrorPulseHostStopped
-        $offlineStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+        try {
+            $offlineStatus = Invoke-MirrorPulseCli @("--json", "--developer-mode", "status")
+        }
+        catch {
+            Write-Host "Disabled Host startup diagnostics:"
+            $hostOutput = (& $hostExecutable --run-once 2>&1 | Out-String).Trim()
+            Write-Host $hostOutput
+            throw
+        }
         $offlineInstance = @($offlineStatus.data.instances) |
             Where-Object { $_.instanceId -eq $instanceId } | Select-Object -First 1
         if ($null -eq $offlineInstance -or $offlineInstance.phase -ne "Offline") {
