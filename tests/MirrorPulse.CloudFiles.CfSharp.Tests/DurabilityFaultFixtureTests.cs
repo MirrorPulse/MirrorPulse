@@ -75,7 +75,18 @@ public sealed class DurabilityFaultFixtureTests
                         Assert.AreEqual(copyPath, reopened);
                         Assert.AreEqual("original side", await File.ReadAllTextAsync(reopened));
                     }
-                    else Assert.IsTrue(File.Exists(copyPath + ".pending.json"));
+                    else
+                    {
+                        Assert.IsTrue(File.Exists(copyPath + ".pending.json"));
+                        var recovered = new MirrorPulseConflictCopyStore(paths);
+                        string replay = await recovered.PreserveAsync(copyConflict, MirrorPulseConflictPreservedSide.Local,
+                            token => mode == FaultMode.Exit
+                                ? throw new InvalidOperationException("Flushed staging survives abrupt exit; do not reopen the source.")
+                                : recovered.OpenLocalAsync(copyConflict, token));
+                        Assert.AreEqual(copyPath, replay);
+                        Assert.AreEqual("original side", await File.ReadAllTextAsync(replay));
+                        Assert.IsTrue(File.Exists(replay + ".manifest.json"));
+                    }
                     break;
                 case DurabilityBoundary.RemoteWrite:
                     Assert.AreEqual(expected, await File.ReadAllTextAsync(Path.Combine(root, "remote", "document.txt")));

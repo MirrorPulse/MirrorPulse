@@ -52,9 +52,47 @@ public sealed class MirrorPulseConflictCopyStore
         await using var lease = new FileStream(destination + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         if (File.Exists(destination))
         {
-            MirrorPulseConflictCopyManifest existing = await ReadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
-            await VerifyAsync(conflict, side, destination, existing, "complete", cancellationToken).ConfigureAwait(false);
-            return destination;
+            if (File.Exists(manifestPath))
+            {
+                MirrorPulseConflictCopyManifest existing = await ReadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+                await VerifyAsync(conflict, side, destination, existing, "complete", cancellationToken).ConfigureAwait(false);
+                File.Delete(pendingPath);
+                return destination;
+            }
+            if (!File.Exists(pendingPath))
+                throw new InvalidDataException("An existing conflict copy must have a verifiable intent or manifest.");
+        }
+        else if (File.Exists(manifestPath))
+        {
+            throw new InvalidDataException("The committed preserved conflict file is missing.");
+        }
+
+        if (File.Exists(pendingPath))
+        {
+            MirrorPulseConflictCopyManifest intent = await ReadManifestAsync(pendingPath, cancellationToken).ConfigureAwait(false);
+            ValidateIdentity(conflict, side, intent);
+            string fileName = intent.StageFileName;
+            if (Path.GetFileName(fileName) != fileName || !fileName.StartsWith(Path.GetFileName(destination) + ".", StringComparison.Ordinal) ||
+                !fileName.EndsWith(".tmp", StringComparison.Ordinal))
+                throw new InvalidDataException("The conflict staging path is invalid.");
+            string stagePath = Path.Combine(directory, fileName);
+            if (intent.State == "staged" && (File.Exists(destination) || File.Exists(stagePath)))
+            {
+                string committed = File.Exists(destination) ? destination : stagePath;
+                await VerifyAsync(conflict, side, committed, intent, "staged", cancellationToken).ConfigureAwait(false);
+                if (committed == stagePath) File.Move(stagePath, destination, overwrite: false);
+                await WriteManifestAsync(manifestPath, intent with { State = "complete" }, cancellationToken).ConfigureAwait(false);
+                File.Delete(pendingPath);
+                return destination;
+            }
+            if (File.Exists(destination) || intent.State is not ("copying" or "staged"))
+                throw new InvalidDataException("The incomplete conflict save cannot be safely replayed.");
+            if (File.Exists(stagePath))
+            {
+                EnsureNoReparsePoints(_paths.DataRootPath, stagePath);
+                File.Delete(stagePath);
+            }
+            // No committed bytes exist. The conflict remains pending, so recopy its current source.
         }
 
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -131,9 +169,8 @@ public sealed class MirrorPulseConflictCopyStore
     private async Task VerifyAsync(MirrorPulseConflictRecord conflict, MirrorPulseConflictPreservedSide side,
         string path, MirrorPulseConflictCopyManifest manifest, string state, CancellationToken cancellationToken)
     {
-        if (manifest.SchemaVersion != 1 || manifest.ConflictId != conflict.ConflictId ||
-            manifest.InstanceId != conflict.InstanceId.ToString() || manifest.Side != side || manifest.State != state ||
-            manifest.Length < 0 || manifest.Sha256 is null || manifest.Sha256.Length != 64)
+        ValidateIdentity(conflict, side, manifest);
+        if (manifest.State != state || manifest.Length < 0 || manifest.Sha256 is null || manifest.Sha256.Length != 64)
             throw new InvalidDataException("The preserved conflict manifest does not match this conflict.");
         EnsureNoReparsePoints(_paths.DataRootPath, path);
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
@@ -141,6 +178,14 @@ public sealed class MirrorPulseConflictCopyStore
         if (stream.Length != manifest.Length ||
             !string.Equals(Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)), manifest.Sha256, StringComparison.Ordinal))
             throw new InvalidDataException("The preserved conflict copy failed its content verification.");
+    }
+
+    private static void ValidateIdentity(MirrorPulseConflictRecord conflict, MirrorPulseConflictPreservedSide side,
+        MirrorPulseConflictCopyManifest manifest)
+    {
+        if (manifest.SchemaVersion != 1 || manifest.ConflictId != conflict.ConflictId ||
+            manifest.InstanceId != conflict.InstanceId.ToString() || manifest.Side != side)
+            throw new InvalidDataException("The preserved conflict manifest belongs to another conflict or side.");
     }
 
     public ValueTask<Stream> OpenLocalAsync(

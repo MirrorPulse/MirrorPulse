@@ -11,6 +11,59 @@ namespace MirrorPulse.Core.Tests;
 public sealed class MirrorPulseConflictCopyStoreTests
 {
     [TestMethod]
+    [DataRow("DataCommitted")]
+    [DataRow("ManifestCommitted")]
+    public async Task RestartAfterCopyCommitUsesVerifiedBytesWithoutReopeningChangedSource(string boundary)
+    {
+        string fixture = Path.Combine(Path.GetTempPath(), "MirrorPulse-copy-replay", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(fixture, "sync"), Path.Combine(fixture, "data"));
+        var conflict = Create();
+        try
+        {
+            var interrupted = new MirrorPulseConflictCopyStore(paths, point =>
+            {
+                if (point.ToString() == boundary) throw new IOException("fixture after durable copy boundary");
+            });
+            await Assert.ThrowsExactlyAsync<IOException>(() => interrupted.PreserveAsync(conflict, MirrorPulseConflictPreservedSide.Remote,
+                _ => ValueTask.FromResult<Stream>(new MemoryStream("original remote bytes"u8.ToArray()))));
+            var reopened = new MirrorPulseConflictCopyStore(paths);
+            string destination = await reopened.PreserveAsync(conflict, MirrorPulseConflictPreservedSide.Remote,
+                _ => throw new InvalidOperationException("The source may have changed or disappeared after preserving it."));
+            Assert.AreEqual("original remote bytes", await File.ReadAllTextAsync(destination));
+            Assert.AreEqual(destination, await reopened.PreserveAsync(conflict, MirrorPulseConflictPreservedSide.Remote,
+                _ => throw new InvalidOperationException("A second replay must use the same verified copy.")));
+            Assert.IsFalse(File.Exists(destination + ".pending.json"));
+        }
+        finally { Directory.Delete(fixture, true); }
+    }
+
+    [TestMethod]
+    public async Task TamperedBytesOrManifestNeverOverwriteAnotherConflict()
+    {
+        string fixture = Path.Combine(Path.GetTempPath(), "MirrorPulse-copy-verification", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(fixture, "sync"), Path.Combine(fixture, "data"));
+        var conflict = Create();
+        var store = new MirrorPulseConflictCopyStore(paths);
+        try
+        {
+            string destination = await store.PreserveAsync(conflict, MirrorPulseConflictPreservedSide.Local,
+                _ => ValueTask.FromResult<Stream>(new MemoryStream("first"u8.ToArray())));
+            await File.WriteAllTextAsync(destination, "other");
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.PreserveAsync(conflict, MirrorPulseConflictPreservedSide.Local,
+                _ => throw new InvalidOperationException("No source overwrite is permitted.")));
+            Assert.AreEqual("other", await File.ReadAllTextAsync(destination));
+            await File.WriteAllTextAsync(destination, "first");
+            string manifestPath = destination + ".manifest.json";
+            var manifest = JsonSerializer.Deserialize<MirrorPulseConflictCopyManifest>(await File.ReadAllTextAsync(manifestPath))!;
+            await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest with { ConflictId = Guid.NewGuid() }));
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => store.PreserveAsync(conflict, MirrorPulseConflictPreservedSide.Local,
+                _ => throw new InvalidOperationException("Another conflict cannot be overwritten.")));
+            Assert.AreEqual("first", await File.ReadAllTextAsync(destination));
+        }
+        finally { Directory.Delete(fixture, true); }
+    }
+
+    [TestMethod]
     public async Task CommittedCopyIsVerifiedAndPartialCopyNeverAuthorizesDestruction()
     {
         string fixture = Path.Combine(Path.GetTempPath(), "MirrorPulse-copy-tests", Guid.NewGuid().ToString("N"));
