@@ -10,7 +10,8 @@ public sealed record MirrorPulseRemoteConflictActionOutcome(
     bool CommandQueued,
     string? PreservedPath,
     CloudRemoteApplyEntryStatus? CfSharpStatus,
-    CloudRemoteConflictDismissalStatus? CfSharpDismissalStatus = null);
+    CloudRemoteConflictDismissalStatus? CfSharpDismissalStatus = null,
+    Guid CommandId = default);
 
 /// <summary>Executes product conflict choices through CfSharp's public resolution API.</summary>
 [SupportedOSPlatform("windows10.0.16299")]
@@ -67,6 +68,7 @@ public sealed class MirrorPulseRemoteConflictActions
         }
 
         ArgumentNullException.ThrowIfNull(conflict);
+        if (!Enum.IsDefined(action)) throw new ArgumentOutOfRangeException(nameof(action));
         if (conflict.Source != MirrorPulseConflictSource.CfSharpRemote || !conflict.IsPending)
         {
             throw new ArgumentException("This action requires a pending CfSharp remote conflict.", nameof(conflict));
@@ -101,14 +103,61 @@ public sealed class MirrorPulseRemoteConflictActions
         await _catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(
             commandId, actionName, conflict.ConflictId.ToString("D"), "pending"), cancellationToken)
             .ConfigureAwait(false);
-
-        if (action == MirrorPulseConflictAction.KeepLocal)
+        try
         {
-            CloudRemoteConflictDismissalStatus dismissal = await _dismiss!(
-                conflict.ConflictId, cancellationToken).ConfigureAwait(false);
-            bool dismissed = dismissal is CloudRemoteConflictDismissalStatus.Dismissed or
-                CloudRemoteConflictDismissalStatus.AlreadyDismissed;
-            if (dismissed)
+
+            if (action == MirrorPulseConflictAction.KeepLocal)
+            {
+                CloudRemoteConflictDismissalStatus dismissal = await _dismiss!(
+                    conflict.ConflictId, cancellationToken).ConfigureAwait(false);
+                bool dismissed = dismissal is CloudRemoteConflictDismissalStatus.Dismissed or
+                    CloudRemoteConflictDismissalStatus.AlreadyDismissed;
+                if (dismissed)
+                {
+                    _center.Remove(conflict.ConflictId);
+                    await _catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(
+                        commandId, actionName, conflict.ConflictId.ToString("D"), "resolved"), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                if (!dismissed) await SaveFailedAsync(commandId, actionName, conflict, cancellationToken).ConfigureAwait(false);
+                return new(dismissed, false, null, null, dismissal, commandId);
+            }
+
+            if (action is MirrorPulseConflictAction.Retry or
+                MirrorPulseConflictAction.DeleteLocal or MirrorPulseConflictAction.DeleteRemote)
+            {
+                // These are product/Worker commands. CfSharp exposes no equivalent terminal decision.
+                return new(false, true, null, null, CommandId: commandId);
+            }
+
+            string? preservedPath = null;
+            if (action == MirrorPulseConflictAction.KeepBoth)
+            {
+                Func<CancellationToken, ValueTask<Stream>> source = preservedSide == MirrorPulseConflictPreservedSide.Local
+                    ? token => _copies.OpenLocalAsync(conflict, token)
+                    : openRemote!;
+                preservedPath = await _copies.PreserveAsync(
+                    conflict, preservedSide!.Value, source, cancellationToken).ConfigureAwait(false);
+            }
+
+            CloudRemoteConflictDecision decision = action == MirrorPulseConflictAction.Defer
+                ? CloudRemoteConflictDecision.Defer
+                : CloudRemoteConflictDecision.KeepRemote;
+            CloudRemoteApplyEntryStatus status;
+            try
+            {
+                status = await _resolve(conflict.ConflictId, decision, cancellationToken).ConfigureAwait(false);
+            }
+            catch (KeyNotFoundException) when (action != MirrorPulseConflictAction.Defer)
+            {
+                // CfSharp removes the conflict only after a successful apply. A retry converges here.
+                status = CloudRemoteApplyEntryStatus.AlreadyApplied;
+            }
+
+            bool resolved = action != MirrorPulseConflictAction.Defer &&
+                status is CloudRemoteApplyEntryStatus.Applied or CloudRemoteApplyEntryStatus.AlreadyApplied;
+            if (resolved)
             {
                 _center.Remove(conflict.ConflictId);
                 await _catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(
@@ -116,50 +165,17 @@ public sealed class MirrorPulseRemoteConflictActions
                     .ConfigureAwait(false);
             }
 
-            return new(dismissed, false, null, null, dismissal);
+            if (!resolved && action != MirrorPulseConflictAction.Defer)
+                await SaveFailedAsync(commandId, actionName, conflict, cancellationToken).ConfigureAwait(false);
+            return new(resolved, false, preservedPath, status, CommandId: commandId);
         }
-
-        if (action is MirrorPulseConflictAction.Retry or
-            MirrorPulseConflictAction.DeleteLocal or MirrorPulseConflictAction.DeleteRemote)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // These are product/Worker commands. CfSharp exposes no equivalent terminal decision.
-            return new(false, true, null, null);
+            await SaveFailedAsync(commandId, actionName, conflict, cancellationToken).ConfigureAwait(false);
+            throw;
         }
-
-        string? preservedPath = null;
-        if (action == MirrorPulseConflictAction.KeepBoth)
-        {
-            Func<CancellationToken, ValueTask<Stream>> source = preservedSide == MirrorPulseConflictPreservedSide.Local
-                ? token => _copies.OpenLocalAsync(conflict, token)
-                : openRemote!;
-            preservedPath = await _copies.PreserveAsync(
-                conflict, preservedSide!.Value, source, cancellationToken).ConfigureAwait(false);
-        }
-
-        CloudRemoteConflictDecision decision = action == MirrorPulseConflictAction.Defer
-            ? CloudRemoteConflictDecision.Defer
-            : CloudRemoteConflictDecision.KeepRemote;
-        CloudRemoteApplyEntryStatus status;
-        try
-        {
-            status = await _resolve(conflict.ConflictId, decision, cancellationToken).ConfigureAwait(false);
-        }
-        catch (KeyNotFoundException) when (action != MirrorPulseConflictAction.Defer)
-        {
-            // CfSharp removes the conflict only after a successful apply. A retry converges here.
-            status = CloudRemoteApplyEntryStatus.AlreadyApplied;
-        }
-
-        bool resolved = action != MirrorPulseConflictAction.Defer &&
-            status is CloudRemoteApplyEntryStatus.Applied or CloudRemoteApplyEntryStatus.AlreadyApplied;
-        if (resolved)
-        {
-            _center.Remove(conflict.ConflictId);
-            await _catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(
-                commandId, actionName, conflict.ConflictId.ToString("D"), "resolved"), cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        return new(resolved, false, preservedPath, status);
     }
+
+    private Task SaveFailedAsync(Guid id, string action, MirrorPulseConflictRecord conflict, CancellationToken cancellationToken) =>
+        _catalog.SaveUserCommandAsync(new(id, action, conflict.ConflictId.ToString("D"), "failed"), cancellationToken);
 }

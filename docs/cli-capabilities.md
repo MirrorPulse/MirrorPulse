@@ -22,7 +22,7 @@ production-release completion claim.
 | Configure / enable / select version | Partial | instance.* | Catalog changes require restart; live desired/effective behavior is incomplete. |
 | Package removal | Partial | adapter remove, uninstall / adapter.remove | Reference checks exist; full removal, crash recovery and user-file preservation need acceptance. |
 | Conflict inventory / snooze | Implemented | conflict list, show, snooze / conflict.list, conflict.snooze | show selects a record from list; paging and presentation paths are incomplete. |
-| Conflict resolution | Partial | conflict resolve / conflict.resolve | Some CfSharp decisions execute. Remote Retry/DeleteLocal/DeleteRemote enqueue commands without an executor; preserve-path/side are not fully propagated. |
+| Conflict resolution | Partial | conflict resolve / conflict.resolve | Outcomes report pending/resolved/failed and a command ID; queued actions return exit 11. Remote Retry/DeleteLocal/DeleteRemote still need an executor; preserve-path/side are not fully propagated. |
 | Operation get / watch / cancel | Partial | operation.* | watch reads one snapshot; cancel persists state without stopping the underlying work. |
 | Settings / startup | Partial | config, developer-mode, startup / settings.get, settings.set | Persistence exists; some settings lack runtime consumers and no Windows startup task is registered. |
 | Diagnostics | Partial | diagnostics / diagnostics.collect | Local export exists. Name-based redaction does not prove arbitrary message values are safe; no automatic upload. |

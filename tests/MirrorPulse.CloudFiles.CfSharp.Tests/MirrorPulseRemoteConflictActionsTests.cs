@@ -90,6 +90,7 @@ public sealed class MirrorPulseRemoteConflictActionsTests
             MirrorPulseRemoteConflictActionOutcome queued = await actions.ApplyAsync(
                 queuedId, conflict, MirrorPulseConflictAction.DeleteRemote);
             Assert.IsTrue(queued.CommandQueued);
+            Assert.AreEqual(queuedId, queued.CommandId);
             await actions.ApplyAsync(queuedId, conflict, MirrorPulseConflictAction.DeleteRemote);
             Assert.AreEqual("pending", (await catalog.ReadUserCommandAsync(queuedId))?.State);
             Assert.HasCount(1, center.Query());
@@ -101,6 +102,7 @@ public sealed class MirrorPulseRemoteConflictActionsTests
                 MirrorPulseConflictPreservedSide.Remote,
                 _ => ValueTask.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes("remote side"))));
             Assert.IsFalse(copy.Resolved);
+            Assert.AreEqual("failed", (await catalog.ReadUserCommandAsync(copy.CommandId))?.State);
             Assert.AreEqual("remote side", await File.ReadAllTextAsync(copy.PreservedPath!));
             Assert.HasCount(1, center.Query());
         }

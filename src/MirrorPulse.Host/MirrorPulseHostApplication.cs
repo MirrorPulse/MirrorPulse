@@ -775,12 +775,16 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         MirrorPulseConflictAction action,
         CancellationToken cancellationToken)
     {
+        MirrorPulseConflictCommandResult command;
         if (await _catalog.ReadUploadConflictAsync(conflictId, cancellationToken)
                 .ConfigureAwait(false) is not null)
         {
-            await _session.ApplyUploadConflictAsync(conflictId, action, cancellationToken)
+            MirrorPulseConflictResolution resolution = await _session.ApplyUploadConflictAsync(conflictId, action, cancellationToken)
                 .ConfigureAwait(false);
-            _conflictCenter.Remove(conflictId);
+            MirrorPulseUserCommandRecord record = await _catalog.ReadUserCommandAsync(resolution.ResolutionId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidDataException("The conflict command outcome was not persisted.");
+            command = new(resolution.ResolutionId, conflictId, record.State, resolution.PreservedPath);
+            if (command.State == "resolved") _conflictCenter.Remove(conflictId);
         }
         else
         {
@@ -791,9 +795,11 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             {
                 _conflictCenter.Remove(conflictId);
             }
+            command = new(outcome.CommandId, conflictId, outcome.Resolved ? "resolved" : outcome.CommandQueued ? "pending" : "failed",
+                outcome.PreservedPath, !outcome.Resolved && !outcome.CommandQueued ? "ConflictApplyFailed" : null);
         }
 
-        return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+        return (await ReadStatusAsync(cancellationToken).ConfigureAwait(false)) with { ConflictCommand = command };
     }
 
     public async ValueTask DisposeAsync()

@@ -16,5 +16,6 @@ public static class MirrorPulseControlExitCodes
     public const int Unsupported = 8;
     public const int Storage = 9;
     public const int Cancelled = 10;
+    public const int Pending = 11;
     public const int Internal = 70;
 }

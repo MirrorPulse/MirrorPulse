@@ -93,6 +93,14 @@ The repository contains no-UI integration and regression fixtures in `eng/verify
 
 Successful commands return `0`. The process exit code table is:
 
+Conflict actions report `data.conflictCommand` with the durable command ID and
+`state` (`pending`, `resolved`, or `failed`). A queued action returns exit `11`;
+only a completed action reports resolved and returns `0`. A failed action result
+returns `7` with its state on stdout; request/transport failures use the ordinary
+error envelope on stderr. Missing outcome information from an older Host is
+reported as completion unknown, with exit `11`. Upload retry and keep-local
+choices schedule a transfer; accepting that choice does not complete the transfer.
+
 | Code | Meaning |
 | ---: | --- |
 | 1 | Usage |
@@ -105,6 +113,7 @@ Successful commands return `0`. The process exit code table is:
 | 8 | Unsupported |
 | 9 | Storage |
 | 10 | Cancelled |
+| 11 | Accepted, pending completion or completion unknown |
 | 70 | Internal failure |
 
 These values are defined by `MirrorPulse.Control.Contracts.MirrorPulseControlExitCodes`. CLI JSON schema 1 is distinct from Control protocol version 1, although both currently use version 1. The named pipe is restricted to the current user; Adapter workers remain isolated processes and are never addressed directly by the CLI.

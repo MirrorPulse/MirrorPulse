@@ -20,6 +20,10 @@ public sealed record MirrorPulseConflictResolution(
     string? PreservedPath,
     DateTimeOffset AppliedAt);
 
+/// <summary>Reports actual execution separately from acceptance of a conflict choice.</summary>
+public sealed record MirrorPulseConflictCommandResult(Guid CommandId, Guid ConflictId, string State,
+    string? PreservedPath = null, string? ErrorCode = null);
+
 public sealed record MirrorPulseConflictResolutionResult(
     MirrorPulseConflictResolution Resolution,
     MirrorPulseConflictRecord UpdatedConflict);

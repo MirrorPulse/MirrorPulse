@@ -57,10 +57,10 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
     private readonly MirrorPulseHostStartupCoordinator _startup;
     private readonly MirrorPulseControlClient _client;
 
-    public MirrorPulseCliHostOperations(MirrorPulseHostStartupOptions options)
+    public MirrorPulseCliHostOperations(MirrorPulseHostStartupOptions options, MirrorPulseControlClient? client = null)
     {
         _startup = new MirrorPulseHostStartupCoordinator(options: options);
-        _client = new MirrorPulseControlClient();
+        _client = client ?? new MirrorPulseControlClient();
     }
 
     public Task EnsureStartedAsync(CancellationToken cancellationToken) =>
@@ -166,6 +166,7 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
         {
             object result;
             string human;
+            int exitCode = MirrorPulseControlExitCodes.Success;
             switch (command.Path[0].ToLowerInvariant(),
                 command.Path.Count > 1 ? command.Path[1].ToLowerInvariant() : string.Empty)
             {
@@ -273,12 +274,25 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
                     conflictId = GetRequiredOption(command.Arguments, "conflict-id");
                     if (!Enum.TryParse(GetRequiredOption(command.Arguments, "action"), true,
                             out MirrorPulse.Core.Conflicts.MirrorPulseConflictAction action) ||
-                        action == MirrorPulse.Core.Conflicts.MirrorPulseConflictAction.Defer)
+                        !Enum.IsDefined(action) || action == MirrorPulse.Core.Conflicts.MirrorPulseConflictAction.Defer)
                         throw new ArgumentException("The conflict action is invalid.");
                     result = await _client.ResolveConflictAsync(Guid.Parse(conflictId), action,
                         GetOptionalOption(command.Arguments, "preserved-path"), cancellationToken)
                         .ConfigureAwait(false);
-                    human = $"Conflict resolved: {conflictId}";
+                    MirrorPulse.Core.Conflicts.MirrorPulseConflictCommandResult? outcome =
+                        ((MirrorPulse.Core.Host.MirrorPulseAppStatusResponse)result).ConflictCommand;
+                    if (outcome is null)
+                    {
+                        human = $"Conflict action accepted; completion is unknown: {conflictId}";
+                        exitCode = MirrorPulseControlExitCodes.Pending;
+                    }
+                    else
+                    {
+                        human = outcome.State == "resolved" ? $"Conflict resolved: {conflictId}" :
+                            $"Conflict action {outcome.State}: {conflictId}; command {outcome.CommandId:D}";
+                        exitCode = outcome.State == "resolved" ? MirrorPulseControlExitCodes.Success :
+                            outcome.State == "pending" ? MirrorPulseControlExitCodes.Pending : MirrorPulseControlExitCodes.Conflict;
+                    }
                     break;
                 case ("operation", "get"):
                 case ("operation", "watch"):
@@ -349,7 +363,7 @@ public sealed class MirrorPulseCliHostOperations : IMirrorPulseCliHostOperations
 
             await MirrorPulseCliOutputFormatter.WriteDataAsync(
                 result, human, json, output, cancellationToken).ConfigureAwait(false);
-            return MirrorPulseControlExitCodes.Success;
+            return exitCode;
         }
         catch (MirrorPulseControlException exception)
         {

@@ -54,42 +54,58 @@ public sealed class MirrorPulseUploadConflictActions
         }
 
         string? preservedPath = null;
-        switch (action)
+        if (!Enum.IsDefined(action) || action == MirrorPulseConflictAction.Defer)
+            throw new ArgumentOutOfRangeException(nameof(action));
+        Guid commandId = Guid.NewGuid();
+        string actionName = action.ToString().ToLowerInvariant();
+        await _catalog.SaveUserCommandAsync(new(commandId, actionName, conflictId.ToString("D"), "pending"), cancellationToken).ConfigureAwait(false);
+        try
         {
-            case MirrorPulseConflictAction.KeepLocal:
-                await AlignAcknowledgedRevisionAsync(conflict, cancellationToken).ConfigureAwait(false);
-                await _completion.PrepareRetryAsync(Guid.Parse(conflict.ChangeId), cancellationToken)
-                    .ConfigureAwait(false);
-                break;
-            case MirrorPulseConflictAction.Retry:
-                await _completion.PrepareRetryAsync(Guid.Parse(conflict.ChangeId), cancellationToken)
-                    .ConfigureAwait(false);
-                break;
-            case MirrorPulseConflictAction.KeepBoth:
-                preservedPath = await PreserveLocalCopyAsync(conflict, cancellationToken)
-                    .ConfigureAwait(false);
-                await _feed.AcknowledgeAsync(
-                    [new CloudLocalChangeAcknowledgement(Guid.Parse(conflict.ChangeId), null)],
-                    cancellationToken).ConfigureAwait(false);
-                break;
-            case MirrorPulseConflictAction.KeepRemote:
-            case MirrorPulseConflictAction.DeleteLocal:
-                DeleteLocalCopy(conflict);
-                await _feed.AcknowledgeAsync(
-                    [new CloudLocalChangeAcknowledgement(Guid.Parse(conflict.ChangeId), null)],
-                    cancellationToken).ConfigureAwait(false);
-                break;
-            case MirrorPulseConflictAction.DeleteRemote:
-                await DeleteRemoteAsync(conflict, cancellationToken).ConfigureAwait(false);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(action), action, null);
-        }
+            switch (action)
+            {
+                case MirrorPulseConflictAction.KeepLocal:
+                    await AlignAcknowledgedRevisionAsync(conflict, cancellationToken).ConfigureAwait(false);
+                    await _completion.PrepareRetryAsync(Guid.Parse(conflict.ChangeId), cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                case MirrorPulseConflictAction.Retry:
+                    await _completion.PrepareRetryAsync(Guid.Parse(conflict.ChangeId), cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                case MirrorPulseConflictAction.KeepBoth:
+                    preservedPath = await PreserveLocalCopyAsync(conflict, cancellationToken)
+                        .ConfigureAwait(false);
+                    await _feed.AcknowledgeAsync(
+                        [new CloudLocalChangeAcknowledgement(Guid.Parse(conflict.ChangeId), null)],
+                        cancellationToken).ConfigureAwait(false);
+                    break;
+                case MirrorPulseConflictAction.KeepRemote:
+                case MirrorPulseConflictAction.DeleteLocal:
+                    DeleteLocalCopy(conflict);
+                    await _feed.AcknowledgeAsync(
+                        [new CloudLocalChangeAcknowledgement(Guid.Parse(conflict.ChangeId), null)],
+                        cancellationToken).ConfigureAwait(false);
+                    break;
+                case MirrorPulseConflictAction.DeleteRemote:
+                    await DeleteRemoteAsync(conflict, cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(action), action, null);
+            }
 
-        await _catalog.SetUploadConflictStatusAsync(conflictId, MirrorPulseConflictStatus.Resolved,
-            cancellationToken).ConfigureAwait(false);
-        return new MirrorPulseConflictResolution(Guid.NewGuid(), conflictId, action,
-            preservedPath, DateTimeOffset.UtcNow);
+            await _catalog.SetUploadConflictStatusAsync(conflictId, MirrorPulseConflictStatus.Resolved,
+                cancellationToken).ConfigureAwait(false);
+            string commandState = action is MirrorPulseConflictAction.KeepLocal or MirrorPulseConflictAction.Retry or MirrorPulseConflictAction.DeleteRemote
+                ? "pending" : "resolved";
+            await _catalog.SaveUserCommandAsync(new(commandId, actionName, conflictId.ToString("D"), commandState), cancellationToken).ConfigureAwait(false);
+            return new MirrorPulseConflictResolution(commandId, conflictId, action,
+                preservedPath, DateTimeOffset.UtcNow);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await _catalog.SaveUserCommandAsync(new(commandId, actionName, conflictId.ToString("D"), "failed"), cancellationToken).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private async ValueTask AlignAcknowledgedRevisionAsync(
