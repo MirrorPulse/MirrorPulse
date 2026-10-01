@@ -237,7 +237,15 @@ try {
             Start-Sleep -Milliseconds 500
         } while ([DateTime]::UtcNow -lt $deadline)
         if ($drainedStatus.data.pendingUploads -ne 0) {
-            throw "The upload journal did not drain after the Local Adapter accepted the queued file."
+            $instanceStatus = @($drainedStatus.data.instances) | Where-Object instanceId -eq $instanceId | Select-Object -First 1
+            $logPath = Join-Path $dataRoot 'logs\mirrorpulse.log'
+            if (Test-Path -LiteralPath $logPath) {
+                Write-Host 'Recent safe upload diagnostics:'
+                Get-Content -LiteralPath $logPath -Tail 8 | ForEach-Object { Write-Host $_ }
+            }
+            throw "The upload journal did not drain. Pending=$($drainedStatus.data.pendingUploads); " +
+                "UploadConflicts=$($drainedStatus.data.pendingUploadConflicts); " +
+                "Phase=$($instanceStatus.phase); Error=$($instanceStatus.lastErrorCode)."
         }
 
         # Both sides change while the Host is stopped. The conflict must survive another restart.

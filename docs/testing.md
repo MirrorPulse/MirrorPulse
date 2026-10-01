@@ -20,8 +20,9 @@ before or after each of these real persistence boundaries:
 | Product catalog | Product catalog command write | Old/new durable command state |
 | Pending remote batch | Host catalog opaque replay intent and candidate snapshot | No record before save, identical batch/snapshot after save |
 | Conflict copy | Flushed staging/hash/manifest save | Original untouched; incomplete intent before commit, verified copy after manifest commit |
+| Full rescan | Product scan generation/phase commit | Stable pending generation across process exit, with no copied Cloud Files journal |
 
-All 24 combinations execute in the managed suite. The probe requires a fixture
+All 28 combinations execute in the managed suite. The probe requires a fixture
 marker. It does not register a sync root, open user files, or install packages.
 The original crash-probe mode still exercises an uncommitted CfSharp SQLite WAL
 transaction in the native suite.
@@ -39,6 +40,14 @@ dotnet test tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release -
 Native Cloud Files and installed MSIX checks must run under a clean Windows
 test user or a disposable runner. Do not run installation/uninstallation probes
 against a user's configured application or storage sources.
+
+The disposable GitHub-hosted native fixture enables a bounded NTFS USN journal
+when the image has none. The preparation script rejects other environments.
+Conditional in-sync verification requires a positive native USN. A missing token
+keeps product reconciliation pending instead of using an unconditional mark.
+The native rescan test exercises real feed overflow, offline root deferral,
+directory ACL denial without remote deletion, and a full runtime/store restart
+after acknowledgement but before the product projection completes.
 
 ## CI evidence
 

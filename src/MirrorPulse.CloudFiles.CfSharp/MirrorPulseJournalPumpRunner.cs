@@ -30,7 +30,8 @@ public sealed class MirrorPulseJournalPumpRunner
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await ReportAsync(null, "JournalReadFailed", exception, report, cancellationToken).ConfigureAwait(false);
+            await ReportAsync(null, exception is MirrorPulseMutationAmbiguousException ? "MutationOutcomeAmbiguous" : "JournalReadFailed",
+                exception, report, cancellationToken).ConfigureAwait(false);
             return false;
         }
         if (batch.RequiresFullRescan) return false;

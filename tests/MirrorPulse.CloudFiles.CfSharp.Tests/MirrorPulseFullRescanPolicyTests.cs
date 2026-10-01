@@ -1,5 +1,7 @@
 using System.Runtime.Versioning;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
@@ -67,29 +69,73 @@ public sealed class MirrorPulseFullRescanPolicyTests
             var router = new MirrorPulseRootRouter(paths.SyncRootPath, [first, second]);
             var policy = new MirrorPulseFullRescanPolicy(fileSystem, feed, state, router, catalog, transport, transport,
                 instance => instance == active, transport, transport, transport);
-            IOException? offlinePending = null;
             try { await new MirrorPulseCfSharpFullRescanAdapter(feed, policy.ReconcileAsync).HandleAsync(signal, timeout.Token); }
-            catch (IOException exception) { offlinePending = exception; }
             catch (CloudFilesException exception)
             {
                 Assert.Fail($"CfSharp 0.1.0-preview.2: {exception.Operation}, HRESULT 0x{exception.HResult:X8}, Win32 {exception.Win32ErrorCode}; {exception}");
             }
-            Assert.IsNotNull(offlinePending);
+            CollectionAssert.AreEqual(new[] { second.RootId }, (await catalog.ReadDeferredRescanRootsAsync(timeout.Token)).ToArray());
             Assert.AreEqual(1, transport.Uploads.GetValueOrDefault(active));
             Assert.AreEqual(0, transport.Uploads.GetValueOrDefault(offline));
             Assert.AreEqual("active local data", await File.ReadAllTextAsync(transport.PathFor(active, "note.txt"), timeout.Token));
             Assert.AreEqual(CloudSynchronizationState.InSync,
                 (await fileSystem.GetFile("Docs/note.txt").InspectAsync(timeout.Token)).SynchronizationState);
+            // A missing known file must not be deleted remotely if a different subtree is unreadable.
+            File.Delete(Path.Combine(paths.SyncRootPath, "Docs", "note.txt"));
+            string deniedPath = Path.Combine(paths.SyncRootPath, "Docs", "denied");
+            DirectoryInfo denied = Directory.CreateDirectory(deniedPath);
+            DirectorySecurity originalAcl = denied.GetAccessControl();
+            var restricted = denied.GetAccessControl();
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            restricted.AddAccessRule(new FileSystemAccessRule(identity.User!, FileSystemRights.ListDirectory, AccessControlType.Deny));
+            denied.SetAccessControl(restricted);
+            try
+            {
+                var interrupted = new MirrorPulseFullRescanRecovery(catalog, policy.ReconcileAsync,
+                    feed.AcknowledgeFullRescanAsync, _ => ValueTask.CompletedTask);
+                bool permissionFailed = false;
+                try { await interrupted.RunAsync(new(true), timeout.Token); }
+                catch (UnauthorizedAccessException) { permissionFailed = true; }
+                catch (CloudFilesException exception) when (exception.Win32ErrorCode == 5) { permissionFailed = true; }
+                Assert.IsTrue(permissionFailed, "The native fixture must exercise an actual denied directory.");
+                Assert.AreEqual(0, transport.Deletes);
+                Assert.IsTrue(File.Exists(transport.PathFor(active, "note.txt")));
+                Assert.AreEqual(MirrorPulseFullRescanPhase.Running, (await catalog.ReadFullRescanAsync(timeout.Token))!.Phase);
+            }
+            finally { denied.SetAccessControl(originalAcl); Directory.Delete(deniedPath); }
             RootRegistration enabledSecond = Registration(offline, "Offline", RootRegistrationState.Active);
             policy = new(fileSystem, feed, state, new(paths.SyncRootPath, [first, enabledSecond]), catalog, transport, transport,
                 _ => true, transport, transport, transport);
-            MirrorPulseFullRescanResult result = await new MirrorPulseCfSharpFullRescanAdapter(feed, policy.ReconcileAsync).HandleAsync(signal, timeout.Token);
-            Assert.IsTrue(result.WasRequired);
+            var ackGap = new MirrorPulseFullRescanRecovery(catalog, policy.ReconcileAsync, feed.AcknowledgeFullRescanAsync,
+                _ => throw new IOException("Projection failed after native rescan acknowledgement."));
+            await Assert.ThrowsExactlyAsync<IOException>(() => ackGap.RunAsync(new(false), timeout.Token).AsTask());
+            Assert.AreEqual(MirrorPulseFullRescanPhase.Acknowledging, (await catalog.ReadFullRescanAsync(timeout.Token))!.Phase);
             Assert.AreEqual(1, transport.Uploads[active]);
             Assert.AreEqual(1, transport.Uploads[offline]);
             Assert.AreEqual("offline local data", await File.ReadAllTextAsync(transport.PathFor(offline, "offline.txt"), timeout.Token));
+            Assert.AreEqual(1, transport.Deletes);
+            await feed.DisposeAsync();
+            await fileSystem.DisposeAsync();
+            await catalog.DisposeAsync();
+            var restartedState = new MirrorPulseCfSharpStateSession(paths);
+            await using var restarted = new MirrorPulseCloudFileSystemBuilder(paths).WithStateStore(restartedState)
+                .WithContentProvider(MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath)).Build();
+            await restarted.StartAsync(timeout.Token);
+            await using CloudLocalChangeFeed restartedFeed = restarted.CreateLocalChangeFeed();
+            await restartedFeed.StartAsync(timeout.Token);
+            await using var reopenedCatalog = await MirrorPulseProductCatalog.OpenAsync(paths, timeout.Token);
+            policy = new(restarted, restartedFeed, restartedState, new(paths.SyncRootPath, [first, enabledSecond]), reopenedCatalog,
+                transport, transport, _ => true, transport, transport, transport);
+            var recovered = new MirrorPulseFullRescanRecovery(reopenedCatalog, policy.ReconcileAsync, restartedFeed.AcknowledgeFullRescanAsync,
+                async token => await reopenedCatalog.CompleteRootRescanAsync(second.RootId, token));
+            Assert.IsTrue((await recovered.RunAsync(new(false), timeout.Token)).WasRequired);
+            Assert.IsNull(await reopenedCatalog.ReadFullRescanAsync(timeout.Token));
+            Assert.IsEmpty(await reopenedCatalog.ReadDeferredRescanRootsAsync(timeout.Token));
+            Assert.AreEqual(1, transport.Uploads[active]);
+            Assert.AreEqual(1, transport.Uploads[offline]);
+            Assert.AreEqual(1, transport.Deletes);
             await File.WriteAllTextAsync(Path.Combine(paths.SyncRootPath, "Docs", "after.txt"), "after rescan", timeout.Token);
-            Assert.IsFalse((await feed.ReadBatchAsync(timeout.Token)).RequiresFullRescan);
+            Assert.IsFalse((await restartedFeed.ReadBatchAsync(timeout.Token)).RequiresFullRescan);
         }
         finally
         {
@@ -102,6 +148,7 @@ public sealed class MirrorPulseFullRescanPolicyTests
         IMirrorPulseWorkerRangeTransport, IMirrorPulseWorkerDirectoryPageSource, IMirrorPulseWorkerMutationTransport
     {
         public Dictionary<InstanceId, int> Uploads { get; } = [];
+        public int Deletes { get; private set; }
         public string PathFor(InstanceId instance, string path) => Path.Combine(root, instance.ToString(), path.Replace('/', Path.DirectorySeparatorChar));
         private string? Revision(InstanceId instance, string path) => File.Exists(PathFor(instance, path))
             ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(PathFor(instance, path)))) : null;
@@ -133,6 +180,9 @@ public sealed class MirrorPulseFullRescanPolicyTests
                 .AsSpan((int)request.Offset, (int)request.Length).ToArray()));
         public ValueTask<string?> DeleteAsync(MirrorPulseWorkerDeleteRequest request, CancellationToken cancellationToken)
         {
+            string? actual = Revision(request.InstanceId, request.NormalizedPath);
+            if (actual is not null && actual != request.ExpectedRevision) throw new MirrorPulseWorkerMutationConflictException(request.ExpectedRevision, actual);
+            Deletes++;
             File.Delete(PathFor(request.InstanceId, request.NormalizedPath));
             return ValueTask.FromResult<string?>(null);
         }

@@ -45,10 +45,21 @@ The journal pump handles `RequiresFullRescan` through CfSharp's public local
 enumeration and inspection APIs. It completes discovery before missing-file
 decisions, uploads fully available dirty files through the mutation ledger, and
 uses CfSharp placeholder conversion or updates to commit the confirmed identity.
-Only complete reconciliation acknowledges the official rescan marker. Offline
-roots keep reconciliation pending and never receive uploads. Incomplete local
+Only complete reconciliation of enabled roots acknowledges the official rescan
+marker. Offline roots retain separate durable reconciliation obligations and
+never receive uploads. Re-enabling a root consumes its obligation before normal
+journal reads; it does not block unrelated online roots. Incomplete local
 content and unsupported directory mutations remain durable blocked decisions;
 they are not discarded or treated as successful remote changes.
+
+The product catalog stores a scan generation and phase, not another Cloud Files
+journal. Restart repeats public discovery and uses stable mutation intents to
+avoid repeated remote writes. Permissions, cancellation and incomplete discovery
+leave the scan pending without authorizing deletion. A projection failure after
+official acknowledgement also retains the generation until recovery succeeds.
+Rescan shares the per-instance scheduler with remote polling and streamed apply.
+Native conversion and update use CfSharp coordination; content is rechecked and
+marked in sync only with the returned operation USN as a precondition.
 
 Remote mutations persist intent before dispatch. On restart, an uncertain upload
 uses bounded remote reads and verifies its exact length and SHA-256 between two

@@ -173,7 +173,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
                 paths, topology.Instances, topology.Roots, provider, workers, workers,
                 rootRouter, catalog, instanceId => topology.Instances.Any(instance =>
                     instance.InstanceId == instanceId && instance.Enabled),
-                conflictCenter, conflictNotifications, workers);
+                conflictCenter, conflictNotifications, workers, remoteScheduler);
             currentSession = session;
             var remoteSnapshotStore = new MirrorPulseFileRemotePollSnapshotStore(paths.DataRootPath);
             remotePoller = new MirrorPulseActiveRemotePoller(
@@ -321,6 +321,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         IReadOnlyList<MirrorPulseInstanceRuntimeState> runtime =
             await MirrorPulseProductCatalog.ReadRuntimeSnapshotAsync(_paths, cancellationToken)
                 .ConfigureAwait(false);
+        IReadOnlyList<RootId> deferredRescans = await _catalog.ReadDeferredRescanRootsAsync(cancellationToken).ConfigureAwait(false);
         return new MirrorPulseControlTopology(
             topology.Installations.Select(installation => new MirrorPulseControlInstallation(
                 installation.AdapterId.ToString(),
@@ -361,7 +362,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             runtime.Select(state => new MirrorPulseControlRuntimeState(
                 state.InstanceId.ToString(),
                 state.Phase,
-                state.RequiresFullRescan,
+                state.RequiresFullRescan || topology.Roots.Any(root => root.InstanceId == state.InstanceId && deferredRescans.Contains(root.RootId)),
                 state.LastSuccessfulSync,
                 state.LastErrorCode,
                 state.TransferProgress?.Operation,

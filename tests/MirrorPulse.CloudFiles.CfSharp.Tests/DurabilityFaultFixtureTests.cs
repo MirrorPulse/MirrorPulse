@@ -61,6 +61,15 @@ public sealed class DurabilityFaultFixtureTests
             string expected = timing == FaultTiming.Before ? "before" : "after";
             switch (boundary)
             {
+                case DurabilityBoundary.RescanCheckpoint:
+                    await using (MirrorPulseProductCatalog catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+                    {
+                        MirrorPulseFullRescanCheckpoint checkpoint = (await catalog.ReadFullRescanAsync())!;
+                        Assert.IsNotNull(checkpoint);
+                        Assert.AreEqual(timing == FaultTiming.Before ? MirrorPulseFullRescanPhase.Requested : MirrorPulseFullRescanPhase.Running, checkpoint.Phase);
+                        Assert.AreEqual(checkpoint.Generation, (await catalog.BeginFullRescanAsync()).Generation);
+                    }
+                    break;
                 case DurabilityBoundary.ConflictCopy:
                     MirrorPulseConflictRecord copyConflict = DurabilityFaultProbe.CopyConflict();
                     string copyPath = Path.Combine(MirrorPulseConflictDirectory.GetPath(paths, copyConflict.InstanceId), "local",

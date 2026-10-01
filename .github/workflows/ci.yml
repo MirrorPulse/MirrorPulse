@@ -74,7 +74,9 @@ jobs:
 
       - name: Verify native Cloud Files integration
         if: github.event_name == 'workflow_dispatch'
-        run: pwsh ./eng/verify-native.ps1
+        run: |
+          pwsh ./eng/prepare-native-ci-volume.ps1
+          pwsh ./eng/verify-native.ps1
 
       - name: Verify unsupported Windows Server rejection
         shell: pwsh
@@ -142,6 +144,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          pwsh ./eng/prepare-native-ci-volume.ps1
           $directory = Join-Path $env:RUNNER_TEMP 'mirrorpulse-cli-local'
           New-Item -ItemType Directory -Path $directory -Force | Out-Null
           gh release download --repo MirrorPulse/adapter-local --dir $directory --pattern '*.mpadapter*'

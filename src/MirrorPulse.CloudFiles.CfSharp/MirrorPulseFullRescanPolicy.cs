@@ -17,16 +17,26 @@ public sealed class MirrorPulseFullRescanPolicy(CloudFileSystem fileSystem, Clou
     IMirrorPulseWorkerUploadTransport uploads, IMirrorPulseWorkerStatTransport stats,
     Func<InstanceId, bool> mayDispatch, IMirrorPulseWorkerMutationTransport? mutations = null,
     IMirrorPulseWorkerRangeTransport? ranges = null, IMirrorPulseWorkerDirectoryPageSource? directories = null,
-    MirrorPulseConflictCenter? conflicts = null, MirrorPulseConflictNotificationBridge? notifications = null)
+    MirrorPulseConflictCenter? conflicts = null, MirrorPulseConflictNotificationBridge? notifications = null,
+    MirrorPulseInstanceScheduler? scheduler = null)
 {
     private readonly MirrorPulseMutationExecutor _executor = new(catalog);
     private readonly MirrorPulseMutationReadback _readback = new(stats, ranges, directories);
 
-    public async ValueTask<int> ReconcileAsync(CancellationToken cancellationToken)
+    public ValueTask<int> ReconcileAsync(CancellationToken cancellationToken)
+    {
+        if (scheduler is null) return ReconcileCoreAsync(cancellationToken);
+        InstanceId[] instances = router.Registrations.Where(root => root.State == RootRegistrationState.Active && mayDispatch(root.InstanceId))
+            .Select(root => root.InstanceId).Distinct().OrderBy(instance => instance.Value).ToArray();
+        ValueTask<int> EnterAsync(int index, CancellationToken token) => index == instances.Length ? ReconcileCoreAsync(token) :
+            scheduler.RunAsync(instances[index], nested => EnterAsync(index + 1, nested), token);
+        return EnterAsync(0, cancellationToken);
+    }
+
+    private async ValueTask<int> ReconcileCoreAsync(CancellationToken cancellationToken)
     {
         var observations = new Dictionary<string, (CloudItem Item, CloudItemSnapshot Snapshot)>(StringComparer.OrdinalIgnoreCase);
         var enabled = router.Registrations.Where(root => root.State == RootRegistrationState.Active && mayDispatch(root.InstanceId)).ToArray();
-        bool hasOfflineRoots = enabled.Length != router.Registrations.Count;
         // Complete discovery before any missing-path decision. Nonrecursive public enumeration
         // lets each materialized directory failure abort the scan rather than silently skip a subtree.
         foreach (RootRegistration root in enabled)
@@ -103,7 +113,10 @@ public sealed class MirrorPulseFullRescanPolicy(CloudFileSystem fileSystem, Clou
                     CloudPlaceholderMutationResult coordinated = observation.Snapshot.IsPlaceholder
                         ? await observation.Item.UpdatePlaceholderAsync(CloudPlaceholderPatch.CreateBuilder().WithIdentity(identity).WithInSyncState(false).Build(), token).ConfigureAwait(false)
                         : await observation.Item.ConvertToPlaceholderAsync(identity, cancellationToken: token).ConfigureAwait(false);
-                    if (coordinated.OperationUsn is not { } usn) throw new MirrorPulseMutationAmbiguousException();
+                    long? observedUsn = coordinated.OperationUsn;
+                    if (observedUsn is null or <= 0)
+                        observedUsn = (await observation.Item.SetInSyncAsync(false, cancellationToken: token).ConfigureAwait(false)).OperationUsn;
+                    if (observedUsn is not > 0) throw new MirrorPulseMutationAmbiguousException("The filesystem did not provide a usable in-sync precondition.");
                     await using (var verification = new FileStream(observation.Item.FullPath, FileMode.Open, FileAccess.Read,
                         FileShare.Read, 64 * 1024, FileOptions.Asynchronous))
                     {
@@ -111,7 +124,7 @@ public sealed class MirrorPulseFullRescanPolicy(CloudFileSystem fileSystem, Clou
                             Convert.ToHexString(await SHA256.HashDataAsync(verification, token).ConfigureAwait(false)) != intent.ContentSha256)
                             throw new MirrorPulseMutationAmbiguousException();
                     }
-                    await observation.Item.SetInSyncAsync(true, new CloudInSyncChangeOptions(usn), token).ConfigureAwait(false);
+                    await observation.Item.SetInSyncAsync(true, new CloudInSyncChangeOptions(observedUsn), token).ConfigureAwait(false);
                 }
                 if (pending is not null && pending.State != MirrorPulseMutationState.Prepared)
                     await _executor.ReconcileAsync(pending, _readback.VerifyAsync, Acknowledge, cancellationToken).ConfigureAwait(false);
@@ -174,7 +187,8 @@ public sealed class MirrorPulseFullRescanPolicy(CloudFileSystem fileSystem, Clou
             }
             catch (MirrorPulseWorkerMutationConflictException conflict) { await SaveConflictAsync(intent, item.RelativePath, conflict, cancellationToken).ConfigureAwait(false); }
         }
-        if (hasOfflineRoots) throw new IOException("Full reconciliation remains pending for offline Adapter roots.");
+        foreach (RootRegistration root in router.Registrations.Where(root => !enabled.Contains(root)))
+            await catalog.RequireRootRescanAsync(root.RootId, cancellationToken).ConfigureAwait(false);
         return count;
     }
 

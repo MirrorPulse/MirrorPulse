@@ -10,7 +10,7 @@ using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.CfSharp.CrashProbe;
 
-public enum DurabilityBoundary { RemoteWrite, JournalAcknowledgement, SnapshotSave, CatalogSave, PendingRemoteBatch, ConflictCopy }
+public enum DurabilityBoundary { RemoteWrite, JournalAcknowledgement, SnapshotSave, CatalogSave, PendingRemoteBatch, ConflictCopy, RescanCheckpoint }
 public enum FaultTiming { Before, After }
 public enum FaultMode { Throw, Exit }
 
@@ -38,6 +38,13 @@ public static class DurabilityFaultProbe
         {
             switch (boundary)
             {
+                case DurabilityBoundary.RescanCheckpoint:
+                    await using (MirrorPulseProductCatalog catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+                    {
+                        MirrorPulseFullRescanCheckpoint checkpoint = await catalog.BeginFullRescanAsync();
+                        await InjectAsync(async () => await catalog.UpdateFullRescanAsync(checkpoint.Generation, MirrorPulseFullRescanPhase.Running), timing, mode);
+                    }
+                    break;
                 case DurabilityBoundary.ConflictCopy:
                     await File.WriteAllTextAsync(Path.Combine(paths.SyncRootPath, "note.txt"), "original side");
                     var copies = new MirrorPulseConflictCopyStore(paths, checkpoint =>
