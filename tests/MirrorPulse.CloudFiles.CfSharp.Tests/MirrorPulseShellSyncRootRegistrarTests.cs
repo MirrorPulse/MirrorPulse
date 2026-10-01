@@ -30,11 +30,12 @@ public sealed class MirrorPulseShellSyncRootRegistrarTests
 
     [TestMethod]
     [DoNotParallelize]
+    [TestCategory("PackagedShell")]
     public async Task PackagedRegistrationPublishesCustomThenUnifiedDisplayName()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_PACKAGED_SHELL_TEST") != "1")
         {
-            return;
+            Assert.Inconclusive("Requires the PackagedShell test environment; run the dedicated verification gate.");
         }
 
         Assert.AreEqual("0B72358D-6DC9-479D-8C28-F0232B42A0B3",

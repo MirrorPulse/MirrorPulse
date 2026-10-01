@@ -212,7 +212,7 @@ internal sealed class SftpProtocolFixture : IAsyncDisposable
         Directory.Delete(StorageDirectory, recursive: true);
     }
 
-    private static string FindRepositoryRoot()
+    internal static string FindRepositoryRoot()
     {
         string? directory = AppContext.BaseDirectory;
         while (directory is not null && !File.Exists(Path.Combine(directory, "MirrorPulse.sln")))

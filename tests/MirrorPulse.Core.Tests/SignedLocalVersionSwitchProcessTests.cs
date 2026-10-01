@@ -24,13 +24,14 @@ public sealed class SignedLocalVersionSwitchProcessTests
     };
 
     [TestMethod]
+    [TestCategory("OfficialPackages")]
     public async Task PinnedInstanceRunsEachSignedVersionAndStaysOfflineWhenDisabled()
     {
         string? aggregateDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_OFFICIAL_AGGREGATE");
         string? previousDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_LOCAL_PREVIOUS_RELEASE");
         if (string.IsNullOrWhiteSpace(aggregateDirectory) || string.IsNullOrWhiteSpace(previousDirectory))
         {
-            return;
+            Assert.Inconclusive("Requires the OfficialPackages test environment; run the dedicated verification gate.");
         }
 
         using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(

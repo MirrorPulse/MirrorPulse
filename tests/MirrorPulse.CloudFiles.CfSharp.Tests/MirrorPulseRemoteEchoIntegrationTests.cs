@@ -13,11 +13,12 @@ public sealed class MirrorPulseRemoteEchoIntegrationTests
 {
     [TestMethod]
     [DoNotParallelize]
+    [TestCategory("NativeCloudFiles")]
     public async Task NativeRemoteMetadataApplicationDoesNotEnterLocalUploadJournal()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
         {
-            return;
+            Assert.Inconclusive("Requires the NativeCloudFiles test environment; run the dedicated verification gate.");
         }
 
         string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-native-tests", Guid.NewGuid().ToString("N"));

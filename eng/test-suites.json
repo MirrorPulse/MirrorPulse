@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "allowSkipped": [
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseCloudHostSessionTests.PackagedSessionReopensOfficialSqliteDatabase",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeExternalConsumerEnumeratesAndHydratesAcrossRestart",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeOneSyncRootRetainsMultipleInstancesAndDirectoriesAcrossRestart",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseJournalUploadCompletionTests.NativeFailureRetryAndSuccessUseCfSharpJournalAcrossRestart",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseJournalUploadSourceTests.NativePersistedUploadConflictStopsAutomaticJournalDispatchAcrossRestart",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseJournalUploadSourceTests.NativeUnacknowledgedJournalSurvivesRestartAndDisabledInstance",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseLocalBatchMapperTests.NativeJournalBatchRetainsOperationIdentityWithoutContentPayload",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseRemoteBatchCoordinatorTests.NativeBatchCursorSurvivesCrashGapAndRejectsFingerprintReuse",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseRemoteEchoIntegrationTests.NativeRemoteMetadataApplicationDoesNotEnterLocalUploadJournal",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseShellSyncRootRegistrarTests.PackagedRegistrationPublishesCustomThenUnifiedDisplayName",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseSqliteCrashRecoveryTests.NativeOfficialStoreRecoversCommittedRepositoriesAndRollsBackInterruptedWrite",
+    "MirrorPulse.Core.Tests.FtpWorkerProcessTests.SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp",
+    "MirrorPulse.Core.Tests.OfficialAdapterAggregateProcessTests.LatestOfficialReleasesInstallWithoutDetachedSignatureFiles",
+    "MirrorPulse.Core.Tests.OfficialAdapterAggregateProcessTests.SignedLocalReleaseListsHydratesAndUploadsThroughHostAndCfSharp",
+    "MirrorPulse.Core.Tests.SignedLocalVersionSwitchProcessTests.PinnedInstanceRunsEachSignedVersionAndStaysOfflineWhenDisabled",
+    "MirrorPulse.Core.Tests.SignedSftpHostProcessTests.SignedSftpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp",
+    "MirrorPulse.Core.Tests.SignedSmbHostProcessTests.SignedSmbReleaseListsReadsAndConditionallyUploadsThroughHostAndCfSharp",
+    "MirrorPulse.Core.Tests.SignedWebDavWorkerProcessTests.SignedWorkerPreservesEtagAndRejectsStaleUploadWithoutOverwritingRemote"
+  ],
+  "required": {
+    "native": [
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeExternalConsumerEnumeratesAndHydratesAcrossRestart",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeOneSyncRootRetainsMultipleInstancesAndDirectoriesAcrossRestart",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseJournalUploadCompletionTests.NativeFailureRetryAndSuccessUseCfSharpJournalAcrossRestart",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseJournalUploadSourceTests.NativePersistedUploadConflictStopsAutomaticJournalDispatchAcrossRestart",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseJournalUploadSourceTests.NativeUnacknowledgedJournalSurvivesRestartAndDisabledInstance",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseLocalBatchMapperTests.NativeJournalBatchRetainsOperationIdentityWithoutContentPayload",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseRemoteBatchCoordinatorTests.NativeBatchCursorSurvivesCrashGapAndRejectsFingerprintReuse",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseRemoteEchoIntegrationTests.NativeRemoteMetadataApplicationDoesNotEnterLocalUploadJournal",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseSqliteCrashRecoveryTests.NativeOfficialStoreRecoversCommittedRepositoriesAndRollsBackInterruptedWrite"
+    ],
+    "official": [
+      "MirrorPulse.Core.Tests.FtpWorkerProcessTests.SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp",
+      "MirrorPulse.Core.Tests.OfficialAdapterAggregateProcessTests.LatestOfficialReleasesInstallWithoutDetachedSignatureFiles",
+      "MirrorPulse.Core.Tests.OfficialAdapterAggregateProcessTests.SignedLocalReleaseListsHydratesAndUploadsThroughHostAndCfSharp",
+      "MirrorPulse.Core.Tests.SignedLocalVersionSwitchProcessTests.PinnedInstanceRunsEachSignedVersionAndStaysOfflineWhenDisabled",
+      "MirrorPulse.Core.Tests.SignedSftpHostProcessTests.SignedSftpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp",
+      "MirrorPulse.Core.Tests.SignedSmbHostProcessTests.SignedSmbReleaseListsReadsAndConditionallyUploadsThroughHostAndCfSharp",
+      "MirrorPulse.Core.Tests.SignedWebDavWorkerProcessTests.SignedWorkerPreservesEtagAndRejectsStaleUploadWithoutOverwritingRemote"
+    ],
+    "packaged": [
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseCloudHostSessionTests.PackagedSessionReopensOfficialSqliteDatabase",
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseShellSyncRootRegistrarTests.PackagedRegistrationPublishesCustomThenUnifiedDisplayName"
+    ],
+    "signed": [
+      "MirrorPulse.Core.Tests.FtpSignedPackageProcessTests.PublishedArchitecturesInstallWithVerifiedSignatureAndNativeWorkerStarts",
+      "MirrorPulse.Core.Tests.SftpSignedPackageProcessTests.SignedDualArchitecturePackageInstallsAndRunsNativeSftpWorker"
+    ]
+  }
+}

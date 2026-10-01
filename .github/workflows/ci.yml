@@ -58,7 +58,10 @@ jobs:
         run: pwsh ./eng/setup-test-environment.ps1
 
       - name: Test
-        run: dotnet test MirrorPulse.sln --configuration Release --no-build
+        run: |
+          dotnet test MirrorPulse.sln --configuration Release --no-build --logger trx --results-directory artifacts/test-results/managed
+          if ($LASTEXITCODE -ne 0) { throw 'Managed tests failed.' }
+          pwsh ./eng/verify-test-results.ps1 -Suite managed -ResultsDirectory artifacts/test-results/managed
 
       - name: Verify CLI completion gate
         run: pwsh ./eng/verify-cli-complete.ps1 -Configuration Release
@@ -130,7 +133,10 @@ jobs:
           pwsh ./eng/verify-cli-regression.ps1 -Runtime win-arm64 -PackagePath $package.FullName
 
       - name: Verify signed official packages and native ARM64 Workers
-        run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SignedPackageProcessTests
+        run: |
+          dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SignedPackageProcessTests --logger trx --results-directory artifacts/test-results/signed
+          if ($LASTEXITCODE -ne 0) { throw 'Signed ARM64 Worker tests failed.' }
+          pwsh ./eng/verify-test-results.ps1 -Suite signed -ResultsDirectory artifacts/test-results/signed
 
   official-adapters:
     runs-on: windows-latest
@@ -180,7 +186,10 @@ jobs:
         env:
           MIRRORPULSE_OFFICIAL_AGGREGATE: ${{ github.workspace }}/artifacts/official-adapters
           MIRRORPULSE_LOCAL_PREVIOUS_RELEASE: ${{ github.workspace }}/artifacts/local-previous
-        run: dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~OfficialAdapterAggregateProcessTests|FullyQualifiedName~SignedWebDavWorkerProcessTests|FullyQualifiedName~SignedLocalVersionSwitchProcessTests|FullyQualifiedName~SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp|FullyQualifiedName~SignedSftpHostProcessTests|FullyQualifiedName~SignedSmbHostProcessTests"
+        run: |
+          dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~OfficialAdapterAggregateProcessTests|FullyQualifiedName~SignedWebDavWorkerProcessTests|FullyQualifiedName~SignedLocalVersionSwitchProcessTests|FullyQualifiedName~SignedFtpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp|FullyQualifiedName~SignedSftpHostProcessTests|FullyQualifiedName~SignedSmbHostProcessTests" --logger trx --results-directory artifacts/test-results/official
+          if ($LASTEXITCODE -ne 0) { throw 'Official Adapter tests failed.' }
+          pwsh ./eng/verify-test-results.ps1 -Suite official -ResultsDirectory artifacts/test-results/official
 
       - name: Remove local SMB test share
         if: always()

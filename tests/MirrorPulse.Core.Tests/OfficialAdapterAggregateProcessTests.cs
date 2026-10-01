@@ -17,12 +17,13 @@ namespace MirrorPulse.Core.Tests;
 public sealed class OfficialAdapterAggregateProcessTests
 {
     [TestMethod]
+    [TestCategory("OfficialPackages")]
     public async Task LatestOfficialReleasesInstallWithoutDetachedSignatureFiles()
     {
         string? aggregateDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_OFFICIAL_AGGREGATE");
         if (string.IsNullOrWhiteSpace(aggregateDirectory))
         {
-            return;
+            Assert.Inconclusive("Requires the OfficialPackages test environment; run the dedicated verification gate.");
         }
 
         string manifestPath = Path.Combine(aggregateDirectory, "official-adapters.manifest.json");
@@ -67,12 +68,13 @@ public sealed class OfficialAdapterAggregateProcessTests
     }
 
     [TestMethod]
+    [TestCategory("OfficialPackages")]
     public async Task SignedLocalReleaseListsHydratesAndUploadsThroughHostAndCfSharp()
     {
         string? aggregateDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_OFFICIAL_AGGREGATE");
         if (string.IsNullOrWhiteSpace(aggregateDirectory))
         {
-            return;
+            Assert.Inconclusive("Requires the OfficialPackages test environment; run the dedicated verification gate.");
         }
 
         using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(

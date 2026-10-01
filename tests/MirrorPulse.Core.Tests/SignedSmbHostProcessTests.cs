@@ -14,6 +14,7 @@ namespace MirrorPulse.Core.Tests;
 public sealed class SignedSmbHostProcessTests
 {
     [TestMethod]
+    [TestCategory("OfficialPackages")]
     public async Task SignedSmbReleaseListsReadsAndConditionallyUploadsThroughHostAndCfSharp()
     {
         string? aggregateDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_OFFICIAL_AGGREGATE");
@@ -22,7 +23,7 @@ public sealed class SignedSmbHostProcessTests
         if (string.IsNullOrWhiteSpace(aggregateDirectory) || string.IsNullOrWhiteSpace(share) ||
             string.IsNullOrWhiteSpace(backingDirectory))
         {
-            return;
+            Assert.Inconclusive("Requires the OfficialPackages test environment; run the dedicated verification gate.");
         }
 
         string backingRoot = Path.GetFullPath(backingDirectory);

@@ -12,12 +12,13 @@ namespace MirrorPulse.Core.Tests;
 public sealed class SignedSftpHostProcessTests
 {
     [TestMethod]
+    [TestCategory("OfficialPackages")]
     public async Task SignedSftpReleaseReadsAndConditionallyUploadsThroughHostAndCfSharp()
     {
         string? aggregateDirectory = Environment.GetEnvironmentVariable("MIRRORPULSE_OFFICIAL_AGGREGATE");
         if (string.IsNullOrWhiteSpace(aggregateDirectory))
         {
-            return;
+            Assert.Inconclusive("Requires the OfficialPackages test environment; run the dedicated verification gate.");
         }
 
         using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(
