@@ -25,6 +25,11 @@
 - Credentials are held by Host; Workers receive configuration and necessary
   credential values over the instance connection.
 - Logs and exported diagnostics are local; the product has no telemetry upload.
+  Writers and ZIP export use a closed list of registered descriptions and typed
+  fields. Arbitrary messages, exception details, paths, URL values, unknown keys
+  and log filenames are omitted. Legacy logs are reconstructed through the same
+  policy. Diagnostic IDs and validated operation IDs/HRESULTs remain available
+  for correlation.
 
 ## Limitations that must remain explicit
 
@@ -37,8 +42,9 @@ process under the same account.
 Worker environment inheritance and peer verification still need hardening.
 Third-party publisher trust, unsigned developer-mode installation, Windows
 path canonicalization and installed-package revalidation are incomplete.
-Configuration validation and diagnostic value redaction also require further
-work. Do not describe these pending controls as implemented.
+Configuration validation, bounded diagnostic exports and end-to-end safe error
+presentation still require further work. Do not describe those pending controls
+as implemented.
 
 The current developer-mode setting does not enable unsigned installation.
 The current official trust anchor remains supported; rotation and revocation

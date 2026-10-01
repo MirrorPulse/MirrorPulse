@@ -12,7 +12,7 @@ public sealed class LocalRollingLogWriterTests
         var root = Path.Combine(Path.GetTempPath(), $"mirrorpulse-logs-{Guid.NewGuid():N}");
         try
         {
-            using var writer = new LocalRollingLogWriter(root, maxFileBytes: 240, backupCount: 2);
+            using var writer = new LocalRollingLogWriter(root, maxFileBytes: 500, backupCount: 2);
             for (var index = 0; index < 6; index++)
             {
                 await writer.WriteAsync(new LogEntry(LogLevel.Information, "sync", "Transfer complete", DateTimeOffset.UtcNow,

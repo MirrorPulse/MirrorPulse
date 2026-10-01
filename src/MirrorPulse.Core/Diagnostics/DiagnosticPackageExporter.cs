@@ -1,13 +1,12 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using MirrorPulse.Core.Contracts;
 
 namespace MirrorPulse.Core.Diagnostics;
 
 /// <summary>
-/// Exports local diagnostics and already-redacted log files without contacting a remote service.
+/// Exports only allowlisted local diagnostic fields without contacting a remote service.
 /// </summary>
 public sealed class DiagnosticPackageExporter
 {
@@ -41,24 +40,13 @@ public sealed class DiagnosticPackageExporter
                     foreach (var diagnosticEvent in events)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        var sanitized = new
-                        {
-                            diagnosticEvent.EventId,
-                            diagnosticEvent.Source,
-                            diagnosticEvent.Diagnostic,
-                            diagnosticEvent.OccurredAt,
-                            diagnosticEvent.CorrelationId,
-                            Properties = diagnosticEvent.Properties.ToDictionary(
-                                property => property.Key,
-                                property => LogFieldPolicy.Redact(property.Key, property.Value),
-                                StringComparer.Ordinal),
-                        };
+                        SafeDiagnosticEvent sanitized = SafeDiagnosticPolicy.Sanitize(diagnosticEvent);
                         await writer.WriteLineAsync(JsonSerializer.Serialize(sanitized).AsMemory(), cancellationToken).ConfigureAwait(false);
                     }
 
                     await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
                 }
-                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                int logIndex = 0;
                 foreach (var logFile in logFiles)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -68,13 +56,8 @@ public sealed class DiagnosticPackageExporter
                         continue;
                     }
 
-                    var baseName = Path.GetFileName(source);
-                    var entryName = $"logs/{baseName}";
-                    var suffix = 1;
-                    while (!names.Add(entryName))
-                    {
-                        entryName = $"logs/{Path.GetFileNameWithoutExtension(baseName)}-{suffix++}{Path.GetExtension(baseName)}";
-                    }
+                    string entryName = logIndex == 0 ? "logs/mirrorpulse.log" : $"logs/mirrorpulse-{logIndex:D3}.log";
+                    logIndex++;
 
                     var logEntry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
                     await using var destination = logEntry.Open();
@@ -107,18 +90,16 @@ public sealed class DiagnosticPackageExporter
             string sanitized;
             try
             {
-                JsonNode node = JsonNode.Parse(line)
-                    ?? throw new InvalidDataException("The diagnostic log line is empty.");
-                RedactNode(node);
-                sanitized = node.ToJsonString();
+                using JsonDocument document = JsonDocument.Parse(line);
+                sanitized = JsonSerializer.Serialize(SafeDiagnosticPolicy.SanitizeLegacyLog(document.RootElement));
             }
             catch (JsonException)
             {
-                sanitized = JsonSerializer.Serialize(new { message = LogFieldPolicy.RedactedValue });
+                sanitized = JsonSerializer.Serialize(SafeDiagnosticPolicy.SanitizeLegacyLog(default));
             }
             catch (InvalidDataException)
             {
-                sanitized = JsonSerializer.Serialize(new { message = LogFieldPolicy.RedactedValue });
+                sanitized = JsonSerializer.Serialize(SafeDiagnosticPolicy.SanitizeLegacyLog(default));
             }
 
             await output.WriteLineAsync(sanitized.AsMemory(), cancellationToken).ConfigureAwait(false);
@@ -127,31 +108,4 @@ public sealed class DiagnosticPackageExporter
         await output.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static void RedactNode(JsonNode node)
-    {
-        if (node is JsonObject objectNode)
-        {
-            foreach (KeyValuePair<string, JsonNode?> property in objectNode.ToArray())
-            {
-                if (LogFieldPolicy.IsSensitiveName(property.Key))
-                {
-                    objectNode[property.Key] = LogFieldPolicy.RedactedValue;
-                }
-                else if (property.Value is not null)
-                {
-                    RedactNode(property.Value);
-                }
-            }
-        }
-        else if (node is JsonArray arrayNode)
-        {
-            foreach (JsonNode? item in arrayNode)
-            {
-                if (item is not null)
-                {
-                    RedactNode(item);
-                }
-            }
-        }
-    }
 }

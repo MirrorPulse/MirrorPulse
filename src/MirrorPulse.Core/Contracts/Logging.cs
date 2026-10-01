@@ -29,6 +29,8 @@ public static class LogFieldPolicy
             normalized.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
             normalized.Contains("privatekey", StringComparison.OrdinalIgnoreCase) ||
             normalized.Contains("apikey", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("authorization", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
             normalized.Contains("credentialvalue", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -62,7 +64,7 @@ public sealed record LogField
 }
 
 /// <summary>
-/// Structured local log entry. Callers must keep secret material in LogField values.
+/// Structured local log input. Writers must apply the closed diagnostic export policy.
 /// </summary>
 public sealed record LogEntry
 {

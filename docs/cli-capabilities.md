@@ -25,7 +25,7 @@ production-release completion claim.
 | Conflict resolution | Partial | conflict resolve / conflict.resolve | Outcomes report pending/resolved/failed and a command ID; queued actions return exit 11. Remote Retry/DeleteLocal/DeleteRemote still need an executor; preserve-path/side are not fully propagated. |
 | Operation get / watch / cancel | Partial | operation.* | watch reads one snapshot; cancel persists state without stopping the underlying work. |
 | Settings / startup | Partial | config, developer-mode, startup / settings.get, settings.set | Persistence exists; some settings lack runtime consumers and no Windows startup task is registered. |
-| Diagnostics | Partial | diagnostics / diagnostics.collect | Local export exists. Name-based redaction does not prove arbitrary message values are safe; no automatic upload. |
+| Diagnostics | Partial | diagnostics / diagnostics.collect | Stored and exported logs use registered descriptions and validated fields; legacy messages and unknown fields are omitted. Export bounds and cancellation still need completion; no automatic upload. |
 | CLI timeout / inputs | Partial | global options and instance commands | Timeout is parsed but not propagated. Credential helpers and strict parsing are not complete. |
 
 Production entry points:

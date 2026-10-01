@@ -30,14 +30,7 @@ public sealed class LocalRollingLogWriter : IDisposable
     public async Task WriteAsync(LogEntry entry, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entry);
-        var line = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            entry.OccurredAt,
-            Level = entry.Level.ToString(),
-            entry.Category,
-            entry.Message,
-            Fields = entry.Fields.ToDictionary(field => field.Name, field => field.Value, StringComparer.Ordinal),
-        });
+        var line = JsonSerializer.SerializeToUtf8Bytes(SafeDiagnosticPolicy.Sanitize(entry));
         if (line.LongLength + 1 > _maxFileBytes)
         {
             throw new InvalidDataException("The log entry exceeds the maximum log file size.");

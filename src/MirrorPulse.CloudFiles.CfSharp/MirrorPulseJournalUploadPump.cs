@@ -294,18 +294,13 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         {
             var fields = new List<LogField>
             {
-                new("exceptionType", exception.GetType().FullName ?? exception.GetType().Name),
+                new("failureCategory", SafeDiagnosticPolicy.ClassifyFailure(exception)),
                 new("hresult", exception.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture)),
             };
-            if (exception is InvalidDataException)
-            {
-                fields.Add(new("reason", exception.Message));
-            }
             if (command is not null)
             {
                 fields.Add(new("operationId", command.OperationId.ToString("D")));
                 fields.Add(new("kind", command.Kind.ToString()));
-                fields.Add(new("relativePath", command.RelativePath));
             }
 
             await _log.WriteAsync(new LogEntry(LogLevel.Warning, "CloudFiles.Upload",
