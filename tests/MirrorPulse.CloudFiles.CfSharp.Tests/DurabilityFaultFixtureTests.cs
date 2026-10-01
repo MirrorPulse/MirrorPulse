@@ -89,6 +89,21 @@ public sealed class DurabilityFaultFixtureTests
                         Assert.AreEqual(expected, command.State);
                     }
                     break;
+                case DurabilityBoundary.PendingRemoteBatch:
+                    await using (MirrorPulseProductCatalog catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+                    {
+                        var pendingStore = new MirrorPulseCatalogRemotePollPendingStore(catalog);
+                        MirrorPulsePendingRemotePoll? pending = await pendingStore.LoadAsync(DurabilityFaultProbe.Instance, CancellationToken.None);
+                        Assert.AreEqual(timing == FaultTiming.After, pending is not null);
+                        if (pending is not null)
+                        {
+                            Assert.AreEqual(DurabilityFaultProbe.Instance + "/fixture", pending.BatchId);
+                            Assert.AreEqual("before", pending.Previous["document"].RemoteRevision);
+                            Assert.AreEqual("after", pending.Candidate["document"].RemoteRevision);
+                            CollectionAssert.AreEqual(new byte[32], pending.Fingerprint);
+                        }
+                    }
+                    break;
             }
         }
         finally

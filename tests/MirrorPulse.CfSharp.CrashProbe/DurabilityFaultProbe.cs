@@ -8,7 +8,7 @@ using MirrorPulse.Core.State;
 
 namespace MirrorPulse.CfSharp.CrashProbe;
 
-public enum DurabilityBoundary { RemoteWrite, JournalAcknowledgement, SnapshotSave, CatalogSave }
+public enum DurabilityBoundary { RemoteWrite, JournalAcknowledgement, SnapshotSave, CatalogSave, PendingRemoteBatch }
 public enum FaultTiming { Before, After }
 public enum FaultMode { Throw, Exit }
 
@@ -76,6 +76,15 @@ public static class DurabilityFaultProbe
                         {
                             await catalog.SaveUserCommandAsync(new MirrorPulseUserCommandRecord(OperationId, "fixture", "document", "after"));
                         }, timing, mode);
+                    }
+                    break;
+                case DurabilityBoundary.PendingRemoteBatch:
+                    await using (MirrorPulseProductCatalog catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+                    {
+                        var pending = new MirrorPulseCatalogRemotePollPendingStore(catalog);
+                        await InjectAsync(() => pending.SaveAsync(Instance,
+                            new(Instance + "/fixture", new byte[32], "Local", Snapshot("before"), Snapshot("after")),
+                            CancellationToken.None), timing, mode);
                     }
                     break;
             }

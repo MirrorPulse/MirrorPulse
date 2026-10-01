@@ -167,7 +167,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             var remoteSnapshotStore = new MirrorPulseFileRemotePollSnapshotStore(paths.DataRootPath);
             remotePoller = new MirrorPulseActiveRemotePoller(
                 directorySource, topology.Instances, topology.Roots, ApplyCloudRemoteBatchAsync,
-                snapshotStore: remoteSnapshotStore);
+                snapshotStore: remoteSnapshotStore,
+                pendingStore: new MirrorPulseCatalogRemotePollPendingStore(catalog));
 
             var application = new MirrorPulseHostApplication(
                 paths, configurationStore, configuration, hostLease, catalog, conflictCenter, systemNotifications,

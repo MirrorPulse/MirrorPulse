@@ -115,7 +115,7 @@ public sealed class MirrorPulseFileRemotePollSnapshotStore : IMirrorPulseRemoteP
     private string GetPath(InstanceId instanceId) =>
         Path.Combine(_rootPath, instanceId.ToString() + ".json");
 
-    private static void Validate(IReadOnlyDictionary<string, MirrorPulseRemoteSnapshotEntry> entries)
+    internal static void Validate(IReadOnlyDictionary<string, MirrorPulseRemoteSnapshotEntry> entries)
     {
         if (entries.Count > 1_000_000)
             throw new InvalidDataException("The remote poll snapshot contains too many entries.");

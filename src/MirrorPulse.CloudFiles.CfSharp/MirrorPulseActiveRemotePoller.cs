@@ -24,6 +24,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
     private readonly int _pageSize;
     private readonly int _maximumPages;
     private readonly IMirrorPulseRemotePollSnapshotStore? _snapshotStore;
+    private readonly IMirrorPulseRemotePollPendingStore? _pendingStore;
     private readonly Dictionary<InstanceId, IReadOnlyDictionary<string, SnapshotEntry>> _snapshots = [];
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _loop;
@@ -36,7 +37,8 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         TimeSpan? interval = null,
         int pageSize = 128,
         int maximumPages = 2048,
-        IMirrorPulseRemotePollSnapshotStore? snapshotStore = null)
+        IMirrorPulseRemotePollSnapshotStore? snapshotStore = null,
+        IMirrorPulseRemotePollPendingStore? pendingStore = null)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
         ArgumentNullException.ThrowIfNull(instances);
@@ -59,6 +61,9 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         _pageSize = pageSize;
         _maximumPages = maximumPages;
         _snapshotStore = snapshotStore;
+        _pendingStore = pendingStore;
+        if (pendingStore is not null && snapshotStore is null)
+            throw new ArgumentException("Pending batches require a durable snapshot store.", nameof(snapshotStore));
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -115,12 +120,17 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         }
 
         CloudRemoteChangeBatch batch = CreateBatch(instanceId, root, previous!, current);
+        if (_pendingStore is not null)
+            await _pendingStore.SaveAsync(instanceId, new(batch.BatchId, batch.Fingerprint.ToArray(), root.DirectoryName,
+                ToDurableSnapshot(previous!), ToDurableSnapshot(current)), cancellationToken).ConfigureAwait(false);
         MirrorPulseRemotePollApplyOutcome outcome = await _apply(instanceId, batch, cancellationToken).ConfigureAwait(false);
         if (!outcome.Completed) return false;
         if (!outcome.SafeCursor.Span.SequenceEqual(batch.FinalCursor.Span))
             throw new InvalidDataException("A completed remote poll batch must have its final safe cursor.");
         await SaveSnapshotAsync(instanceId, current, cancellationToken).ConfigureAwait(false);
         _snapshots[instanceId] = current;
+        if (_pendingStore is not null)
+            await _pendingStore.ClearAsync(instanceId, batch.BatchId, cancellationToken).ConfigureAwait(false);
         return true;
     }
 
@@ -130,14 +140,16 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         if (_snapshotStore is null) return;
-        var durable = snapshot.ToDictionary(
+        await _snapshotStore.SaveAsync(instanceId, ToDurableSnapshot(snapshot), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Dictionary<string, MirrorPulseRemoteSnapshotEntry> ToDurableSnapshot(
+        IReadOnlyDictionary<string, SnapshotEntry> snapshot) => snapshot.ToDictionary(
             item => item.Key,
             item => new MirrorPulseRemoteSnapshotEntry(item.Value.RemoteId,
                 item.Value.RemoteRevision, item.Value.ItemKind, item.Value.RelativePath,
                 item.Value.Length, ToSnapshotMetadata(item.Value.Metadata)),
             StringComparer.Ordinal);
-        await _snapshotStore.SaveAsync(instanceId, durable, cancellationToken).ConfigureAwait(false);
-    }
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -265,7 +277,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         }
 
         return new CloudRemoteChangeBatch(
-            $"{instanceId}/{Convert.ToHexString(finalCursor)}",
+            $"{instanceId}/{Convert.ToHexString(initialCursor)}/{Convert.ToHexString(finalCursor)}",
             initialCursor,
             changes,
             finalCursor);

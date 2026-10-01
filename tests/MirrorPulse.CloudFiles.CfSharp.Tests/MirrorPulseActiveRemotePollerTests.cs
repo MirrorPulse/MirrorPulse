@@ -2,7 +2,9 @@ using System.Runtime.Versioning;
 using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
+using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.State;
 
 namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
@@ -147,25 +149,32 @@ public sealed class MirrorPulseActiveRemotePollerTests
         bool retry = true;
         try
         {
+            await using var catalog = await MirrorPulseProductCatalog.OpenAsync(
+                new MirrorPulseStoragePaths(Path.Combine(dataRoot, "sync"), Path.Combine(dataRoot, "data")));
+            var pendingStore = new MirrorPulseCatalogRemotePollPendingStore(catalog);
             await using var poller = new MirrorPulseActiveRemotePoller(source, [adapter], [root], (_, batch, _) =>
             {
                 batches.Add(batch);
                 return ValueTask.FromResult(retry
                     ? new MirrorPulseRemotePollApplyOutcome(completed, finalCursor ? batch.FinalCursor : batch.InitialCursor)
                     : new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor));
-            }, snapshotStore: store);
+            }, snapshotStore: store, pendingStore: pendingStore);
             source.Set(new FakeEntry("file", "v1", CloudItemKind.File, "file.bin", 3));
             Assert.IsFalse(await poller.PollOnceAsync(instance));
             source.Set(new FakeEntry("file", "v2", CloudItemKind.File, "file.bin", 4));
             if (completed) await Assert.ThrowsExactlyAsync<InvalidDataException>(() => poller.PollOnceAsync(instance).AsTask());
             else Assert.IsFalse(await poller.PollOnceAsync(instance));
             Assert.AreEqual("v1", (await store.LoadAsync(instance))!["file"].RemoteRevision);
+            MirrorPulsePendingRemotePoll pending = (await pendingStore.LoadAsync(instance, CancellationToken.None))!;
+            Assert.AreEqual(batches[0].BatchId, pending.BatchId);
+            Assert.AreEqual("v2", pending.Candidate["file"].RemoteRevision);
             retry = false;
             Assert.IsTrue(await poller.PollOnceAsync(instance));
             Assert.HasCount(2, batches);
             Assert.AreEqual(batches[0].BatchId, batches[1].BatchId);
             CollectionAssert.AreEqual(batches[0].Fingerprint.ToArray(), batches[1].Fingerprint.ToArray());
             Assert.AreEqual("v2", (await store.LoadAsync(instance))!["file"].RemoteRevision);
+            Assert.IsNull(await pendingStore.LoadAsync(instance, CancellationToken.None));
         }
         finally { if (Directory.Exists(dataRoot)) Directory.Delete(dataRoot, true); }
     }
