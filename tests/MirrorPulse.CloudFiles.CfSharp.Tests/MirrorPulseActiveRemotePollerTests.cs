@@ -31,7 +31,7 @@ public sealed class MirrorPulseActiveRemotePollerTests
             {
                 Assert.AreEqual(instance, id);
                 batches.Add(batch);
-                return ValueTask.CompletedTask;
+                return ValueTask.FromResult(new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor));
             });
 
         source.Set(new FakeEntry("file-1", "v1", CloudItemKind.File, "report.bin", 3));
@@ -72,7 +72,7 @@ public sealed class MirrorPulseActiveRemotePollerTests
             var store = new MirrorPulseFileRemotePollSnapshotStore(dataRoot);
             source.Set(new FakeEntry("file-1", "v1", CloudItemKind.File, "report.bin", 3));
             await using (var first = new MirrorPulseActiveRemotePoller(
-                source, [adapter], [root], (_, _, _) => ValueTask.CompletedTask,
+                source, [adapter], [root], (_, batch, _) => ValueTask.FromResult(new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor)),
                 snapshotStore: store))
             {
                 Assert.IsFalse(await first.PollOnceAsync(instance));
@@ -83,7 +83,7 @@ public sealed class MirrorPulseActiveRemotePollerTests
                 source, [adapter], [root], (_, batch, _) =>
                 {
                     batches.Add(batch);
-                    return ValueTask.CompletedTask;
+                    return ValueTask.FromResult(new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor));
                 }, snapshotStore: store))
             {
                 Assert.IsFalse(await second.PollOnceAsync(instance));
@@ -94,7 +94,7 @@ public sealed class MirrorPulseActiveRemotePollerTests
                 source, [adapter], [root], (_, batch, _) =>
                 {
                     batches.Add(batch);
-                    return ValueTask.CompletedTask;
+                    return ValueTask.FromResult(new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor));
                 }, snapshotStore: store))
             {
                 Assert.IsTrue(await third.PollOnceAsync(instance));
@@ -125,9 +125,49 @@ public sealed class MirrorPulseActiveRemotePollerTests
             Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "transfers"),
             true, AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
         await using var poller = new MirrorPulseActiveRemotePoller(
-            new FakeDirectorySource(), [adapter], roots, (_, _, _) => ValueTask.CompletedTask);
+            new FakeDirectorySource(), [adapter], roots, (_, batch, _) => ValueTask.FromResult(new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor)));
 
         Assert.IsFalse(await poller.PollOnceAsync(instance));
+    }
+
+    [TestMethod]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    public async Task PollerRetainsOldSnapshotUntilApplyCompletesWithFinalCursor(bool completed, bool finalCursor)
+    {
+        string dataRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        InstanceId instance = InstanceId.New();
+        RootRegistration root = AdapterRootRegistrationMapper.Map(AdapterId.Parse("example.retry"), instance,
+            new AdapterRootDefinition("files", "Files", "Files", false), RootRegistrationState.Active);
+        var adapter = new AdapterInstance(root.AdapterId, InstallId.New(), instance, "Retry", new Dictionary<string, string>(), [],
+            Path.Combine(dataRoot, "files"), Path.Combine(dataRoot, "transfers"), true, AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+        var source = new FakeDirectorySource();
+        var store = new MirrorPulseFileRemotePollSnapshotStore(dataRoot);
+        var batches = new List<CloudRemoteChangeBatch>();
+        bool retry = true;
+        try
+        {
+            await using var poller = new MirrorPulseActiveRemotePoller(source, [adapter], [root], (_, batch, _) =>
+            {
+                batches.Add(batch);
+                return ValueTask.FromResult(retry
+                    ? new MirrorPulseRemotePollApplyOutcome(completed, finalCursor ? batch.FinalCursor : batch.InitialCursor)
+                    : new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor));
+            }, snapshotStore: store);
+            source.Set(new FakeEntry("file", "v1", CloudItemKind.File, "file.bin", 3));
+            Assert.IsFalse(await poller.PollOnceAsync(instance));
+            source.Set(new FakeEntry("file", "v2", CloudItemKind.File, "file.bin", 4));
+            if (completed) await Assert.ThrowsExactlyAsync<InvalidDataException>(() => poller.PollOnceAsync(instance).AsTask());
+            else Assert.IsFalse(await poller.PollOnceAsync(instance));
+            Assert.AreEqual("v1", (await store.LoadAsync(instance))!["file"].RemoteRevision);
+            retry = false;
+            Assert.IsTrue(await poller.PollOnceAsync(instance));
+            Assert.HasCount(2, batches);
+            Assert.AreEqual(batches[0].BatchId, batches[1].BatchId);
+            CollectionAssert.AreEqual(batches[0].Fingerprint.ToArray(), batches[1].Fingerprint.ToArray());
+            Assert.AreEqual("v2", (await store.LoadAsync(instance))!["file"].RemoteRevision);
+        }
+        finally { if (Directory.Exists(dataRoot)) Directory.Delete(dataRoot, true); }
     }
 
     private sealed class FakeDirectorySource : IMirrorPulseDirectoryPageSource

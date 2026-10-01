@@ -19,7 +19,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
     private readonly IMirrorPulseDirectoryPageSource _source;
     private readonly IReadOnlyList<InstanceId> _instances;
     private readonly Dictionary<InstanceId, IReadOnlyList<RootRegistration>> _roots;
-    private readonly Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask> _apply;
+    private readonly Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask<MirrorPulseRemotePollApplyOutcome>> _apply;
     private readonly TimeSpan _interval;
     private readonly int _pageSize;
     private readonly int _maximumPages;
@@ -32,7 +32,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         IMirrorPulseDirectoryPageSource source,
         IEnumerable<AdapterInstance> instances,
         IEnumerable<RootRegistration> roots,
-        Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask> apply,
+        Func<InstanceId, CloudRemoteChangeBatch, CancellationToken, ValueTask<MirrorPulseRemotePollApplyOutcome>> apply,
         TimeSpan? interval = null,
         int pageSize = 128,
         int maximumPages = 2048,
@@ -100,8 +100,8 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
             }
             else
             {
-                _snapshots[instanceId] = current;
                 await SaveSnapshotAsync(instanceId, current, cancellationToken).ConfigureAwait(false);
+                _snapshots[instanceId] = current;
                 return false;
             }
         }
@@ -115,9 +115,12 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         }
 
         CloudRemoteChangeBatch batch = CreateBatch(instanceId, root, previous!, current);
-        await _apply(instanceId, batch, cancellationToken).ConfigureAwait(false);
-        _snapshots[instanceId] = current;
+        MirrorPulseRemotePollApplyOutcome outcome = await _apply(instanceId, batch, cancellationToken).ConfigureAwait(false);
+        if (!outcome.Completed) return false;
+        if (!outcome.SafeCursor.Span.SequenceEqual(batch.FinalCursor.Span))
+            throw new InvalidDataException("A completed remote poll batch must have its final safe cursor.");
         await SaveSnapshotAsync(instanceId, current, cancellationToken).ConfigureAwait(false);
+        _snapshots[instanceId] = current;
         return true;
     }
 

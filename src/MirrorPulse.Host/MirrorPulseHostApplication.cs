@@ -122,7 +122,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
                 systemNotifications.PublishAsync);
             var credentialStore = new WindowsCredentialManagerStore();
             MirrorPulseCloudHostSession? currentSession = null;
-            async ValueTask ApplyCloudRemoteBatchAsync(
+            async ValueTask<MirrorPulseRemotePollApplyOutcome> ApplyCloudRemoteBatchAsync(
                 InstanceId instanceId,
                 CloudRemoteChangeBatch batch,
                 CancellationToken batchCancellationToken)
@@ -138,6 +138,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
                         new(instanceId, "Remote retry", false, null, "RemoteBatchRetry"),
                         batchCancellationToken).ConfigureAwait(false);
                 }
+                return MirrorPulseRemotePollApplyOutcome.FromResult(result);
             }
 
             async ValueTask ApplyRemoteBatchAsync(
