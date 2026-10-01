@@ -673,4 +673,3 @@ public sealed class FtpWorkerProcessTests
             stream.WriteAsync(Encoding.ASCII.GetBytes(response)).AsTask();
     }
 }
-

@@ -13,6 +13,7 @@ public sealed class MirrorPulseRootRouter
 {
     private readonly string _syncRootPath;
     private readonly Dictionary<string, RootRegistration> _roots;
+    public IReadOnlyList<RootRegistration> Registrations => _roots.Values.ToArray();
 
     public MirrorPulseRootRouter(string syncRootPath, IEnumerable<RootRegistration> registrations)
     {

@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "allowSkipped": [
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseFullRescanPolicyTests.NativeOverflowReconcilesFilesAndKeepsDisabledRootsOffline",
     "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseCloudHostSessionTests.PackagedSessionReopensOfficialSqliteDatabase",
     "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeExternalConsumerEnumeratesAndHydratesAcrossRestart",
     "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeOneSyncRootRetainsMultipleInstancesAndDirectoriesAcrossRestart",
@@ -22,6 +23,7 @@
   ],
   "required": {
     "native": [
+      "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseFullRescanPolicyTests.NativeOverflowReconcilesFilesAndKeepsDisabledRootsOffline",
       "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeExternalConsumerEnumeratesAndHydratesAcrossRestart",
       "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseExternalConsumerTests.NativeOneSyncRootRetainsMultipleInstancesAndDirectoriesAcrossRestart",
       "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseJournalUploadCompletionTests.NativeFailureRetryAndSuccessUseCfSharpJournalAcrossRestart",

@@ -36,6 +36,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
     private readonly MirrorPulseJournalPumpRunner _runner = new();
     private readonly MirrorPulseMutationExecutor _mutationExecutor;
     private readonly MirrorPulseMutationReadback _readback;
+    private readonly MirrorPulseCfSharpFullRescanAdapter? _rescan;
 
     public MirrorPulseJournalPumpHealth Health => _runner.Health;
 
@@ -54,7 +55,8 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         MirrorPulseConflictNotificationBridge? notifications = null,
         IMirrorPulseWorkerMutationTransport? mutations = null,
         IMirrorPulseWorkerRangeTransport? ranges = null,
-        IMirrorPulseWorkerDirectoryPageSource? directories = null)
+        IMirrorPulseWorkerDirectoryPageSource? directories = null,
+        CloudFileSystem? fileSystem = null)
     {
         _feed = feed ?? throw new ArgumentNullException(nameof(feed));
         _router = router ?? throw new ArgumentNullException(nameof(router));
@@ -65,6 +67,9 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _mutationExecutor = new MirrorPulseMutationExecutor(catalog);
         _readback = new MirrorPulseMutationReadback(stats, ranges, directories);
+        if (fileSystem is not null)
+            _rescan = new(feed, new MirrorPulseFullRescanPolicy(fileSystem, feed, state, router, catalog,
+                uploads, stats, mayDispatch, mutations, ranges, directories, conflicts, notifications).ReconcileAsync);
         _conflicts = conflicts;
         _notifications = notifications;
         ArgumentException.ThrowIfNullOrWhiteSpace(syncRootPath);
@@ -116,7 +121,17 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             return pending;
         }, ProjectAcceptedAsync, cancellationToken).ConfigureAwait(false);
         foreach (Guid operationId in repaired) _runner.ClearRecoveredFault(operationId);
-        return await _source.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
+        MirrorPulseJournalUploadBatch batch = _source.RequiresFullRescan ? new([], 0, true) :
+            await _source.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
+        if (!batch.RequiresFullRescan) return batch;
+        foreach (RootRegistration root in _router.Registrations)
+            await _catalog.SaveInstanceRuntimeStateAsync(new(root.InstanceId, "Reconciling", true, null), cancellationToken).ConfigureAwait(false);
+        if (_rescan is null) throw new NotSupportedException("The Host requires a full rescan service.");
+        await _rescan.HandleAsync(new MirrorPulseLocalChangeSignal(true), cancellationToken).ConfigureAwait(false);
+        _source.ClearFullRescanRequest();
+        foreach (RootRegistration root in _router.Registrations)
+            await _catalog.SaveInstanceRuntimeStateAsync(new(root.InstanceId, "Connected", false, DateTimeOffset.UtcNow), cancellationToken).ConfigureAwait(false);
+        return new([], 0, false);
     }
 
     private async ValueTask ProjectAcceptedAsync(MirrorPulseMutationRecord record, CancellationToken cancellationToken) =>

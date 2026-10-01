@@ -29,4 +29,7 @@ public sealed class MirrorPulseCfSharpFullRescanAdapter
             new MirrorPulseLocalChangeSignal(batch.RequiresFullRescan),
             cancellationToken);
     }
+
+    public ValueTask<MirrorPulseFullRescanResult> HandleAsync(MirrorPulseLocalChangeSignal signal,
+        CancellationToken cancellationToken = default) => _coordinator.HandleAsync(signal, cancellationToken);
 }

@@ -25,6 +25,8 @@ public sealed class MirrorPulseJournalUploadSource
     private readonly MirrorPulseProductCatalog _catalog;
     private readonly Func<InstanceId, bool> _mayDispatch;
     private readonly MirrorPulseJournalUploadCompletion? _completion;
+    public bool RequiresFullRescan { get; private set; }
+    public void ClearFullRescanRequest() => RequiresFullRescan = false;
 
     public MirrorPulseJournalUploadSource(
         CloudLocalChangeFeed feed,
@@ -51,6 +53,7 @@ public sealed class MirrorPulseJournalUploadSource
         MirrorPulseLocalBatchPlan plan = MirrorPulseLocalBatchMapper.Map(batch, _router);
         if (plan.RequiresFullRescan)
         {
+            RequiresFullRescan = true;
             return new([], 0, true);
         }
 

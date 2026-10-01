@@ -41,6 +41,15 @@ of the same Adapter require distinct first-level folder names.
 
 ## Integrated data paths
 
+The journal pump handles `RequiresFullRescan` through CfSharp's public local
+enumeration and inspection APIs. It completes discovery before missing-file
+decisions, uploads fully available dirty files through the mutation ledger, and
+uses CfSharp placeholder conversion or updates to commit the confirmed identity.
+Only complete reconciliation acknowledges the official rescan marker. Offline
+roots keep reconciliation pending and never receive uploads. Incomplete local
+content and unsupported directory mutations remain durable blocked decisions;
+they are not discarded or treated as successful remote changes.
+
 Remote mutations persist intent before dispatch. On restart, an uncertain upload
 uses bounded remote reads and verifies its exact length and SHA-256 between two
 revision checks. Matching bytes can converge even when the revision differs.
