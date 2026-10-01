@@ -67,6 +67,11 @@ of the same Adapter require distinct first-level folder names.
   instance scheduler. Different instances progress independently. A streamed
   batch cannot overtake a pending poll. Worker ingress uses a bounded ordered
   inbox so waiting for the scheduler never blocks the Pipe response reader.
+- A failed journal command does not stop dispatch of later valid commands.
+  Unacknowledged operations remain in the official feed. Acknowledgement failures
+  have a distinct error code; source or catalog failures remain visible in the
+  pump's in-memory health even when persistence is unavailable. Host status is
+  degraded while that health reports a fault.
 - CfSharp suppresses local echoes from remote changes in the sync root.
   A local-directory Adapter separately suppresses its own source-tree watcher
   echoes because that is a different file tree.

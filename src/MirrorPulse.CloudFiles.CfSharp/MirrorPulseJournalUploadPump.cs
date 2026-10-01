@@ -32,6 +32,9 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
     private readonly LocalRollingLogWriter _log;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _loop;
+    private readonly MirrorPulseJournalPumpRunner _runner = new();
+
+    public MirrorPulseJournalPumpHealth Health => _runner.Health;
 
     public MirrorPulseJournalUploadPump(
         CloudLocalChangeFeed feed,
@@ -82,34 +85,11 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         {
             while (true)
             {
-                MirrorPulseJournalUploadBatch batch;
-                try
+                bool dispatched = await _runner.RunCycleAsync(_source.ReadPendingAsync,
+                    DispatchAsync, ReportFailureAsync, cancellationToken).ConfigureAwait(false);
+                if (!dispatched || !Health.Healthy)
                 {
-                    batch = await _source.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    await LogFailureAsync("Local journal read failed", exception, null,
-                        cancellationToken).ConfigureAwait(false);
                     await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                if (batch.RequiresFullRescan || batch.ReadyCommands.Count == 0)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                bool dispatched = false;
-                foreach (MirrorPulseWorkerChangeCommand command in batch.ReadyCommands)
-                {
-                    dispatched |= await DispatchAsync(command, cancellationToken).ConfigureAwait(false);
-                }
-
-                if (!dispatched)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -159,7 +139,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             string uploadedRevision = await _uploads.UploadAsync(
                 new MirrorPulseWorkerUploadRequest(command.InstanceId, command.RelativePath,
                     revision, content, content.Length), cancellationToken).ConfigureAwait(false);
-            await _completion.AcknowledgeSuccessfulUploadAsync(command.OperationId, uploadedRevision,
+            await AcknowledgeAsync(command.OperationId, uploadedRevision,
                 cancellationToken).ConfigureAwait(false);
             return true;
         }
@@ -177,11 +157,10 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await LogFailureAsync("Local upload failed", exception, command,
-                cancellationToken).ConfigureAwait(false);
+            if (exception is MirrorPulseJournalAcknowledgementException) throw;
             await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
                 cancellationToken).ConfigureAwait(false);
-            return true;
+            throw;
         }
     }
 
@@ -205,7 +184,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
                 await _mutations!.DeleteAsync(new MirrorPulseWorkerDeleteRequest(
                     command.InstanceId, command.RelativePath, revision, command.IsDirectory),
                     cancellationToken).ConfigureAwait(false);
-                await _completion.AcknowledgeSuccessfulUploadAsync(command.OperationId, null,
+                await AcknowledgeAsync(command.OperationId, null,
                     cancellationToken).ConfigureAwait(false);
                 return true;
             }
@@ -222,7 +201,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             string movedRevision = await _mutations!.MoveAsync(new MirrorPulseWorkerMoveRequest(
                 command.InstanceId, command.PreviousRelativePath, command.RelativePath,
                 revision, command.IsDirectory), cancellationToken).ConfigureAwait(false);
-            await _completion.AcknowledgeSuccessfulUploadAsync(command.OperationId, movedRevision,
+            await AcknowledgeAsync(command.OperationId, movedRevision,
                 cancellationToken).ConfigureAwait(false);
             return true;
         }
@@ -240,11 +219,10 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await LogFailureAsync("Local mutation failed", exception, command,
-                cancellationToken).ConfigureAwait(false);
+            if (exception is MirrorPulseJournalAcknowledgementException) throw;
             await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
                 cancellationToken).ConfigureAwait(false);
-            return true;
+            throw;
         }
     }
 
@@ -260,30 +238,40 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             syncRootRelativePath, MirrorPulseConflictReason.StaleRemoteRevision,
             MirrorPulseVersionComparison.Diverged, expectedRevision,
             actualRevision, DateTimeOffset.UtcNow);
-        try
+        await _catalog.SaveUploadConflictAsync(record, cancellationToken).ConfigureAwait(false);
+        _conflicts?.Upsert(record);
+        if (_notifications is not null)
         {
-            await _catalog.SaveUploadConflictAsync(record, cancellationToken).ConfigureAwait(false);
-            _conflicts?.Upsert(record);
-            if (_notifications is not null)
+            try
             {
-                try
-                {
-                    await _notifications.NotifyAsync(record, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    // Notification delivery cannot turn a durable conflict into an upload retry.
-                }
+                await _notifications.NotifyAsync(record, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // Notification delivery cannot turn a durable conflict into an upload retry.
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            // Keep the CfSharp journal operation pending if catalog persistence fails.
-        }
-
         await _completion.DeferFailedUploadAsync(command.OperationId, DateTimeOffset.UtcNow,
             cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    private async ValueTask AcknowledgeAsync(Guid operationId, string? revision, CancellationToken cancellationToken)
+    {
+        try { await _completion.AcknowledgeSuccessfulUploadAsync(operationId, revision, cancellationToken).ConfigureAwait(false); }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new MirrorPulseJournalAcknowledgementException("The accepted Worker result could not be acknowledged.", exception);
+        }
+    }
+
+    private async ValueTask ReportFailureAsync(MirrorPulseWorkerChangeCommand? command, string code,
+        Exception exception, CancellationToken cancellationToken)
+    {
+        await LogFailureAsync(code, exception, command, cancellationToken).ConfigureAwait(false);
+        if (command is not null)
+            await _catalog.SaveInstanceRuntimeStateAsync(new(command.InstanceId, "Journal failed", false, null, code),
+                cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()

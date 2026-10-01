@@ -81,7 +81,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
     public bool IsRunning => _state is MirrorPulseLifecycleState.Running or MirrorPulseLifecycleState.Degraded;
 
     public MirrorPulseHostStatus GetHostStatus() => new(
-        _state.ToString(),
+        (_state == MirrorPulseLifecycleState.Running && _session.JournalHealth is { Healthy: false }
+            ? MirrorPulseLifecycleState.Degraded : _state).ToString(),
         Environment.ProcessId,
         MirrorPulseControlPipeNames.CurrentUserV1(),
         _startedAt,

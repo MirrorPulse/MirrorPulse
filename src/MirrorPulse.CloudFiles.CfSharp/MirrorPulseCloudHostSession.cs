@@ -11,6 +11,7 @@ namespace MirrorPulse.CloudFiles.CfSharp;
 
 public interface IMirrorPulseCloudRuntime : IAsyncDisposable
 {
+    MirrorPulseJournalPumpHealth? JournalHealth => null;
     ValueTask StartAsync(CancellationToken cancellationToken);
 
     ValueTask<MirrorPulseCloudStatusSnapshot> ReadStatusAsync(
@@ -115,6 +116,7 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         private MirrorPulseJournalUploadPump? _uploadPump;
         private MirrorPulseUploadConflictActions? _conflictActions;
         private MirrorPulseRemoteConflictActions? _remoteConflictActions;
+        public MirrorPulseJournalPumpHealth? JournalHealth => _uploadPump?.Health;
 
         public async ValueTask StartAsync(CancellationToken cancellationToken)
         {
@@ -217,6 +219,7 @@ public sealed class MirrorPulseCloudHostSession : IAsyncDisposable
     private readonly MirrorPulseSyncRootDefinition _definition;
     private readonly MirrorPulseShellRegistrationProfile _profile;
     private IMirrorPulseCloudRuntime? _runtime;
+    public MirrorPulseJournalPumpHealth? JournalHealth => _runtime?.JournalHealth;
     private bool _started;
     private bool _disposed;
 
