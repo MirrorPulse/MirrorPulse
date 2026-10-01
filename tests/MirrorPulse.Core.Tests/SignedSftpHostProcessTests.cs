@@ -98,7 +98,7 @@ public sealed class SignedSftpHostProcessTests
             CollectionAssert.AreEqual(replacement, await File.ReadAllBytesAsync(file, timeout.Token));
             await using (var stale = new MemoryStream([8, 8, 8], writable: false))
             {
-                await Assert.ThrowsExactlyAsync<IOException>(async () => await supervisor.UploadAsync(
+                await Assert.ThrowsExactlyAsync<MirrorPulseWorkerMutationConflictException>(async () => await supervisor.UploadAsync(
                     new MirrorPulseWorkerUploadRequest(instance.InstanceId, "report.bin", revision,
                         stale, 3), timeout.Token));
             }
@@ -114,3 +114,4 @@ public sealed class SignedSftpHostProcessTests
         }
     }
 }
+

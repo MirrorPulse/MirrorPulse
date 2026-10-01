@@ -113,7 +113,7 @@ public sealed class SignedSmbHostProcessTests
                 Path.Combine(source, "note.txt"), timeout.Token));
             await using (var stale = new MemoryStream([8, 8, 8], writable: false))
             {
-                await Assert.ThrowsExactlyAsync<IOException>(async () => await supervisor.UploadAsync(
+                await Assert.ThrowsExactlyAsync<MirrorPulseWorkerMutationConflictException>(async () => await supervisor.UploadAsync(
                     new MirrorPulseWorkerUploadRequest(instance.InstanceId, "note.txt", revision,
                         stale, 3), timeout.Token));
             }
@@ -135,3 +135,4 @@ public sealed class SignedSmbHostProcessTests
         }
     }
 }
+

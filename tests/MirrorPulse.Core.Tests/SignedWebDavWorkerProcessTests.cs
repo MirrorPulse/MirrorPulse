@@ -89,7 +89,7 @@ public sealed class SignedWebDavWorkerProcessTests
             byte[] replacement = Encoding.UTF8.GetBytes("new content");
             await using (var stale = new MemoryStream(replacement, writable: false))
             {
-                await Assert.ThrowsExactlyAsync<IOException>(async () => await supervisor.UploadAsync(
+                await Assert.ThrowsExactlyAsync<MirrorPulseWorkerMutationConflictException>(async () => await supervisor.UploadAsync(
                     new MirrorPulseWorkerUploadRequest(instance.InstanceId, "note.txt", "\"stale\"",
                         stale, replacement.Length), timeout.Token));
             }
@@ -232,3 +232,4 @@ public sealed class SignedWebDavWorkerProcessTests
         }
     }
 }
+

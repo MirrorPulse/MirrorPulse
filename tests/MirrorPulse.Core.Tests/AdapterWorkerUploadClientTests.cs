@@ -92,4 +92,32 @@ public sealed class AdapterWorkerUploadClientTests
         stat.Close();
         channel.Close();
     }
+
+    [TestMethod]
+    public async Task UploadConflictCarriesRevisionPreconditionsAcrossThePipe()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        string pipeName = $"mirrorpulse-upload-conflict-{Guid.NewGuid():N}";
+        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        Task connection = server.WaitForConnectionAsync(timeout.Token);
+        await using AdapterNamedPipeClient pipe = await AdapterNamedPipeClient.ConnectAsync(pipeName, TimeSpan.FromSeconds(10), timeout.Token);
+        await connection;
+        InstanceId instance = InstanceId.New();
+        WorkerSessionId session = WorkerSessionId.New();
+        var worker = new AdapterControlChannel(pipe, instance.Value, session.Value);
+        var channel = new AdapterWorkerReadRangeClient(server, instance, session);
+        var client = new AdapterWorkerUploadClient(channel, instance, session);
+        await using var bytes = new MemoryStream([1]);
+        Task<string> pending = client.UploadAsync(new(instance, "file", "expected", bytes, 1, Guid.NewGuid()), timeout.Token).AsTask();
+        AdapterControlFrame request = await worker.ReadAsync(timeout.Token);
+        Task<byte[]> response = LengthPrefixedFrameReader.ReadAsync(server, timeout.Token).AsTask();
+        await worker.SendAsync("OperationError", request.RequestId, true,
+            new { code = "RemoteConflict", expectedRevision = "expected", actualRevision = "changed" }, timeout.Token);
+        await client.HandleResponseAsync(ControlFrameJsonCodec.Decode(await response));
+        MirrorPulseWorkerMutationConflictException conflict = await Assert.ThrowsExactlyAsync<MirrorPulseWorkerMutationConflictException>(async () => await pending);
+        Assert.AreEqual("expected", conflict.ExpectedRevision);
+        Assert.AreEqual("changed", conflict.ActualRevision);
+        client.Close();
+        channel.Close();
+    }
 }
