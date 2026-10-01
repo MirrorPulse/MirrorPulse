@@ -92,15 +92,26 @@ public sealed class MirrorPulseFullRescanPolicy(CloudFileSystem fileSystem, Clou
             {
                 async ValueTask Acknowledge(string? revision, CancellationToken token)
                 {
+                    // Native placeholder operations need their own handle. Release the upload
+                    // read handle, then verify bytes and use CfSharp's public USN guard.
+                    await content.DisposeAsync().ConfigureAwait(false);
                     MirrorPulseWorkerDirectoryEntry remote = await FindRemoteAsync(route, token).ConfigureAwait(false);
                     if (remote.RemoteRevision != revision) throw new MirrorPulseMutationAmbiguousException();
                     var identity = MirrorPulsePlaceholderIdentity.Create(route.InstanceId, remote.RemoteId, revision).ToCfSharp();
                     await feed.SuppressProviderEchoAsync(CloudStateOperationKind.MetadataUpdate, path,
                         DateTimeOffset.UtcNow.AddSeconds(10), cancellationToken: token).ConfigureAwait(false);
-                    if (observation.Snapshot.IsPlaceholder)
-                        await observation.Item.UpdatePlaceholderAsync(CloudPlaceholderPatch.CreateBuilder().WithIdentity(identity).WithInSyncState(true).Build(), token).ConfigureAwait(false);
-                    else
-                        await observation.Item.ConvertToPlaceholderAsync(identity, CloudPlaceholderConversionOptions.CreateBuilder().WithInSyncState().Build(), token).ConfigureAwait(false);
+                    CloudPlaceholderMutationResult coordinated = observation.Snapshot.IsPlaceholder
+                        ? await observation.Item.UpdatePlaceholderAsync(CloudPlaceholderPatch.CreateBuilder().WithIdentity(identity).WithInSyncState(false).Build(), token).ConfigureAwait(false)
+                        : await observation.Item.ConvertToPlaceholderAsync(identity, cancellationToken: token).ConfigureAwait(false);
+                    if (coordinated.OperationUsn is not { } usn) throw new MirrorPulseMutationAmbiguousException();
+                    await using (var verification = new FileStream(observation.Item.FullPath, FileMode.Open, FileAccess.Read,
+                        FileShare.Read, 64 * 1024, FileOptions.Asynchronous))
+                    {
+                        if (verification.Length != intent.ContentLength ||
+                            Convert.ToHexString(await SHA256.HashDataAsync(verification, token).ConfigureAwait(false)) != intent.ContentSha256)
+                            throw new MirrorPulseMutationAmbiguousException();
+                    }
+                    await observation.Item.SetInSyncAsync(true, new CloudInSyncChangeOptions(usn), token).ConfigureAwait(false);
                 }
                 if (pending is not null && pending.State != MirrorPulseMutationState.Prepared)
                     await _executor.ReconcileAsync(pending, _readback.VerifyAsync, Acknowledge, cancellationToken).ConfigureAwait(false);

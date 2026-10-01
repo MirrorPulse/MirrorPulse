@@ -67,8 +67,14 @@ public sealed class MirrorPulseFullRescanPolicyTests
             var router = new MirrorPulseRootRouter(paths.SyncRootPath, [first, second]);
             var policy = new MirrorPulseFullRescanPolicy(fileSystem, feed, state, router, catalog, transport, transport,
                 instance => instance == active, transport, transport, transport);
-            await Assert.ThrowsExactlyAsync<IOException>(() => new MirrorPulseCfSharpFullRescanAdapter(feed, policy.ReconcileAsync)
-                .HandleAsync(signal, timeout.Token).AsTask());
+            IOException? offlinePending = null;
+            try { await new MirrorPulseCfSharpFullRescanAdapter(feed, policy.ReconcileAsync).HandleAsync(signal, timeout.Token); }
+            catch (IOException exception) { offlinePending = exception; }
+            catch (CloudFilesException exception)
+            {
+                Assert.Fail($"CfSharp 0.1.0-preview.2: {exception.Operation}, HRESULT 0x{exception.HResult:X8}, Win32 {exception.Win32ErrorCode}; {exception}");
+            }
+            Assert.IsNotNull(offlinePending);
             Assert.AreEqual(1, transport.Uploads.GetValueOrDefault(active));
             Assert.AreEqual(0, transport.Uploads.GetValueOrDefault(offline));
             Assert.AreEqual("active local data", await File.ReadAllTextAsync(transport.PathFor(active, "note.txt"), timeout.Token));
