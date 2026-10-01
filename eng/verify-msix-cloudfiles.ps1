@@ -2,7 +2,8 @@
 param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
-    [switch]$VerifyShell
+    [switch]$VerifyShell,
+    [string]$EvidencePath
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,6 +52,7 @@ try {
     if ($null -eq $package) {
         throw "The packaged build did not produce an MSIX file."
     }
+    $packageSha256 = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 
     Add-Type -AssemblyName System.IO.Compression
     $archive = [IO.Compression.ZipFile]::OpenRead($package.FullName)
@@ -173,4 +175,12 @@ finally {
     if ($uninstallFailed) {
         throw "The test MSIX package or mp.exe app execution alias remained registered after uninstall."
     }
+}
+if ($EvidencePath) {
+    [ordered]@{
+        schemaVersion=1;runtime="win-x64";packageSha256=$packageSha256
+        installedIdentity=$true;cliAlias=$true;hostAutoStart=$true
+        cloudFilesExtension=$true;adapterAssociation=$true;uninstalled=$true
+        shellRegistration=$VerifyShell.IsPresent
+    } | ConvertTo-Json | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 }

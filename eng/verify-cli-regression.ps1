@@ -5,13 +5,14 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$PackagePath,
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [string]$EvidencePath
 )
 
 $ErrorActionPreference = "Stop"
 $integration = Join-Path $PSScriptRoot "verify-cli-integration.ps1"
 & pwsh -NoProfile -File $integration -Runtime $Runtime -PackagePath $PackagePath `
-    -Configuration $Configuration -Regression
+    -Configuration $Configuration -Regression -EvidencePath $EvidencePath
 if ($LASTEXITCODE -ne 0) {
     throw "The CLI regression matrix failed for $Runtime."
 }

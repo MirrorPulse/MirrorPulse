@@ -82,11 +82,36 @@ jobs:
         env:
           MIRRORPULSE_VERIFY_SHELL: ${{ inputs.verify_shell }}
         run: |
+          New-Item -ItemType Directory -Path artifacts/evidence -Force | Out-Null
           if ($env:MIRRORPULSE_VERIFY_SHELL -eq 'true') {
-            pwsh ./eng/verify-msix-cloudfiles.ps1 -VerifyShell
+            pwsh ./eng/verify-msix-cloudfiles.ps1 -VerifyShell -EvidencePath artifacts/evidence/installed.json
           } else {
-            pwsh ./eng/verify-msix-cloudfiles.ps1
+            pwsh ./eng/verify-msix-cloudfiles.ps1 -EvidencePath artifacts/evidence/installed.json
           }
+
+      - name: Collect x64 verification evidence
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts/evidence -Force | Out-Null
+          $parameters = @{
+            Job = 'build-and-test'; Runtime = 'win-x64'; OutputPath = 'artifacts/evidence/build-and-test.json'
+            TestManifests = @('artifacts/test-results/managed/test-evidence.json')
+            PublishDirectory = "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-x64"
+          }
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $parameters.TestManifests += 'artifacts/test-results/native/test-evidence.json'
+            $parameters.RequireNative = $true
+            $parameters.RequireInstalled = $true
+            $parameters.InstalledPath = 'artifacts/evidence/installed.json'
+          }
+          ./eng/collect-ci-evidence.ps1 @parameters
+
+      - name: Upload x64 verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-build-and-test
+          path: artifacts/evidence/build-and-test.json
+          if-no-files-found: error
 
   official-package-arm64:
     runs-on: windows-11-arm
@@ -133,13 +158,25 @@ jobs:
           if ($null -eq $package -or -not (Test-Path -LiteralPath "$($package.FullName).signature.json")) {
             throw 'The Local Adapter package or signature is missing.'
           }
-          pwsh ./eng/verify-cli-regression.ps1 -Runtime win-arm64 -PackagePath $package.FullName
+          New-Item -ItemType Directory -Path artifacts/evidence -Force | Out-Null
+          pwsh ./eng/verify-cli-regression.ps1 -Runtime win-arm64 -PackagePath $package.FullName -EvidencePath artifacts/evidence/cli-regression.json
 
       - name: Verify signed official packages and native ARM64 Workers
         run: |
           dotnet test tests/MirrorPulse.Core.Tests/MirrorPulse.Core.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SignedPackageProcessTests --logger trx --results-directory artifacts/test-results/signed
           if ($LASTEXITCODE -ne 0) { throw 'Signed ARM64 Worker tests failed.' }
           pwsh ./eng/verify-test-results.ps1 -Suite signed -ResultsDirectory artifacts/test-results/signed
+
+      - name: Collect ARM64 verification evidence
+        shell: pwsh
+        run: ./eng/collect-ci-evidence.ps1 -Job official-package-arm64 -Runtime win-arm64 -OutputPath artifacts/evidence/official-package-arm64.json -TestManifests artifacts/test-results/signed/test-evidence.json -PublishDirectory "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-arm64" -IntegrationPath artifacts/evidence/cli-regression.json
+
+      - name: Upload ARM64 verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-official-package-arm64
+          path: artifacts/evidence/official-package-arm64.json
+          if-no-files-found: error
 
   official-adapters:
     runs-on: windows-latest
@@ -207,4 +244,17 @@ jobs:
         with:
           name: official-adapters
           path: artifacts/official-adapters
+          if-no-files-found: error
+
+      - name: Collect official Adapter verification evidence
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts/evidence -Force | Out-Null
+          ./eng/collect-ci-evidence.ps1 -Job official-adapters -Runtime win-x64 -OutputPath artifacts/evidence/official-adapters.json -TestManifests artifacts/test-results/official/test-evidence.json -AdapterDirectory artifacts/official-adapters
+
+      - name: Upload official Adapter verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-official-adapters
+          path: artifacts/evidence/official-adapters.json
           if-no-files-found: error

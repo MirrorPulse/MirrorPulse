@@ -6,7 +6,8 @@ param(
     [string]$PackagePath,
     [switch]$Regression,
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [string]$EvidencePath
 )
 
 $ErrorActionPreference = "Stop"
@@ -298,4 +299,11 @@ finally {
     if (Test-Path -LiteralPath $runRoot) {
         Remove-Item -LiteralPath $runRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+if ($EvidencePath) {
+    [ordered]@{
+        schemaVersion=1;runtime=$Runtime;regression=$Regression.IsPresent;rangeRead=$true
+        offlineQueueRetained=$Regression.IsPresent;uploadJournalDrained=$Regression.IsPresent
+        conflictPersisted=$Regression.IsPresent;cursorPersisted=$Regression.IsPresent
+    } | ConvertTo-Json | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 }

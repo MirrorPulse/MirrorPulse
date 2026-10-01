@@ -69,9 +69,14 @@ if ($LASTEXITCODE -ne 0 -or $status.kind -ne 'result') { throw 'MirrorPulse stat
 mp --json sync refresh | ConvertFrom-Json
 
 # Install and configure an Adapter instance.
-$install = mp --json adapter install .\MirrorPulse.Adapter.Local.mpadapter | ConvertFrom-Json
+mp --json adapter install .\MirrorPulse.Adapter.Local.mpadapter | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Adapter installation failed.' }
-mp instance create --install-id $install.data.installedAdapterId --name Documents `
+$topology = mp --json adapter list | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Adapter list failed.' }
+$installation = @($topology.data.installations) | Where-Object adapterId -eq 'com.mirrorpulse.adapter.local' |
+  Sort-Object installedAt -Descending | Select-Object -First 1
+if ($null -eq $installation) { throw 'The Local Adapter installation was not found.' }
+mp instance create --install-id $installation.installId --name Documents `
   --config 'sourceDirectory=C:\Users\me\Documents'
 ```
 

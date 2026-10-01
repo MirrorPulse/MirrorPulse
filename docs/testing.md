@@ -37,3 +37,29 @@ dotnet test tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release -
 Native Cloud Files and installed MSIX checks must run under a clean Windows
 test user or a disposable runner. Do not run installation/uninstallation probes
 against a user's configured application or storage sources.
+
+## CI evidence
+
+Each CI job uploads `evidence-<job>` with schema 1 JSON containing the checked-out
+commit, RID, executed/skipped counts by suite and category, and verified artifact
+SHA-256 hashes. The collector re-hashes actual publish/package files and rejects
+traversal paths, duplicate suites, mismatched counts, or missing required gates.
+It exports only named checks and relative artifact paths, without TRX output,
+stack traces, host user paths, credentials, or temporary certificate material.
+
+A manual workflow run additionally requires nine actual native Cloud Files
+tests and installed MSIX checks. The legacy native filter also selects five
+managed helper tests; they remain a separate category. MSIX installation,
+CLI alias, Host auto-start, associations, and uninstall checks are separate from
+Shell registration. `shellRegistration=false` explicitly means it was not run.
+The ARM64 report requires signed Local CLI regression evidence as well as the
+two signed Worker tests; the official aggregate requires all seven named tests.
+
+Download the three `evidence-*` artifacts from one workflow run, then verify:
+
+```powershell
+pwsh ./eng/verify-ci-evidence.ps1 -EvidenceDirectory artifacts/downloaded-evidence -ExpectedSourceSha <commit-sha> -RequireNative -RequireInstalled
+```
+
+Omit the last two switches for a push/PR run, which does not select those gates.
+The three reports must name the same expected commit and their job-specific RID.

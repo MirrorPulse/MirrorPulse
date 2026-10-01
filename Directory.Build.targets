@@ -4,17 +4,17 @@
     <RepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))</RepositoryRoot>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'MirrorPulse.App' or '$(MSBuildProjectName)' == 'MirrorPulse.Cli' or '$(MSBuildProjectName)' == 'MirrorPulse.Host'">
-    <Content Include="$(RepositoryRoot)LICENSE;$(RepositoryRoot)NOTICE;$(RepositoryRoot)docs\third-party-notices.md">
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'MirrorPulse.Cli' or '$(MSBuildProjectName)' == 'MirrorPulse.Host'">
+    <None Include="$(RepositoryRoot)LICENSE;$(RepositoryRoot)NOTICE;$(RepositoryRoot)docs\third-party-notices.md">
       <Link>ThirdParty\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="$(RepositoryRoot)docs\dependencies\**\*">
+    </None>
+    <None Include="$(RepositoryRoot)docs\dependencies\**\*">
       <Link>ThirdParty\dependencies\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
+    </None>
   </ItemGroup>
 
   <Target Name="ValidateMirrorPulseTargetFramework" BeforeTargets="BeforeBuild">
