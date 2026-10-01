@@ -7,7 +7,8 @@ public sealed record MirrorPulseWorkerDeleteRequest(
     InstanceId InstanceId,
     string NormalizedPath,
     string? ExpectedRevision,
-    bool IsDirectory);
+    bool IsDirectory,
+    Guid? OperationId = null);
 
 /// <summary>Carries one local move from the CfSharp journal to an Adapter Worker.</summary>
 public sealed record MirrorPulseWorkerMoveRequest(
@@ -15,7 +16,8 @@ public sealed record MirrorPulseWorkerMoveRequest(
     string SourcePath,
     string DestinationPath,
     string? ExpectedRevision,
-    bool IsDirectory);
+    bool IsDirectory,
+    Guid? OperationId = null);
 
 public interface IMirrorPulseWorkerMutationTransport
 {

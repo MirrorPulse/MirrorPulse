@@ -45,7 +45,8 @@ public sealed class MirrorPulseJournalPumpRunner
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 await ReportAsync(command, exception is MirrorPulseJournalAcknowledgementException
-                    ? "JournalAcknowledgementFailed" : "JournalCommandFailed", exception, report, cancellationToken).ConfigureAwait(false);
+                    ? "JournalAcknowledgementFailed" : exception is MirrorPulseMutationAmbiguousException ? "MutationOutcomeAmbiguous" :
+                    "JournalCommandFailed", exception, report, cancellationToken).ConfigureAwait(false);
             }
         }
         return progressed;

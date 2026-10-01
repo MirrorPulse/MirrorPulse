@@ -37,7 +37,7 @@ public sealed class AdapterWorkerMutationClient
             path = request.NormalizedPath,
             expectedRevision = request.ExpectedRevision,
             isDirectory = request.IsDirectory,
-        }, cancellationToken);
+        }, request.OperationId, cancellationToken);
 
     public async ValueTask<string> MoveAsync(
         MirrorPulseWorkerMoveRequest request,
@@ -49,17 +49,19 @@ public sealed class AdapterWorkerMutationClient
             destinationPath = request.DestinationPath,
             expectedRevision = request.ExpectedRevision,
             isDirectory = request.IsDirectory,
-        }, cancellationToken).ConfigureAwait(false) ??
+        }, request.OperationId, cancellationToken).ConfigureAwait(false) ??
             throw new IOException("The Adapter Worker did not return a moved revision.");
     }
 
     private async ValueTask<string?> SendAsync(
         string messageType,
         object payload,
+        Guid? operationId,
         CancellationToken cancellationToken)
     {
+        Guid requestId = operationId ?? Guid.NewGuid();
+        if (requestId == Guid.Empty) throw new ArgumentException("The Worker operation ID must not be empty.", nameof(operationId));
         await _operation.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Guid requestId = Guid.NewGuid();
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {

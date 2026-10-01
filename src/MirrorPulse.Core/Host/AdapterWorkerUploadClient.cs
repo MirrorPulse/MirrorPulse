@@ -46,8 +46,9 @@ public sealed class AdapterWorkerUploadClient
             throw new ArgumentOutOfRangeException(nameof(request), "The Worker upload is invalid.");
         }
 
+        Guid requestId = request.OperationId ?? Guid.NewGuid();
+        if (requestId == Guid.Empty) throw new ArgumentException("The Worker operation ID must not be empty.", nameof(request));
         await _operation.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Guid requestId = Guid.NewGuid();
         var ready = new TaskCompletionSource<Guid>(TaskCreationOptions.RunContinuationsAsynchronously);
         var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
@@ -60,7 +61,7 @@ public sealed class AdapterWorkerUploadClient
                 _completion = completion;
             }
 
-            Guid streamId = Guid.NewGuid();
+            Guid streamId = request.OperationId ?? Guid.NewGuid();
             await _channel.WriteControlAsync(new ControlFrameEnvelope(1, "Upload", requestId,
                 _instanceId, _sessionId, false, JsonSerializer.SerializeToElement(new
                 {
@@ -68,6 +69,7 @@ public sealed class AdapterWorkerUploadClient
                     expectedRevision = request.ExpectedRevision,
                     length = request.Length,
                     streamId,
+                    operationId = request.OperationId,
                 })), cancellationToken).ConfigureAwait(false);
             Guid acceptedStream = await ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             if (acceptedStream != streamId)

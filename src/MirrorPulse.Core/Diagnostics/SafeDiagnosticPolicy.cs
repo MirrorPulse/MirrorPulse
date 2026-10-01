@@ -19,6 +19,7 @@ public static class SafeDiagnosticPolicy
         ["JournalReadFailed"] = "The local journal could not be read.",
         ["JournalCommandFailed"] = "A local journal command failed.",
         ["JournalAcknowledgementFailed"] = "An accepted Worker result could not be acknowledged.",
+        ["MutationOutcomeAmbiguous"] = "A remote outcome requires reconciliation before retry.",
         ["RemoteBatchRetry"] = "The remote batch requires another attempt.",
         ["RemotePollFailed"] = "Remote polling failed.",
         ["TransferComplete"] = "The transfer completed.",

@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Conflicts;
@@ -33,6 +34,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _loop;
     private readonly MirrorPulseJournalPumpRunner _runner = new();
+    private readonly MirrorPulseMutationExecutor _mutationExecutor;
 
     public MirrorPulseJournalPumpHealth Health => _runner.Health;
 
@@ -58,6 +60,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         _mutations = mutations;
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _mutationExecutor = new MirrorPulseMutationExecutor(catalog);
         _conflicts = conflicts;
         _notifications = notifications;
         ArgumentException.ThrowIfNullOrWhiteSpace(syncRootPath);
@@ -130,17 +133,19 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
 
             syncRootRelativePath = Path.GetRelativePath(_syncRootPath, localPath)
                 .Replace(Path.DirectorySeparatorChar, '/');
+            if (await CheckPreviousMutationAsync(command, cancellationToken).ConfigureAwait(false)) return true;
             string? revision = await MirrorPulseJournalUploadRevisionGuard.ResolveAsync(
                 _state.OpenStore, _stats, command, syncRootRelativePath,
                 cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             await using var content = new FileStream(localPath, FileMode.Open, FileAccess.Read,
                 FileShare.Read, 64 * 1024, FileOptions.Asynchronous);
-            string uploadedRevision = await _uploads.UploadAsync(
-                new MirrorPulseWorkerUploadRequest(command.InstanceId, command.RelativePath,
-                    revision, content, content.Length), cancellationToken).ConfigureAwait(false);
-            await AcknowledgeAsync(command.OperationId, uploadedRevision,
-                cancellationToken).ConfigureAwait(false);
+            string hash = Convert.ToHexString(await SHA256.HashDataAsync(content, cancellationToken).ConfigureAwait(false));
+            content.Position = 0;
+            await _mutationExecutor.ExecuteAsync(Intent(command, revision, content.Length, hash), async token =>
+                await _uploads.UploadAsync(new MirrorPulseWorkerUploadRequest(command.InstanceId, command.RelativePath,
+                    revision, content, content.Length, command.OperationId), token).ConfigureAwait(false),
+                (accepted, token) => AcknowledgeAsync(command.OperationId, accepted, token), cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch (MirrorPulseUploadConflictException conflict)
@@ -174,6 +179,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             .Replace(Path.DirectorySeparatorChar, '/');
         try
         {
+            if (await CheckPreviousMutationAsync(command, cancellationToken).ConfigureAwait(false)) return true;
             string? revision;
             if (command.Kind == MirrorPulseWorkerChangeKind.Delete)
             {
@@ -181,11 +187,10 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
                     _state.OpenStore, _stats, command, syncRootRelativePath,
                     allowTombstone: true, allowMissingRemote: true,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
-                await _mutations!.DeleteAsync(new MirrorPulseWorkerDeleteRequest(
-                    command.InstanceId, command.RelativePath, revision, command.IsDirectory),
-                    cancellationToken).ConfigureAwait(false);
-                await AcknowledgeAsync(command.OperationId, null,
-                    cancellationToken).ConfigureAwait(false);
+                await _mutationExecutor.ExecuteAsync(Intent(command, revision), token =>
+                    _mutations!.DeleteAsync(new MirrorPulseWorkerDeleteRequest(command.InstanceId,
+                        command.RelativePath, revision, command.IsDirectory, command.OperationId), token),
+                    (_, token) => AcknowledgeAsync(command.OperationId, null, token), cancellationToken).ConfigureAwait(false);
                 return true;
             }
 
@@ -198,11 +203,10 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
                 _state.OpenStore, _stats, command, syncRootRelativePath,
                 remoteStatPath: command.PreviousRelativePath,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
-            string movedRevision = await _mutations!.MoveAsync(new MirrorPulseWorkerMoveRequest(
-                command.InstanceId, command.PreviousRelativePath, command.RelativePath,
-                revision, command.IsDirectory), cancellationToken).ConfigureAwait(false);
-            await AcknowledgeAsync(command.OperationId, movedRevision,
-                cancellationToken).ConfigureAwait(false);
+            await _mutationExecutor.ExecuteAsync(Intent(command, revision), async token =>
+                await _mutations!.MoveAsync(new MirrorPulseWorkerMoveRequest(command.InstanceId,
+                    command.PreviousRelativePath, command.RelativePath, revision, command.IsDirectory, command.OperationId), token).ConfigureAwait(false),
+                (accepted, token) => AcknowledgeAsync(command.OperationId, accepted, token), cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch (MirrorPulseUploadConflictException conflict)
@@ -264,6 +268,19 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
             throw new MirrorPulseJournalAcknowledgementException("The accepted Worker result could not be acknowledged.", exception);
         }
     }
+
+    private async ValueTask<bool> CheckPreviousMutationAsync(MirrorPulseWorkerChangeCommand command, CancellationToken cancellationToken)
+    {
+        MirrorPulseMutationRecord? record = await _catalog.ReadMutationAsync(command.OperationId, cancellationToken).ConfigureAwait(false);
+        if (record is null || record.State == MirrorPulseMutationState.Prepared) return false;
+        if (record.State == MirrorPulseMutationState.Acknowledged) return true;
+        throw new MirrorPulseMutationAmbiguousException();
+    }
+
+    private static MirrorPulseMutationIntent Intent(MirrorPulseWorkerChangeCommand command, string? revision,
+        long? length = null, string? hash = null) => new(command.OperationId, command.InstanceId, command.RootKey,
+            command.Kind, command.RelativePath, command.PreviousRelativePath, command.IsDirectory, revision,
+            length, hash, MirrorPulseMutationOrigin.Journal);
 
     private async ValueTask ReportFailureAsync(MirrorPulseWorkerChangeCommand? command, string code,
         Exception exception, CancellationToken cancellationToken)

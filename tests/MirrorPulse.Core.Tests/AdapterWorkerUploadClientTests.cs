@@ -14,6 +14,14 @@ public sealed class AdapterWorkerUploadClientTests
     [TestMethod]
     public async Task UploadStreamsChunksAndReturnsWorkerRevision()
     {
+        Guid operationId = Guid.NewGuid();
+        InstanceId instanceId = InstanceId.New();
+        await UploadInNewSessionAsync(operationId, instanceId);
+        await UploadInNewSessionAsync(operationId, instanceId);
+    }
+
+    private static async Task UploadInNewSessionAsync(Guid operationId, InstanceId instanceId)
+    {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         string pipeName = $"mirrorpulse-upload-test-{Guid.NewGuid():N}";
         using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1,
@@ -22,7 +30,6 @@ public sealed class AdapterWorkerUploadClientTests
         await using AdapterNamedPipeClient workerPipe = await AdapterNamedPipeClient.ConnectAsync(
             pipeName, TimeSpan.FromSeconds(10), timeout.Token);
         await connection;
-        InstanceId instanceId = InstanceId.New();
         WorkerSessionId sessionId = WorkerSessionId.New();
         var worker = new AdapterControlChannel(workerPipe, instanceId.Value, sessionId.Value);
         var channel = new AdapterWorkerReadRangeClient(server, instanceId, sessionId);
@@ -30,12 +37,15 @@ public sealed class AdapterWorkerUploadClientTests
         byte[] content = Encoding.UTF8.GetBytes("upload-content");
         await using var source = new MemoryStream(content, writable: false);
         Task<string> pending = upload.UploadAsync(new MirrorPulseWorkerUploadRequest(
-            instanceId, "notes.txt", "old-revision", source, content.Length), timeout.Token).AsTask();
+            instanceId, "notes.txt", "old-revision", source, content.Length, operationId), timeout.Token).AsTask();
 
         AdapterControlFrame command = await worker.ReadAsync(timeout.Token);
         Assert.AreEqual("Upload", command.MessageType);
+        Assert.AreEqual(operationId, command.RequestId);
+        Assert.AreEqual(operationId, command.Payload.GetProperty("operationId").GetGuid());
         Assert.AreEqual("old-revision", command.Payload.GetProperty("expectedRevision").GetString());
         Guid streamId = command.Payload.GetProperty("streamId").GetGuid();
+        Assert.AreEqual(operationId, streamId);
         Task<byte[]> responseBytes = LengthPrefixedFrameReader.ReadAsync(server, timeout.Token).AsTask();
         await worker.SendAsync("UploadReady", command.RequestId, true, new { streamId }, timeout.Token);
         ControlFrameEnvelope response = ControlFrameJsonCodec.Decode(await responseBytes);

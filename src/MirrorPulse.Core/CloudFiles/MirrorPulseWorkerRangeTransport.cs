@@ -22,7 +22,8 @@ public sealed record MirrorPulseWorkerUploadRequest(
     string NormalizedPath,
     string? ExpectedRevision,
     Stream Content,
-    long Length);
+    long Length,
+    Guid? OperationId = null);
 
 public interface IMirrorPulseWorkerUploadTransport
 {

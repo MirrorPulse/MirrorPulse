@@ -1,5 +1,11 @@
 # MirrorPulse Worker Protocol
 
+Host journal mutations use the durable operation ID as the request ID, including
+after Worker restarts. Upload streams also use that ID. This is correlation,
+not an idempotency guarantee: protocol v1 does not promise duplicate suppression.
+The Host records execution intent before dispatch and retains unknown outcomes
+for reconciliation instead of blindly sending the mutation again.
+
 This document describes the version-one control contract between MirrorPulse and
 one Adapter Worker process. Core owns the Host envelope codec, and the Adapter
 SDK implements the corresponding version-one frame format for out-of-process
