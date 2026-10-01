@@ -2,10 +2,10 @@ using MirrorPulse.Core;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Host;
 
-if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+if (!MirrorPulsePlatform.IsCurrentSupported())
 {
-    Console.Error.WriteLine("MirrorPulse requires Windows 10 version 2004 or later.");
-    return 1;
+    Console.Error.WriteLine(MirrorPulsePlatform.Requirement);
+    return 8;
 }
 
 if (args.Length > 1 || (args.Length == 1 && args[0] != "--run-once"))

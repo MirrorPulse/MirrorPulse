@@ -16,6 +16,7 @@ public sealed class MirrorPulseCliApplication
         TextWriter? output = null,
         TextWriter? error = null,
         IMirrorPulseCliHostOperations? hostOperations = null,
+        Func<bool>? isPlatformSupported = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -67,6 +68,14 @@ public sealed class MirrorPulseCliApplication
             }
 
             return 0;
+        }
+
+        if (!(isPlatformSupported ?? MirrorPulseControlPlatform.IsCurrentSupported)())
+        {
+            await MirrorPulseCliOutputFormatter.WriteErrorAsync(
+                8, "mp.platform.unsupported", MirrorPulseControlPlatform.Requirement,
+                parsed.Options.Json, error, cancellationToken).ConfigureAwait(false);
+            return 8;
         }
 
         bool isHostCommand = parsed.Command!.Path.Count >= 2 &&

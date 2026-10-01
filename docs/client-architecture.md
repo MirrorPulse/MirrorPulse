@@ -11,7 +11,8 @@ or use private CfSharp tables.
 ## Current allowances
 
 - CLI directly references Control.
-- Control still references Core for legacy pure version-one DTOs. This does not
+- Control still references Core for legacy pure version-one DTOs and the pure
+  product platform policy. This does not
   permit State, SQLite or Cloud Files access.
 - App still references Core and CloudFiles.CfSharp. Its two read-only catalog
   pages and conditional packaged diagnostic probe are migration exceptions.

@@ -8,7 +8,7 @@ MirrorPulse contracts to Adapters and the product UI.
 
 | Area | Implemented behavior and evidence |
 |---|---|
-| Operating system | The Host requires Windows 10 version 2004 or later. CfSharp's broader platform minimum does not lower the product minimum. |
+| Operating system | Windows 11 desktop 24H2 (build 26100) or later, while Microsoft-supported, x64/ARM64. Windows 10 and Server are excluded; see the [product support matrix](windows-support.md). CfSharp's broader API minimum does not lower the product minimum. |
 | Architectures | The Host publishes for `win-x64` and `win-arm64`. Native integration has been exercised locally on Windows x64; ARM64 runtime behavior remains unverified. |
 | State | One official CfSharp SQLite database lives outside the single sync root. MirrorPulse keeps product catalog data separately and does not duplicate CfSharp's local journal, remote batches, conflicts, checkpoints, or echo records. |
 | Registration | The Host starts a real CfSharp session with a current-user Shell and Cloud Files registration. Ordinary shutdown preserves registration and database state. |

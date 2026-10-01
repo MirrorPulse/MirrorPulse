@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using Microsoft.Windows.AppLifecycle;
+using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Host;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
@@ -25,6 +26,7 @@ namespace MirrorPulse.App;
 public partial class App : Application
 {
     private MainWindow? _window;
+    private Window? _unsupportedWindow;
     internal MainWindow CurrentWindow => _window ?? throw new InvalidOperationException(
         "The MirrorPulse window has not been created.");
     private DispatcherQueueTimer? _notificationTimer;
@@ -46,6 +48,25 @@ public partial class App : Application
     /// <param name="args">Details about the launch request and process.</param>
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
+        if (!MirrorPulsePlatform.IsCurrentSupported())
+        {
+            var close = new Button { Content = "Close" };
+            var unsupported = _unsupportedWindow = new Window
+            {
+                Title = "MirrorPulse",
+                Content = new StackPanel
+                {
+                    Padding = new Thickness(32),
+                    Spacing = 16,
+                    Children = { new TextBlock { Text = MirrorPulsePlatform.Requirement,
+                        TextWrapping = TextWrapping.Wrap }, close },
+                },
+            };
+            close.Click += (_, _) => _unsupportedWindow?.Close();
+            unsupported.Closed += (_, _) => Exit();
+            unsupported.Activate();
+            return;
+        }
 #if MIRRORPULSE_SHELL_PROBE
         string? probeResult = Environment.GetEnvironmentVariable("MIRRORPULSE_PACKAGED_SHELL_PROBE_RESULT");
         if (!string.IsNullOrWhiteSpace(probeResult))

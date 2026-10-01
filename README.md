@@ -12,7 +12,7 @@ The no-UI `mp` CLI and current-user Host control path run on x64 and ARM64. The 
 
 ## Requirements
 
-- Windows 10 version 1709 or later; exact supported builds are validated by the support matrix.
+- A Microsoft-supported Windows 11 desktop release, version 24H2 (build 26100) or later. Windows 10 and Windows Server are excluded. See the [support matrix](docs/windows-support.md).
 - .NET 10 SDK selected by `global.json`.
 - x64 or ARM64.
 

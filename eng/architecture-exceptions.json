@@ -4,7 +4,7 @@
     {
       "project": "MirrorPulse.Control",
       "reference": "MirrorPulse.Core",
-      "reason": "Control v1 uses legacy pure DTOs; no State or database access is allowed."
+      "reason": "Control v1 uses legacy pure DTOs and the pure product platform policy; no State or database access is allowed."
     },
     {
       "project": "MirrorPulse.App",

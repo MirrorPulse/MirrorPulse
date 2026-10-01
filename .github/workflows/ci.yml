@@ -76,18 +76,11 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: pwsh ./eng/verify-native.ps1
 
-      - name: Verify installed MSIX Cloud Files identity
-        if: github.event_name == 'workflow_dispatch'
+      - name: Verify unsupported Windows Server rejection
         shell: pwsh
-        env:
-          MIRRORPULSE_VERIFY_SHELL: ${{ inputs.verify_shell }}
         run: |
           New-Item -ItemType Directory -Path artifacts/evidence -Force | Out-Null
-          if ($env:MIRRORPULSE_VERIFY_SHELL -eq 'true') {
-            pwsh ./eng/verify-msix-cloudfiles.ps1 -VerifyShell -EvidencePath artifacts/evidence/installed.json
-          } else {
-            pwsh ./eng/verify-msix-cloudfiles.ps1 -EvidencePath artifacts/evidence/installed.json
-          }
+          pwsh ./eng/verify-unsupported-platform.ps1 -PublishDirectory "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-x64" -EvidencePath artifacts/evidence/rejected.json
 
       - name: Collect x64 verification evidence
         shell: pwsh
@@ -97,12 +90,11 @@ jobs:
             Job = 'build-and-test'; Runtime = 'win-x64'; OutputPath = 'artifacts/evidence/build-and-test.json'
             TestManifests = @('artifacts/test-results/managed/test-evidence.json')
             PublishDirectory = "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-x64"
+            RejectedPath = 'artifacts/evidence/rejected.json'
           }
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
             $parameters.TestManifests += 'artifacts/test-results/native/test-evidence.json'
             $parameters.RequireNative = $true
-            $parameters.RequireInstalled = $true
-            $parameters.InstalledPath = 'artifacts/evidence/installed.json'
           }
           ./eng/collect-ci-evidence.ps1 @parameters
 
@@ -167,9 +159,33 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Signed ARM64 Worker tests failed.' }
           pwsh ./eng/verify-test-results.ps1 -Suite signed -ResultsDirectory artifacts/test-results/signed
 
+      - name: Verify installed ARM64 MSIX on Windows 11 desktop
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          MIRRORPULSE_VERIFY_SHELL: ${{ inputs.verify_shell }}
+        run: |
+          New-Item -ItemType Directory -Path artifacts/evidence -Force | Out-Null
+          if ($env:MIRRORPULSE_VERIFY_SHELL -eq 'true') {
+            pwsh ./eng/verify-msix-cloudfiles.ps1 -Runtime win-arm64 -VerifyShell -EvidencePath artifacts/evidence/installed.json
+          } else {
+            pwsh ./eng/verify-msix-cloudfiles.ps1 -Runtime win-arm64 -EvidencePath artifacts/evidence/installed.json
+          }
+
       - name: Collect ARM64 verification evidence
         shell: pwsh
-        run: ./eng/collect-ci-evidence.ps1 -Job official-package-arm64 -Runtime win-arm64 -OutputPath artifacts/evidence/official-package-arm64.json -TestManifests artifacts/test-results/signed/test-evidence.json -PublishDirectory "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-arm64" -IntegrationPath artifacts/evidence/cli-regression.json
+        run: |
+          $parameters = @{
+            Job = 'official-package-arm64'; Runtime = 'win-arm64'; OutputPath = 'artifacts/evidence/official-package-arm64.json'
+            TestManifests = @('artifacts/test-results/signed/test-evidence.json')
+            PublishDirectory = "$env:RUNNER_TEMP/mirrorpulse-cli-host-win-arm64"
+            IntegrationPath = 'artifacts/evidence/cli-regression.json'
+          }
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $parameters.RequireInstalled = $true
+            $parameters.InstalledPath = 'artifacts/evidence/installed.json'
+          }
+          ./eng/collect-ci-evidence.ps1 @parameters
 
       - name: Upload ARM64 verification evidence
         uses: actions/upload-artifact@v4

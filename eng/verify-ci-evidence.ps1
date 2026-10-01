@@ -38,17 +38,24 @@ foreach ($job in $expected.Keys) {
         @($manifest.checks | Where-Object { $_.name -eq "signed-local-cli-regression" -and $_.executed -eq $true }).Count -ne 1) {
         throw "The ARM64 CLI regression did not execute."
     }
+    if ($job -eq "official-package-arm64" -and $RequireInstalled) {
+        $installed = @($manifest.checks | Where-Object name -eq 'installed-msix')
+        if ($installed.Count -ne 1 -or $installed[0].executed -ne $true -or $installed[0].uninstalled -ne $true -or
+            $installed[0].osProductType -ne 1 -or $installed[0].osVersion -notmatch '^10\.0\.\d+\.\d+$' -or
+            [version]$installed[0].osVersion -lt [version]'10.0.26100.0' -or
+            $installed[0].minimumVersion -ne '10.0.26100.0') { throw "Supported desktop MSIX verification is missing." }
+    }
     if ($job -eq "build-and-test") {
+        $rejected = @($manifest.checks | Where-Object name -eq 'unsupported-server')
+        if ($rejected.Count -ne 1 -or $rejected[0].executed -ne $true -or $rejected[0].cliRejected -ne $true -or
+            $rejected[0].hostRejected -ne $true -or $rejected[0].stateUntouched -ne $true -or
+            $rejected[0].osProductType -notin @(2,3)) { throw "Unsupported Windows Server rejection is missing." }
         if ($RequireNative) {
             $native = @($manifest.tests | Where-Object suite -eq "native")
             if ($native.Count -ne 1 -or $native[0].skipped -ne 0 -or
                 @($native[0].categories | Where-Object { $_.category -eq "native" -and $_.executed -eq 9 }).Count -ne 1) {
                 throw "Native Cloud Files execution is missing."
             }
-        }
-        if ($RequireInstalled -and
-            @($manifest.checks | Where-Object { $_.name -eq "installed-msix" -and $_.executed -eq $true -and $_.uninstalled -eq $true }).Count -ne 1) {
-            throw "Installed MSIX verification is missing."
         }
     }
 }

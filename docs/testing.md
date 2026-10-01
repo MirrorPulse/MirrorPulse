@@ -47,11 +47,16 @@ traversal paths, duplicate suites, mismatched counts, or missing required gates.
 It exports only named checks and relative artifact paths, without TRX output,
 stack traces, host user paths, credentials, or temporary certificate material.
 
-A manual workflow run additionally requires nine actual native Cloud Files
-tests and installed MSIX checks. The legacy native filter also selects five
+A manual workflow run additionally requires eight actual native Cloud Files
+integrations, one official SQLite crash test, and installed ARM64 MSIX checks
+on the Windows 11 desktop runner. The x64 Server runner verifies that published
+CLI and Host processes reject the unsupported SKU without creating state.
+The legacy native filter also selects five
 managed helper tests; they remain a separate category. MSIX installation,
 CLI alias, Host auto-start, associations, and uninstall checks are separate from
 Shell registration. `shellRegistration=false` explicitly means it was not run.
+Installed evidence includes the OS build and product type; a Server installation
+cannot satisfy the [supported desktop matrix](windows-support.md).
 The ARM64 report requires signed Local CLI regression evidence as well as the
 two signed Worker tests; the official aggregate requires all seven named tests.
 

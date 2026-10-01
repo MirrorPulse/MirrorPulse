@@ -40,4 +40,23 @@ foreach ($project in $projects) {
     }
 }
 
-Write-Output "All projects target their approved Windows frameworks."
+[xml]$app = Get-Content -LiteralPath (Join-Path $repositoryRoot "src/MirrorPulse.App/MirrorPulse.App.csproj") -Raw
+[xml]$manifest = Get-Content -LiteralPath (Join-Path $repositoryRoot "src/MirrorPulse.App/Package.appxmanifest") -Raw
+$minimum = "10.0.26100.0"
+$minima = @($app.SelectNodes("//TargetPlatformMinVersion"))
+$families = @($manifest.Package.Dependencies.TargetDeviceFamily)
+$policy = Get-Content -LiteralPath (Join-Path $repositoryRoot "src/MirrorPulse.Core/Configuration/MirrorPulsePlatform.cs") -Raw
+if ($minima.Count -ne 1 -or $minima[0].InnerText -ne $minimum -or
+    $families.Count -ne 1 -or $families[0].Name -ne "Windows.Desktop" -or
+    $families[0].MinVersion -ne $minimum -or $families[0].MaxVersionTested -ne $minimum -or
+    $policy -notmatch ('MinimumVersion\s*=\s*"' + [regex]::Escape($minimum) + '"')) {
+    throw "Product runtime and Desktop MSIX minimum must agree on Windows 11 24H2 ($minimum)."
+}
+foreach ($name in @("MirrorPulse.App", "MirrorPulse.Host", "MirrorPulse.Cli")) {
+    [xml]$project = Get-Content -LiteralPath (Join-Path $repositoryRoot "src/$name/$name.csproj") -Raw
+    $rids = @($project.SelectNodes("//RuntimeIdentifiers"))
+    if ($rids.Count -ne 1 -or $rids[0].InnerText -ne "win-x64;win-arm64") {
+        throw "$name must publish exactly win-x64 and win-arm64."
+    }
+}
+Write-Output "Approved Windows frameworks, product minimum, Desktop family, and x64/ARM64 RIDs agree."

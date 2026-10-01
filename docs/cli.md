@@ -16,6 +16,13 @@ pwsh -File eng/verify-cli-host-publish.ps1 -Runtime win-arm64
 
 Use the ARM64 package on ARM64 Windows. The CLI and Host must come from the same build so their Control protocol and runtime dependencies match.
 
+Product operations require Windows 11 desktop 24H2 (build 26100) or later,
+x64/ARM64, while the OS release is Microsoft-supported. On older builds or
+Windows Server, commands return exit 8 (`mp.platform.unsupported` in JSON)
+before resolving or starting a Host. Help and version remain available for
+inspecting a build. The Host also rejects unsupported systems before opening
+state or registering Cloud Files. See the [support matrix](windows-support.md).
+
 ## Global options
 
 ```text

@@ -54,7 +54,7 @@ public sealed class MirrorPulseCliApplicationTests
 
         var operations = new FakeHostOperations();
         int exitCode = await MirrorPulseCliApplication.RunAsync(
-            ["host", "status"], output, error, hostOperations: operations);
+            ["host", "status"], output, error, hostOperations: operations, isPlatformSupported: () => true);
 
         Assert.AreEqual(0, exitCode);
         Assert.AreEqual(0, operations.EnsureStartedCount);
@@ -85,7 +85,7 @@ public sealed class MirrorPulseCliApplicationTests
         var operations = new FakeHostOperations();
 
         int exitCode = await MirrorPulseCliApplication.RunAsync(
-            ["--json", "status"], output, error, hostOperations: operations);
+            ["--json", "status"], output, error, hostOperations: operations, isPlatformSupported: () => true);
 
         Assert.AreEqual(8, exitCode);
         Assert.AreEqual(string.Empty, output.ToString());
@@ -137,7 +137,7 @@ public sealed class MirrorPulseCliApplicationTests
         var operations = new FakeHostOperations();
 
         int exitCode = await MirrorPulseCliApplication.RunAsync(
-            ["status"], output, error, hostOperations: operations);
+            ["status"], output, error, hostOperations: operations, isPlatformSupported: () => true);
 
         Assert.AreEqual(8, exitCode);
         Assert.AreEqual(1, operations.EnsureStartedCount);
@@ -146,15 +146,53 @@ public sealed class MirrorPulseCliApplicationTests
         error.GetStringBuilder().Clear();
         operations.EnsureStartedCount = 0;
         exitCode = await MirrorPulseCliApplication.RunAsync(
-            ["--no-start", "status"], output, error, hostOperations: operations);
+            ["--no-start", "status"], output, error, hostOperations: operations, isPlatformSupported: () => true);
 
         Assert.AreEqual(8, exitCode);
         Assert.AreEqual(0, operations.EnsureStartedCount);
     }
 
+    [TestMethod]
+    [DataRow("status")]
+    [DataRow("host start")]
+    [DataRow("--no-start status")]
+    [DataRow("--developer-mode status")]
+    public async Task UnsupportedPlatformRejectsBeforeAnyHostOperation(string command)
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var operations = new FakeHostOperations();
+        int exitCode = await MirrorPulseCliApplication.RunAsync(
+            ["--json", .. command.Split(' ')], output, error, hostOperations: operations,
+            isPlatformSupported: () => false);
+
+        Assert.AreEqual(8, exitCode);
+        Assert.AreEqual(string.Empty, output.ToString());
+        Assert.AreEqual(0, operations.EnsureStartedCount);
+        Assert.AreEqual(0, operations.HostCommandCount);
+        using JsonDocument document = JsonDocument.Parse(error.ToString());
+        Assert.AreEqual("mp.platform.unsupported", document.RootElement.GetProperty("code").GetString());
+    }
+
+    [TestMethod]
+    public async Task BuildMetadataRemainsReadableOnUnsupportedPlatforms()
+    {
+        foreach (string command in new[] { "--help", "--version", "help", "version" })
+        {
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            int result = await MirrorPulseCliApplication.RunAsync([command], output, error,
+                isPlatformSupported: () => false);
+            Assert.AreEqual(0, result);
+            Assert.AreEqual(string.Empty, error.ToString());
+            Assert.IsGreaterThan(0, output.ToString().Length);
+        }
+    }
+
     private sealed class FakeHostOperations : IMirrorPulseCliHostOperations
     {
         public int EnsureStartedCount { get; set; }
+        public int HostCommandCount { get; private set; }
 
         public Task EnsureStartedAsync(CancellationToken cancellationToken)
         {
@@ -169,6 +207,7 @@ public sealed class MirrorPulseCliApplicationTests
             TextWriter errorWriter,
             CancellationToken cancellationToken)
         {
+            HostCommandCount++;
             await output.WriteLineAsync("fake-host");
             return 0;
         }

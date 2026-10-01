@@ -2,6 +2,8 @@
 param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
+    [ValidateSet("win-x64", "win-arm64")]
+    [string]$Runtime = "win-x64",
     [switch]$VerifyShell,
     [string]$EvidencePath
 )
@@ -9,6 +11,12 @@ param(
 $ErrorActionPreference = "Stop"
 if (-not $IsWindows) {
     throw "MSIX Cloud Files verification requires Windows."
+}
+$os = Get-CimInstance -ClassName Win32_OperatingSystem
+$version = [version]$os.Version
+$osVersion = [version]::new($version.Major, $version.Minor, $version.Build, 0).ToString()
+if ($os.ProductType -ne 1 -or [version]$osVersion -lt [version]"10.0.26100.0") {
+    throw "Installed MSIX verification requires a supported Windows 11 desktop test user."
 }
 
 $project = Join-Path $PSScriptRoot "..\src\MirrorPulse.App\MirrorPulse.App.csproj"
@@ -36,7 +44,7 @@ try {
     Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
     Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\LocalMachine\TrustedPeople" | Out-Null
 
-    & dotnet build $project --configuration $Configuration --runtime win-x64 `
+    & dotnet build $project --configuration $Configuration --runtime $Runtime `
         -p:GenerateAppxPackageOnBuild=true `
         -p:AppxPackageSigningEnabled=true `
         -p:PackageCertificateThumbprint=$($certificate.Thumbprint) `
@@ -83,6 +91,11 @@ try {
     $namespace.AddNamespace("uap3", "http://schemas.microsoft.com/appx/manifest/uap/windows10/3")
     $namespace.AddNamespace("desktop", "http://schemas.microsoft.com/appx/manifest/desktop/windows10")
     $namespace.AddNamespace("uap", "http://schemas.microsoft.com/appx/manifest/uap/windows10")
+    $families = @($manifest.SelectNodes("/f:Package/f:Dependencies/f:TargetDeviceFamily", $namespace))
+    if ($families.Count -ne 1 -or $families[0].Name -ne "Windows.Desktop" -or
+        $families[0].MinVersion -ne "10.0.26100.0") {
+        throw "The installed MSIX product minimum or device family is incorrect."
+    }
     $cloudFiles = $manifest.SelectSingleNode(
         "/f:Package/f:Applications/f:Application/f:Extensions/desktop3:Extension[@Category='windows.cloudFiles']",
         $namespace)
@@ -178,7 +191,8 @@ finally {
 }
 if ($EvidencePath) {
     [ordered]@{
-        schemaVersion=1;runtime="win-x64";packageSha256=$packageSha256
+        schemaVersion=1;runtime=$Runtime;packageSha256=$packageSha256
+        osVersion=$osVersion;osProductType=[int]$os.ProductType;minimumVersion="10.0.26100.0"
         installedIdentity=$true;cliAlias=$true;hostAutoStart=$true
         cloudFilesExtension=$true;adapterAssociation=$true;uninstalled=$true
         shellRegistration=$VerifyShell.IsPresent
