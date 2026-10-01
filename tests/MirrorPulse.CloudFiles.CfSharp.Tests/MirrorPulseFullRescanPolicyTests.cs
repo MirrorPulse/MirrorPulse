@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
+using System.Text.RegularExpressions;
 using CfSharp;
+using CfSharp.Native;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
@@ -163,8 +166,36 @@ public sealed class MirrorPulseFullRescanPolicyTests
             .WithMetadata(CloudPlaceholderMetadata.CreateFileBuilder().WithLastWriteTime(DateTimeOffset.UtcNow.AddMinutes(-1)).Build())
             .WithInSyncState(false).Build(), token);
         TestContext.WriteLine($"CfSharp 0.1.0-preview.2 coordination USNs: convert={converted.OperationUsn}, clear={cleared.OperationUsn}, mark={marked.OperationUsn}, changed={changed.OperationUsn}, metadata={patched.OperationUsn}; OS={Environment.OSVersion.Version}.");
-        Assert.AreEqual("coordination probe", await File.ReadAllTextAsync(Path.Combine(syncRoot, name), token));
+        string path = Path.Combine(syncRoot, name);
+        var native = SetNativeOutOfSync(path);
+        TestContext.WriteLine($"CfSharp.Native direct coordination: HRESULT=0x{native.HResult:X8}, USN={native.Usn}.");
+        var start = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "fsutil.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (string argument in new[] { "usn", "readdata", path }) start.ArgumentList.Add(argument);
+        using Process process = Process.Start(start)!;
+        Task<string> output = process.StandardOutput.ReadToEndAsync(token);
+        Task<string> error = process.StandardError.ReadToEndAsync(token);
+        await process.WaitForExitAsync(token);
+        Match match = Regex.Match(await output, @"(?im)^\s*USN\s*:\s*(0x[0-9a-f]+)");
+        await error;
+        TestContext.WriteLine($"Windows file USN query: exit={process.ExitCode}, USN={(match.Success ? match.Groups[1].Value : "unavailable")}.");
+        Assert.AreEqual("coordination probe", await File.ReadAllTextAsync(path, token));
         await file.DeleteAsync(token);
+    }
+
+    private static unsafe (int HResult, long Usn) SetNativeOutOfSync(string path)
+    {
+        // Diagnostic only: use the library's public native declaration against a standard
+        // handle to this disposable fixture, without adding a product fallback.
+        using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+        long usn = 0;
+        int result = CfApi.CfSetInSyncState(handle.DangerousGetHandle(), CfInSyncState.NotInSync, CfSetInSyncFlags.None, &usn);
+        return (result, usn);
     }
 
     private sealed class DiskWorker(string root) : IMirrorPulseWorkerUploadTransport, IMirrorPulseWorkerStatTransport,
