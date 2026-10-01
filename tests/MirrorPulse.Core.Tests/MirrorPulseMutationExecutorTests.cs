@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using CfSharp;
+using CfSharp.Storage.Sqlite;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
@@ -113,6 +115,59 @@ public sealed class MirrorPulseMutationExecutorTests
         record = record with { Intent = Intent() with { ContentLength = 0, ContentSha256 = Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())) } };
         Assert.AreEqual(MirrorPulseMutationProofKind.Unknown,
             (await new MirrorPulseMutationReadback(fixture, fixture, fixture).VerifyAsync(record, default)).Kind);
+    }
+
+    [TestMethod]
+    public async Task OfficialAckSurvivesFailedProjectionAndCatalogRestart()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        MirrorPulseMutationIntent intent = Intent();
+        int mutations = 0;
+        try
+        {
+            Directory.CreateDirectory(paths.SyncRootPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(paths.CfSharpStateDatabasePath)!);
+            await using ICloudStateStore official = await new SqliteCloudStateStoreFactory(paths.CfSharpStateDatabasePath)
+                .OpenAsync(new CloudStateStoreContext(paths.SyncRootPath));
+            await using (ICloudStateTransaction transaction = await official.BeginTransactionAsync())
+            {
+                await transaction.Operations.EnqueueAsync(new(intent.OperationId, CloudStateOperationKind.ContentUpdate,
+                    null, Array.Empty<byte>(), DateTimeOffset.UtcNow));
+                await transaction.CommitAsync();
+            }
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                await Assert.ThrowsExactlyAsync<IOException>(() => new MirrorPulseMutationExecutor(catalog).ExecuteAsync(intent,
+                    _ => { mutations++; return ValueTask.FromResult<string?>("accepted"); }, async (_, token) =>
+                    {
+                        await using ICloudStateTransaction transaction = await official.BeginTransactionAsync(token);
+                        await transaction.Operations.RemoveAsync(intent.OperationId, token);
+                        await transaction.CommitAsync(token);
+                        throw new IOException("Product projection failed after authoritative ack.");
+                    }, default).AsTask());
+            }
+            await using var reopened = await MirrorPulseProductCatalog.OpenAsync(paths);
+            var recovery = new MirrorPulseMutationProjectionRecovery(reopened);
+            async ValueTask<bool> Pending(Guid operationId, CancellationToken token)
+            {
+                await using ICloudStateTransaction transaction = await official.BeginTransactionAsync(token);
+                bool exists = await transaction.Operations.GetAsync(operationId, token) is not null;
+                await transaction.RollbackAsync(token);
+                return exists;
+            }
+            await Assert.ThrowsExactlyAsync<IOException>(() => recovery.RepairAsync(Pending,
+                (_, _) => throw new IOException("Projection remains unavailable."), default).AsTask());
+            Assert.AreEqual(MirrorPulseMutationState.RemoteAccepted, (await reopened.ReadMutationAsync(intent.OperationId))!.State);
+            IReadOnlyList<Guid> repaired = await recovery.RepairAsync(Pending, async (record, token) =>
+                await reopened.SaveInstanceRuntimeStateAsync(new(record.Intent.InstanceId, "Connected", false, DateTimeOffset.UtcNow), token), default);
+            CollectionAssert.AreEqual(new[] { intent.OperationId }, repaired.ToArray());
+            Assert.IsEmpty(await recovery.RepairAsync(Pending, (_, _) => throw new AssertFailedException(), default));
+            Assert.AreEqual(1, mutations);
+            Assert.AreEqual(MirrorPulseMutationState.Acknowledged, (await reopened.ReadMutationAsync(intent.OperationId))!.State);
+            Assert.AreEqual("Connected", (await reopened.ReadInstanceRuntimeStateAsync(intent.InstanceId))!.Phase);
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     private sealed class ReadbackFixture(string? path) : IMirrorPulseWorkerStatTransport,

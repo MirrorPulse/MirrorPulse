@@ -121,6 +121,9 @@ public sealed class CfSharpMirrorPulseCloudRuntimeFactory : IMirrorPulseCloudRun
         public async ValueTask StartAsync(CancellationToken cancellationToken)
         {
             await fileSystem.StartAsync(cancellationToken).ConfigureAwait(false);
+            if (catalog is not null && conflicts is not null && notifications is not null)
+                await new MirrorPulseRemoteConflictProjector(fileSystem, catalog, conflicts, notifications)
+                    .RestoreAsync(cancellationToken).ConfigureAwait(false);
             if (uploads is not null && stats is not null && router is not null &&
                 catalog is not null && mayDispatch is not null)
             {

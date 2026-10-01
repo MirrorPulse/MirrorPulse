@@ -9,6 +9,7 @@ public sealed record MirrorPulseJournalPumpHealth(bool Healthy, int PendingFault
 public sealed class MirrorPulseJournalPumpRunner
 {
     private readonly ConcurrentDictionary<Guid, string> _faults = new();
+    public void ClearRecoveredFault(Guid operationId) => _faults.TryRemove(operationId, out _);
     public MirrorPulseJournalPumpHealth Health => new(_faults.IsEmpty, _faults.Count,
         _faults.Values.Order(StringComparer.Ordinal).FirstOrDefault());
 

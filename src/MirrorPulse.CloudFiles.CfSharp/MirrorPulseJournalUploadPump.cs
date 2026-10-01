@@ -92,7 +92,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         {
             while (true)
             {
-                bool dispatched = await _runner.RunCycleAsync(_source.ReadPendingAsync,
+                bool dispatched = await _runner.RunCycleAsync(ReadPendingAsync,
                     DispatchAsync, ReportFailureAsync, cancellationToken).ConfigureAwait(false);
                 if (!dispatched || !Health.Healthy)
                 {
@@ -104,6 +104,24 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         {
         }
     }
+
+    private async ValueTask<MirrorPulseJournalUploadBatch> ReadPendingAsync(CancellationToken cancellationToken)
+    {
+        var recovery = new MirrorPulseMutationProjectionRecovery(_catalog);
+        IReadOnlyList<Guid> repaired = await recovery.RepairAsync(async (operationId, token) =>
+        {
+            await using ICloudStateTransaction transaction = await _state.OpenStore.BeginTransactionAsync(token).ConfigureAwait(false);
+            bool pending = await transaction.Operations.GetAsync(operationId, token).ConfigureAwait(false) is not null;
+            await transaction.RollbackAsync(token).ConfigureAwait(false);
+            return pending;
+        }, ProjectAcceptedAsync, cancellationToken).ConfigureAwait(false);
+        foreach (Guid operationId in repaired) _runner.ClearRecoveredFault(operationId);
+        return await _source.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask ProjectAcceptedAsync(MirrorPulseMutationRecord record, CancellationToken cancellationToken) =>
+        await _catalog.SaveInstanceRuntimeStateAsync(new(record.Intent.InstanceId, "Connected", false, DateTimeOffset.UtcNow),
+            cancellationToken).ConfigureAwait(false);
 
     private async ValueTask<bool> DispatchAsync(
         MirrorPulseWorkerChangeCommand command,
@@ -262,7 +280,13 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
 
     private async ValueTask AcknowledgeAsync(Guid operationId, string? revision, CancellationToken cancellationToken)
     {
-        try { await _completion.AcknowledgeSuccessfulUploadAsync(operationId, revision, cancellationToken).ConfigureAwait(false); }
+        try
+        {
+            await _completion.AcknowledgeSuccessfulUploadAsync(operationId, revision, cancellationToken).ConfigureAwait(false);
+            MirrorPulseMutationRecord record = await _catalog.ReadMutationAsync(operationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidDataException("The accepted mutation intent disappeared.");
+            await ProjectAcceptedAsync(record, cancellationToken).ConfigureAwait(false);
+        }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             throw new MirrorPulseJournalAcknowledgementException("The accepted Worker result could not be acknowledged.", exception);

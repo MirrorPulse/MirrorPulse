@@ -6,6 +6,13 @@ instance routing, user policy, and a separate product catalog.
 
 ## Startup and shutdown today
 
+Startup rebuilds missing remote conflict projections from CfSharp's decoded
+conflict queries. A mutation with a confirmed remote result and an absent
+official journal operation repairs its product projection before marking the
+ledger acknowledged. Catalog failures keep that repair pending; recovery never
+repeats the remote mutation. Rescan intents are excluded from journal absence
+checks because they have a different acknowledgement boundary.
+
 1. The Host checks the Windows version, loads product configuration and the
    installed Adapter topology, then derives separate sync-root and data-root paths.
 2. `MirrorPulseCloudHostSession` obtains the current-user owner lock and ensures
