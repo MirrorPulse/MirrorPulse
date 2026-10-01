@@ -46,7 +46,7 @@ show which outcomes are queued rather than completed.
 | Multiple roots per instance | Partial | Root models exist, but Worker requests omit RootKey and the active poller skips instances with more than one root. |
 | Offline edits and upload replay | Partial | ARM64 signed Local CLI regression verifies queue 0 to 2 to 0. Full rescan, directory create, metadata and poison-command recovery remain incomplete. |
 | Move / delete | Partial | Current official Workers implement file/directory mutations. Complete journal, cross-root, recursive and conflict safety is not proven. |
-| Remote polling | Partial | Single-root polling exists; retry outcome is not propagated before snapshot advance. Metadata, paging and recovery need completion. |
+| Remote polling | Partial | Single-root polling retains retry snapshots and replays durable pending batches before observing newer changes. Metadata and multi-root behavior still need completion. |
 | Pin / free space | Unsupported | The availability helper exists, but no complete Control/CLI command is connected. |
 | Explorer identity / icon | Partial | MSIX identity is tested separately from interactive Shell/custom-name acceptance; the registrar still uses a system icon. |
 

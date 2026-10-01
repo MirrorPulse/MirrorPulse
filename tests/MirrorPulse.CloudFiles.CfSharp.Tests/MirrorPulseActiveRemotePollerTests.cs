@@ -179,9 +179,98 @@ public sealed class MirrorPulseActiveRemotePollerTests
         finally { if (Directory.Exists(dataRoot)) Directory.Delete(dataRoot, true); }
     }
 
+    [TestMethod]
+    [DataRow("before-apply")]
+    [DataRow("after-apply")]
+    [DataRow("snapshot-commit")]
+    [DataRow("pending-clear")]
+    public async Task ReopenedPollerReplaysPendingBeforeObservingNewRemoteChanges(string fault)
+    {
+        string dataRoot = Path.Combine(Path.GetTempPath(), "MirrorPulse-replay-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(dataRoot, "sync"), Path.Combine(dataRoot, "data"));
+        InstanceId instance = InstanceId.New();
+        RootRegistration root = AdapterRootRegistrationMapper.Map(AdapterId.Parse("example.replay"), instance,
+            new AdapterRootDefinition("files", "Files", "Files", false), RootRegistrationState.Active);
+        var adapter = new AdapterInstance(root.AdapterId, InstallId.New(), instance, "Replay", new Dictionary<string, string>(), [],
+            Path.Combine(dataRoot, "files"), Path.Combine(dataRoot, "transfers"), true, AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+        var source = new FakeDirectorySource();
+        var snapshots = new MirrorPulseFileRemotePollSnapshotStore(paths.DataRootPath);
+        var observed = new List<CloudRemoteChangeBatch>();
+        var applied = new HashSet<string>(StringComparer.Ordinal);
+        bool inject = true;
+        ValueTask<MirrorPulseRemotePollApplyOutcome> Apply(InstanceId _, CloudRemoteChangeBatch batch, CancellationToken __)
+        {
+            observed.Add(batch);
+            if (inject && fault == "before-apply") throw new IOException("fixture before apply");
+            applied.Add(batch.BatchId); // Emulates an idempotent apply boundary; native replay is verified separately.
+            if (inject && fault == "after-apply") throw new IOException("fixture after apply");
+            return ValueTask.FromResult(new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor));
+        }
+        try
+        {
+            await using (MirrorPulseProductCatalog catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                var pending = new MirrorPulseCatalogRemotePollPendingStore(catalog);
+                await using var first = new MirrorPulseActiveRemotePoller(source, [adapter], [root], Apply,
+                    snapshotStore: new FaultingSnapshotStore(snapshots, fault == "snapshot-commit"),
+                    pendingStore: new FaultingPendingStore(pending, fault == "pending-clear"));
+                source.Set(new FakeEntry("file", "v1", CloudItemKind.File, "file.bin", 3));
+                Assert.IsFalse(await first.PollOnceAsync(instance));
+                source.Set(new FakeEntry("file", "v2", CloudItemKind.File, "file.bin", 4));
+                await Assert.ThrowsExactlyAsync<IOException>(() => first.PollOnceAsync(instance).AsTask());
+                Assert.IsNotNull(await pending.LoadAsync(instance, CancellationToken.None));
+            }
+
+            inject = false;
+            source.Set(new FakeEntry("file", "v3", CloudItemKind.File, "file.bin", 5));
+            int readsBeforeReplay = source.Reads;
+            await using (MirrorPulseProductCatalog reopened = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                var pending = new MirrorPulseCatalogRemotePollPendingStore(reopened);
+                await using var second = new MirrorPulseActiveRemotePoller(source, [adapter], [root], Apply,
+                    snapshotStore: snapshots, pendingStore: pending);
+                Assert.IsTrue(await second.PollOnceAsync(instance));
+                Assert.AreEqual(readsBeforeReplay, source.Reads);
+                Assert.HasCount(2, observed);
+                Assert.AreEqual(observed[0].BatchId, observed[1].BatchId);
+                CollectionAssert.AreEqual(observed[0].Fingerprint.ToArray(), observed[1].Fingerprint.ToArray());
+                CollectionAssert.AreEqual(observed[0].InitialCursor.ToArray(), observed[1].InitialCursor.ToArray());
+                CollectionAssert.AreEqual(observed[0].FinalCursor.ToArray(), observed[1].FinalCursor.ToArray());
+                Assert.HasCount(1, applied);
+                Assert.IsNull(await pending.LoadAsync(instance, CancellationToken.None));
+                Assert.AreEqual("v2", (await snapshots.LoadAsync(instance))!["file"].RemoteRevision);
+                Assert.IsTrue(await second.PollOnceAsync(instance));
+                CollectionAssert.AreEqual(observed[1].FinalCursor.ToArray(), observed[2].InitialCursor.ToArray());
+                Assert.AreEqual("v3", (await snapshots.LoadAsync(instance))!["file"].RemoteRevision);
+            }
+        }
+        finally { Directory.Delete(dataRoot, true); }
+    }
+
+    private sealed class FaultingSnapshotStore(IMirrorPulseRemotePollSnapshotStore inner, bool fail) : IMirrorPulseRemotePollSnapshotStore
+    {
+        public ValueTask<IReadOnlyDictionary<string, MirrorPulseRemoteSnapshotEntry>?> LoadAsync(
+            InstanceId instanceId, CancellationToken cancellationToken = default) => inner.LoadAsync(instanceId, cancellationToken);
+        public async ValueTask SaveAsync(InstanceId instanceId, IReadOnlyDictionary<string, MirrorPulseRemoteSnapshotEntry> snapshot,
+            CancellationToken cancellationToken = default)
+        {
+            await inner.SaveAsync(instanceId, snapshot, cancellationToken);
+            if (fail && snapshot.Values.Any(entry => entry.RemoteRevision == "v2")) throw new IOException("fixture after snapshot commit");
+        }
+    }
+
+    private sealed class FaultingPendingStore(IMirrorPulseRemotePollPendingStore inner, bool fail) : IMirrorPulseRemotePollPendingStore
+    {
+        public ValueTask<MirrorPulsePendingRemotePoll?> LoadAsync(InstanceId instanceId, CancellationToken cancellationToken) => inner.LoadAsync(instanceId, cancellationToken);
+        public ValueTask SaveAsync(InstanceId instanceId, MirrorPulsePendingRemotePoll pending, CancellationToken cancellationToken) => inner.SaveAsync(instanceId, pending, cancellationToken);
+        public ValueTask ClearAsync(InstanceId instanceId, string batchId, CancellationToken cancellationToken) =>
+            fail ? throw new IOException("fixture before pending clear") : inner.ClearAsync(instanceId, batchId, cancellationToken);
+    }
+
     private sealed class FakeDirectorySource : IMirrorPulseDirectoryPageSource
     {
         private readonly Dictionary<string, CloudRemoteDirectoryEntry> _entries = new(StringComparer.Ordinal);
+        public int Reads { get; private set; }
 
         public void Set(params FakeEntry[] entries)
         {
@@ -209,6 +298,7 @@ public sealed class MirrorPulseActiveRemotePollerTests
             int pageSize,
             CancellationToken cancellationToken)
         {
+            Reads++;
             CloudRemoteDirectoryEntry[] entries = _entries.Values
                 .Where(entry => !entry.RelativePath.Contains('/'))
                 .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)

@@ -87,6 +87,21 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
 
         RootRegistration root = roots[0];
 
+        MirrorPulsePendingRemotePoll? pending = _pendingStore is null ? null :
+            await _pendingStore.LoadAsync(instanceId, cancellationToken).ConfigureAwait(false);
+        if (pending is not null)
+        {
+            if (!string.Equals(root.DirectoryName, pending.RootDirectoryName, StringComparison.Ordinal))
+                throw new InvalidDataException("A pending batch belongs to a different root mapping.");
+            IReadOnlyDictionary<string, SnapshotEntry> prior = FromDurableSnapshot(pending.Previous);
+            IReadOnlyDictionary<string, SnapshotEntry> candidate = FromDurableSnapshot(pending.Candidate);
+            CloudRemoteChangeBatch replay = CreateBatch(instanceId, root, prior, candidate);
+            if (replay.BatchId != pending.BatchId || !replay.Fingerprint.Span.SequenceEqual(pending.Fingerprint))
+                throw new InvalidDataException("The pending poll intent does not recreate its immutable batch.");
+            // Do not enumerate a newer remote tree until this exact batch has converged.
+            return await ApplyAndCommitAsync(instanceId, replay, candidate, cancellationToken).ConfigureAwait(false);
+        }
+
         IReadOnlyDictionary<string, SnapshotEntry> current = await ReadSnapshotAsync(
             instanceId, cancellationToken).ConfigureAwait(false);
         if (!_snapshots.TryGetValue(instanceId, out IReadOnlyDictionary<string, SnapshotEntry>? previous))
@@ -97,10 +112,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
                     : await _snapshotStore.LoadAsync(instanceId, cancellationToken).ConfigureAwait(false);
             if (persisted is not null)
             {
-                previous = persisted.ToDictionary(
-                    item => item.Key,
-                    item => FromSnapshotEntry(item.Value),
-                    StringComparer.Ordinal);
+                previous = FromDurableSnapshot(persisted);
                 _snapshots[instanceId] = previous;
             }
             else
@@ -123,6 +135,12 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         if (_pendingStore is not null)
             await _pendingStore.SaveAsync(instanceId, new(batch.BatchId, batch.Fingerprint.ToArray(), root.DirectoryName,
                 ToDurableSnapshot(previous!), ToDurableSnapshot(current)), cancellationToken).ConfigureAwait(false);
+        return await ApplyAndCommitAsync(instanceId, batch, current, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<bool> ApplyAndCommitAsync(InstanceId instanceId, CloudRemoteChangeBatch batch,
+        IReadOnlyDictionary<string, SnapshotEntry> current, CancellationToken cancellationToken)
+    {
         MirrorPulseRemotePollApplyOutcome outcome = await _apply(instanceId, batch, cancellationToken).ConfigureAwait(false);
         if (!outcome.Completed) return false;
         if (!outcome.SafeCursor.Span.SequenceEqual(batch.FinalCursor.Span))
@@ -150,6 +168,10 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
                 item.Value.RemoteRevision, item.Value.ItemKind, item.Value.RelativePath,
                 item.Value.Length, ToSnapshotMetadata(item.Value.Metadata)),
             StringComparer.Ordinal);
+
+    private static Dictionary<string, SnapshotEntry> FromDurableSnapshot(
+        IReadOnlyDictionary<string, MirrorPulseRemoteSnapshotEntry> snapshot) => snapshot.ToDictionary(
+            item => item.Key, item => FromSnapshotEntry(item.Value), StringComparer.Ordinal);
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {

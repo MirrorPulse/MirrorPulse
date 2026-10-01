@@ -77,6 +77,13 @@ public sealed class MirrorPulseRemoteBatchCoordinatorTests
                 Assert.IsTrue(partialResult.RequiresRetry);
                 Assert.IsLessThanOrEqualTo(1, partialResult.AppliedEntryCount);
                 CollectionAssert.AreEqual(new byte[] { 3 }, (await coordinator.ReadCursorAsync(instance))?.ToArray());
+                CloudRemoteApplyResult completed = await coordinator.ApplyAsync(instance, partial);
+                Assert.AreEqual(CloudRemoteBatchStatus.Applied, completed.Status);
+                Assert.IsFalse(completed.RequiresRetry);
+                CollectionAssert.AreEqual(new byte[] { 4 }, (await coordinator.ReadCursorAsync(instance))?.ToArray());
+                CloudRemoteApplyResult replayed = await coordinator.ApplyAsync(instance, partial);
+                Assert.AreEqual(CloudRemoteBatchStatus.Applied, replayed.Status);
+                CollectionAssert.AreEqual(new byte[] { 4 }, replayed.SafeCursor.ToArray());
             }
         }
         finally

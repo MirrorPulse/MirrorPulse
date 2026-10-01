@@ -57,6 +57,12 @@ of the same Adapter require distinct first-level folder names.
 - Adapter remote batches map once to CfSharp batches. CfSharp persists applied
   progress and conflicts; MirrorPulse advances its named checkpoint only after
   a safe result. Replaying the same batch covers a crash between those writes.
+- Active polling saves an immutable pending intent in the product catalog before
+  applying it. A retry leaves the previous snapshot intact. On restart, the Host
+  recreates and verifies the same batch before reading newer remote changes.
+  After CfSharp reports the final safe cursor, the Host commits the candidate
+  snapshot and clears the intent. A crash between these writes replays the batch;
+  CfSharp remains the authority for already-applied entries and checkpoints.
 - CfSharp suppresses local echoes from remote changes in the sync root.
   A local-directory Adapter separately suppresses its own source-tree watcher
   echoes because that is a different file tree.
