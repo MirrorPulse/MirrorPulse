@@ -19,10 +19,15 @@ The no-UI `mp` CLI and current-user Host control path run on x64 and ARM64. The 
 ## Build
 
 ```powershell
+pwsh -File eng/setup-test-environment.ps1
 dotnet restore MirrorPulse.sln
 dotnet build MirrorPulse.sln --configuration Release
 dotnet test MirrorPulse.sln --configuration Release
 ```
+
+The setup script creates an isolated Python environment under ignored build
+artifacts for the loopback SFTP tests. It does not install packages into global
+Python. Pass `-Python <python.exe>` to select the base interpreter.
 
 ## Privacy
 

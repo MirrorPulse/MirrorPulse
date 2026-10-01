@@ -144,12 +144,19 @@ internal sealed class SftpProtocolFixture : IAsyncDisposable
     public static async Task<SftpProtocolFixture> StartAsync()
     {
         string repository = FindRepositoryRoot();
+        string python = Path.Combine(repository, "artifacts", "test-tools", "sftp", "venv", "Scripts", "python.exe");
+        if (!File.Exists(python))
+        {
+            throw new InvalidOperationException(
+                "The isolated SFTP fixture environment is missing. Run pwsh -File eng/setup-test-environment.ps1 before testing.");
+        }
+
         string script = Path.Combine(repository, "eng", "sftp-fixture", "server.py");
         string storage = Path.Combine(Path.GetTempPath(), $"mirrorpulse-sftp-fixture-{Guid.NewGuid():N}");
         Directory.CreateDirectory(storage);
         var start = new ProcessStartInfo
         {
-            FileName = "python",
+            FileName = python,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,

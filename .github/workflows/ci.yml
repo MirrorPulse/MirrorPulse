@@ -55,7 +55,7 @@ jobs:
           if-no-files-found: error
 
       - name: Install SFTP fixture dependencies
-        run: "python -m pip install --only-binary=:all: -r eng/sftp-fixture/requirements.txt"
+        run: pwsh ./eng/setup-test-environment.ps1
 
       - name: Test
         run: dotnet test MirrorPulse.sln --configuration Release --no-build
@@ -97,7 +97,7 @@ jobs:
         run: dotnet restore MirrorPulse.sln --locked-mode
 
       - name: Install SFTP fixture dependencies
-        run: "python -m pip install --only-binary=:all: -r eng/sftp-fixture/requirements.txt"
+        run: pwsh ./eng/setup-test-environment.ps1
 
       - name: Verify ARM64 CLI entry point
         run: pwsh ./eng/verify-cli-publish.ps1 -Runtime win-arm64
@@ -165,7 +165,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'The previous signed Local Adapter release could not be downloaded.' }
 
       - name: Install SFTP fixture dependencies
-        run: "python -m pip install --only-binary=:all: -r eng/sftp-fixture/requirements.txt"
+        run: pwsh ./eng/setup-test-environment.ps1
 
       - name: Create local SMB test share
         shell: pwsh
