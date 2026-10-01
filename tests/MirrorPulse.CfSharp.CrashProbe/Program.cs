@@ -1,6 +1,12 @@
 using CfSharp;
+using MirrorPulse.CfSharp.CrashProbe;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.Configuration;
+
+if (args.Length == 4)
+{
+    return await DurabilityFaultProbe.RunAsync(args);
+}
 
 if (args.Length != 1)
 {
