@@ -43,10 +43,12 @@ if (@($suites.suite | Select-Object -Unique).Count -ne $suites.Count) { throw "D
 $requiredSuite = switch ($Job) { "build-and-test" { "managed" }; "official-package-arm64" { "signed" }; "official-adapters" { "official" } }
 if ($suites.suite -notcontains $requiredSuite) { throw "The job's required test suite is missing." }
 if ($RequireNative) {
+    $suiteCatalog = Get-Content -LiteralPath (Join-Path $PSScriptRoot "test-suites.json") -Raw | ConvertFrom-Json
+    $requiredNativeCount = @($suiteCatalog.required.native).Count
     $native = @($suites | Where-Object suite -eq "native")
-    if ($native.Count -ne 1 -or $native[0].skipped -ne 0 -or
-        @($native[0].categories | Where-Object { $_.category -eq "native" -and $_.executed -eq 9 }).Count -ne 1) {
-        throw "The dedicated native suite did not execute all nine native tests."
+    if ($requiredNativeCount -le 0 -or $native.Count -ne 1 -or $native[0].skipped -ne 0 -or
+        @($native[0].categories | Where-Object { $_.category -eq "native" -and $_.executed -eq $requiredNativeCount }).Count -ne 1) {
+        throw "The dedicated native suite did not execute all required native tests."
     }
 }
 $artifacts = @()

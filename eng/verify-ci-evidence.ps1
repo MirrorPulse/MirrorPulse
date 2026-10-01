@@ -51,9 +51,11 @@ foreach ($job in $expected.Keys) {
             $rejected[0].hostRejected -ne $true -or $rejected[0].stateUntouched -ne $true -or
             $rejected[0].osProductType -notin @(2,3)) { throw "Unsupported Windows Server rejection is missing." }
         if ($RequireNative) {
+            $suiteCatalog = Get-Content -LiteralPath (Join-Path $PSScriptRoot "test-suites.json") -Raw | ConvertFrom-Json
+            $requiredNativeCount = @($suiteCatalog.required.native).Count
             $native = @($manifest.tests | Where-Object suite -eq "native")
-            if ($native.Count -ne 1 -or $native[0].skipped -ne 0 -or
-                @($native[0].categories | Where-Object { $_.category -eq "native" -and $_.executed -eq 9 }).Count -ne 1) {
+            if ($requiredNativeCount -le 0 -or $native.Count -ne 1 -or $native[0].skipped -ne 0 -or
+                @($native[0].categories | Where-Object { $_.category -eq "native" -and $_.executed -eq $requiredNativeCount }).Count -ne 1) {
                 throw "Native Cloud Files execution is missing."
             }
         }

@@ -14,6 +14,8 @@ public sealed class CiEvidenceGateTests
     [DataRow("installed-valid", true)]
     [DataRow("installed-server", false)]
     [DataRow("installed-old-build", false)]
+    [DataRow("native-valid", true)]
+    [DataRow("native-missing", false)]
     public async Task EvidenceVerifiesArtifactBytesAndRejectsUnsafePaths(string scenario, bool succeeds)
     {
         string repository = SftpProtocolFixture.FindRepositoryRoot();
@@ -76,6 +78,28 @@ public sealed class CiEvidenceGateTests
             {
                 start.ArgumentList.Add("-InstalledPath");
                 start.ArgumentList.Add(installed);
+            }
+            if (scenario.StartsWith("native-", StringComparison.Ordinal))
+            {
+                int executed = scenario == "native-valid" ? 10 : 9;
+                string native = Path.Combine(root, "native.json");
+                await File.WriteAllTextAsync(native, JsonSerializer.Serialize(new
+                {
+                    schemaVersion = 1,
+                    suite = "native",
+                    selected = executed,
+                    executed,
+                    skipped = 0,
+                    categories = new[] { new { category = "native", selected = executed, executed, skipped = 0 } },
+                }));
+                static string Quote(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
+                string wrapper = Path.Combine(root, "collect.ps1");
+                await File.WriteAllTextAsync(wrapper,
+                    $"& {Quote(Path.Combine(repository, "eng", "collect-ci-evidence.ps1"))} -Job build-and-test -Runtime win-x64 " +
+                    $"-OutputPath {Quote(evidence)} -TestManifests @({Quote(tests)},{Quote(native)}) -PublishDirectory {Quote(root)} " +
+                    $"-RejectedPath {Quote(rejected)} -RequireNative");
+                start.ArgumentList.Clear();
+                foreach (string argument in new[] { "-NoProfile", "-File", wrapper }) start.ArgumentList.Add(argument);
             }
             using Process process = Process.Start(start)!;
             Task<string> output = process.StandardOutput.ReadToEndAsync();
