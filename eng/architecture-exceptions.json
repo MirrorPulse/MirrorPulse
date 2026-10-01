@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "projectExceptions": [
+    {
+      "project": "MirrorPulse.Control",
+      "reference": "MirrorPulse.Core",
+      "reason": "Control v1 uses legacy pure DTOs; no State or database access is allowed."
+    },
+    {
+      "project": "MirrorPulse.App",
+      "reference": "MirrorPulse.Core",
+      "reason": "Legacy UI dependencies pending Control.Client migration."
+    },
+    {
+      "project": "MirrorPulse.App",
+      "reference": "MirrorPulse.CloudFiles.CfSharp",
+      "reason": "Conditional packaged Shell probe; remove or isolate during client migration."
+    }
+  ],
+  "sourceLines": [
+    {
+      "path": "src/MirrorPulse.App/InstalledAdaptersPage.xaml.cs",
+      "line": "using MirrorPulse.Core.State;",
+      "reason": "Legacy read-only WinUI catalog access; remove during Control.Client migration."
+    },
+    {
+      "path": "src/MirrorPulse.App/InstalledAdaptersPage.xaml.cs",
+      "line": "MirrorPulseAdapterTopology topology = await MirrorPulseProductCatalog",
+      "reason": "Legacy read-only WinUI catalog access; remove during Control.Client migration."
+    },
+    {
+      "path": "src/MirrorPulse.App/InstanceConfigurationPage.xaml.cs",
+      "line": "using MirrorPulse.Core.State;",
+      "reason": "Legacy read-only WinUI catalog access; remove during Control.Client migration."
+    },
+    {
+      "path": "src/MirrorPulse.App/InstanceConfigurationPage.xaml.cs",
+      "line": "MirrorPulseAdapterTopology topology = await MirrorPulseProductCatalog",
+      "reason": "Legacy read-only WinUI catalog access; remove during Control.Client migration."
+    },
+    {
+      "path": "src/MirrorPulse.App/MirrorPulsePackagedShellProbe.cs",
+      "line": "using MirrorPulse.CloudFiles.CfSharp;",
+      "reason": "Conditional packaged probe; production builds disable MIRRORPULSE_SHELL_PROBE."
+    }
+  ]
+}

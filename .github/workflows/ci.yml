@@ -37,6 +37,9 @@ jobs:
       - name: Verify Windows targets
         run: pwsh ./eng/verify-platform.ps1
 
+      - name: Verify client ownership
+        run: pwsh ./eng/verify-architecture.ps1
+
       - name: Build
         run: dotnet build MirrorPulse.sln --configuration Release --no-restore
 
