@@ -19,8 +19,9 @@ before or after each of these real persistence boundaries:
 | Poll snapshot | Product snapshot store | Old/new revision, complete JSON file |
 | Product catalog | Product catalog command write | Old/new durable command state |
 | Pending remote batch | Host catalog opaque replay intent and candidate snapshot | No record before save, identical batch/snapshot after save |
+| Conflict copy | Flushed staging/hash/manifest save | Original untouched; incomplete intent before commit, verified copy after manifest commit |
 
-All 20 combinations execute in the managed suite. The probe requires a fixture
+All 24 combinations execute in the managed suite. The probe requires a fixture
 marker. It does not register a sync root, open user files, or install packages.
 The original crash-probe mode still exercises an uncommitted CfSharp SQLite WAL
 transaction in the native suite.

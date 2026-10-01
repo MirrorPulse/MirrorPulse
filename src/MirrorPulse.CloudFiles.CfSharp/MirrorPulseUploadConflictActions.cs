@@ -17,7 +17,7 @@ public sealed class MirrorPulseUploadConflictActions
     private readonly CloudLocalChangeFeed _feed;
     private readonly MirrorPulseJournalUploadCompletion _completion;
     private readonly string _syncRootPath;
-    private readonly string _conflictRootPath;
+    private readonly MirrorPulseConflictCopyStore _copies;
     private readonly MirrorPulseRootRouter? _router;
     private readonly IMirrorPulseWorkerMutationTransport? _mutations;
 
@@ -35,7 +35,7 @@ public sealed class MirrorPulseUploadConflictActions
         _feed = feed ?? throw new ArgumentNullException(nameof(feed));
         _completion = new MirrorPulseJournalUploadCompletion(feed, state, retryPolicy);
         _syncRootPath = Path.GetFullPath(paths.SyncRootPath);
-        _conflictRootPath = Path.Combine(paths.DataRootPath, MirrorPulseConflictDirectory.DirectoryName);
+        _copies = new MirrorPulseConflictCopyStore(paths);
         _router = router;
         _mutations = mutations;
     }
@@ -162,27 +162,10 @@ public sealed class MirrorPulseUploadConflictActions
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<string> PreserveLocalCopyAsync(
+    private ValueTask<string> PreserveLocalCopyAsync(
         MirrorPulseConflictRecord conflict,
-        CancellationToken cancellationToken)
-    {
-        string source = ResolveLocalPath(conflict.RelativePath);
-        if (!File.Exists(source))
-        {
-            throw new FileNotFoundException("The local conflict copy was not found.", source);
-        }
-
-        string directory = Path.Combine(_conflictRootPath, conflict.InstanceId.ToString());
-        Directory.CreateDirectory(directory);
-        string target = Path.Combine(directory,
-            Path.GetFileName(source) + ".local-" + conflict.ConflictId.ToString("N"));
-        await using FileStream input = new(source, FileMode.Open, FileAccess.Read, FileShare.Read,
-            64 * 1024, FileOptions.Asynchronous);
-        await using FileStream output = new(target, FileMode.CreateNew, FileAccess.Write,
-            FileShare.None, 64 * 1024, FileOptions.Asynchronous);
-        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-        return target;
-    }
+        CancellationToken cancellationToken) => new(_copies.PreserveAsync(conflict,
+            MirrorPulseConflictPreservedSide.Local, token => _copies.OpenLocalAsync(conflict, token), cancellationToken));
 
     private void DeleteLocalCopy(MirrorPulseConflictRecord conflict)
     {

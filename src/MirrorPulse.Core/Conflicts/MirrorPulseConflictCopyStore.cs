@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
 
@@ -9,13 +11,22 @@ public enum MirrorPulseConflictPreservedSide
     Remote,
 }
 
+internal enum MirrorPulseConflictCopyCheckpoint { StagingFlushed, DataCommitted, ManifestCommitted }
+public sealed record MirrorPulseConflictCopyManifest(int SchemaVersion, Guid ConflictId, string InstanceId,
+    MirrorPulseConflictPreservedSide Side, long Length, string? Sha256, string State, string StageFileName);
+
 /// <summary>Preserves one selected side in MP's private data root before a destructive decision.</summary>
 public sealed class MirrorPulseConflictCopyStore
 {
     private readonly MirrorPulseStoragePaths _paths;
+    private readonly Action<MirrorPulseConflictCopyCheckpoint>? _checkpoint;
 
-    public MirrorPulseConflictCopyStore(MirrorPulseStoragePaths paths) =>
+    public MirrorPulseConflictCopyStore(MirrorPulseStoragePaths paths) : this(paths, null) { }
+    internal MirrorPulseConflictCopyStore(MirrorPulseStoragePaths paths, Action<MirrorPulseConflictCopyCheckpoint>? checkpoint)
+    {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+        _checkpoint = checkpoint;
+    }
 
     public async Task<string> PreserveAsync(
         MirrorPulseConflictRecord conflict,
@@ -36,32 +47,51 @@ public sealed class MirrorPulseConflictCopyStore
         Directory.CreateDirectory(directory);
         EnsureNoReparsePoints(_paths.DataRootPath, directory);
         string destination = Path.Combine(directory, MirrorPulseConflictFileName.Create(conflict));
+        string manifestPath = destination + ".manifest.json";
+        string pendingPath = destination + ".pending.json";
+        await using var lease = new FileStream(destination + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         if (File.Exists(destination))
         {
+            MirrorPulseConflictCopyManifest existing = await ReadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            await VerifyAsync(conflict, side, destination, existing, "complete", cancellationToken).ConfigureAwait(false);
             return destination;
         }
 
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var manifest = new MirrorPulseConflictCopyManifest(1, conflict.ConflictId, conflict.InstanceId.ToString(),
+            side, 0, null, "copying", Path.GetFileName(temporary));
+        await WriteManifestAsync(pendingPath, manifest, cancellationToken).ConfigureAwait(false);
         try
         {
+            using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            long length = 0;
             await using (Stream source = await openSource(cancellationToken).ConfigureAwait(false))
             await using (var target = new FileStream(
                 temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 81920, FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+                long? expected = source.CanSeek ? source.Length - source.Position : null;
+                byte[] buffer = new byte[81920];
+                int count;
+                while ((count = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) != 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
+                    digest.AppendData(buffer.AsSpan(0, count));
+                    length = checked(length + count);
+                }
+                if (expected is { } expectedLength && length != expectedLength)
+                    throw new InvalidDataException("The conflict source changed length while preserving it.");
                 await target.FlushAsync(cancellationToken).ConfigureAwait(false);
+                target.Flush(flushToDisk: true);
             }
-
-            try
-            {
-                File.Move(temporary, destination, overwrite: false);
-            }
-            catch (IOException) when (File.Exists(destination))
-            {
-                // Another replay finished the same preserved copy first.
-            }
-
+            manifest = manifest with { Length = length, Sha256 = Convert.ToHexString(digest.GetHashAndReset()), State = "staged" };
+            await WriteManifestAsync(pendingPath, manifest, cancellationToken).ConfigureAwait(false);
+            _checkpoint?.Invoke(MirrorPulseConflictCopyCheckpoint.StagingFlushed);
+            File.Move(temporary, destination, overwrite: false);
+            _checkpoint?.Invoke(MirrorPulseConflictCopyCheckpoint.DataCommitted);
+            await WriteManifestAsync(manifestPath, manifest with { State = "complete" }, cancellationToken).ConfigureAwait(false);
+            _checkpoint?.Invoke(MirrorPulseConflictCopyCheckpoint.ManifestCommitted);
+            File.Delete(pendingPath);
             return destination;
         }
         finally
@@ -71,6 +101,46 @@ public sealed class MirrorPulseConflictCopyStore
                 File.Delete(temporary);
             }
         }
+    }
+
+    private static async Task<MirrorPulseConflictCopyManifest> ReadManifestAsync(string path, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path)) throw new InvalidDataException("The preserved conflict copy has no committed manifest.");
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return await JsonSerializer.DeserializeAsync<MirrorPulseConflictCopyManifest>(stream, cancellationToken: cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("The preserved conflict manifest is empty.");
+    }
+
+    private static async Task WriteManifestAsync(string path, MirrorPulseConflictCopyManifest manifest, CancellationToken cancellationToken)
+    {
+        string staging = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(staging, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                await JsonSerializer.SerializeAsync(stream, manifest, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(staging, path, overwrite: true);
+        }
+        finally { if (File.Exists(staging)) File.Delete(staging); }
+    }
+
+    private async Task VerifyAsync(MirrorPulseConflictRecord conflict, MirrorPulseConflictPreservedSide side,
+        string path, MirrorPulseConflictCopyManifest manifest, string state, CancellationToken cancellationToken)
+    {
+        if (manifest.SchemaVersion != 1 || manifest.ConflictId != conflict.ConflictId ||
+            manifest.InstanceId != conflict.InstanceId.ToString() || manifest.Side != side || manifest.State != state ||
+            manifest.Length < 0 || manifest.Sha256 is null || manifest.Sha256.Length != 64)
+            throw new InvalidDataException("The preserved conflict manifest does not match this conflict.");
+        EnsureNoReparsePoints(_paths.DataRootPath, path);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (stream.Length != manifest.Length ||
+            !string.Equals(Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)), manifest.Sha256, StringComparison.Ordinal))
+            throw new InvalidDataException("The preserved conflict copy failed its content verification.");
     }
 
     public ValueTask<Stream> OpenLocalAsync(

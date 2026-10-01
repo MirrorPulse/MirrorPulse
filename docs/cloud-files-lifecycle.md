@@ -78,6 +78,10 @@ of the same Adapter require distinct first-level folder names.
   never acknowledged as successful Worker mutations. Valid commands in the same
   feed batch continue. The later bounded journal paging work must also address
   batches filled entirely with unresolved blocked operations.
+- A preserved conflict side has a flushed staging file, SHA-256, length and
+  conflict-specific manifest in the private data root. The copy is usable only
+  after its committed manifest and bytes verify. Failed saves retain an
+  incomplete intent and never authorize the destructive conflict action.
 - CfSharp suppresses local echoes from remote changes in the sync root.
   A local-directory Adapter separately suppresses its own source-tree watcher
   echoes because that is a different file tree.

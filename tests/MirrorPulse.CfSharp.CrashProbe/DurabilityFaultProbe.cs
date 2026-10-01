@@ -3,12 +3,14 @@ using CfSharp;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.Adapters.LocalDirectory;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
+using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.CfSharp.CrashProbe;
 
-public enum DurabilityBoundary { RemoteWrite, JournalAcknowledgement, SnapshotSave, CatalogSave, PendingRemoteBatch }
+public enum DurabilityBoundary { RemoteWrite, JournalAcknowledgement, SnapshotSave, CatalogSave, PendingRemoteBatch, ConflictCopy }
 public enum FaultTiming { Before, After }
 public enum FaultMode { Throw, Exit }
 
@@ -36,6 +38,16 @@ public static class DurabilityFaultProbe
         {
             switch (boundary)
             {
+                case DurabilityBoundary.ConflictCopy:
+                    await File.WriteAllTextAsync(Path.Combine(paths.SyncRootPath, "note.txt"), "original side");
+                    var copies = new MirrorPulseConflictCopyStore(paths, checkpoint =>
+                    {
+                        if (checkpoint == (timing == FaultTiming.Before ? MirrorPulseConflictCopyCheckpoint.StagingFlushed :
+                            MirrorPulseConflictCopyCheckpoint.ManifestCommitted)) Fail(mode);
+                    });
+                    MirrorPulseConflictRecord conflict = CopyConflict();
+                    await copies.PreserveAsync(conflict, MirrorPulseConflictPreservedSide.Local, token => copies.OpenLocalAsync(conflict, token));
+                    break;
                 case DurabilityBoundary.RemoteWrite:
                     var writer = new MirrorPulseLocalDirectoryWriter(Path.Combine(root, "remote"));
                     await writer.WriteAsync("document.txt", "before"u8.ToArray());
@@ -116,6 +128,10 @@ public static class DurabilityFaultProbe
             ["document"] = new("document", revision, CloudItemKind.File, "document.txt", 5,
                 new MirrorPulseRemoteSnapshotMetadata(CloudItemKind.File, FileAttributes.Normal, null, null, null, null)),
         };
+
+    public static MirrorPulseConflictRecord CopyConflict() => new(OperationId, Instance, "fixture", "note.txt",
+        MirrorPulseConflictReason.Content, MirrorPulseVersionComparison.Diverged, "before", "after",
+        new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
     private sealed class InjectedBoundaryException : Exception;
 }

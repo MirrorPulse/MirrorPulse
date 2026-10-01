@@ -4,6 +4,7 @@ using CfSharp;
 using MirrorPulse.CfSharp.CrashProbe;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.Configuration;
+using MirrorPulse.Core.Conflicts;
 using MirrorPulse.Core.State;
 
 namespace MirrorPulse.CloudFiles.CfSharp.Tests;
@@ -60,6 +61,22 @@ public sealed class DurabilityFaultFixtureTests
             string expected = timing == FaultTiming.Before ? "before" : "after";
             switch (boundary)
             {
+                case DurabilityBoundary.ConflictCopy:
+                    MirrorPulseConflictRecord copyConflict = DurabilityFaultProbe.CopyConflict();
+                    string copyPath = Path.Combine(MirrorPulseConflictDirectory.GetPath(paths, copyConflict.InstanceId), "local",
+                        MirrorPulseConflictFileName.Create(copyConflict));
+                    Assert.AreEqual("original side", await File.ReadAllTextAsync(Path.Combine(paths.SyncRootPath, "note.txt")));
+                    Assert.AreEqual(timing == FaultTiming.After, File.Exists(copyPath));
+                    Assert.AreEqual(timing == FaultTiming.After, File.Exists(copyPath + ".manifest.json"));
+                    if (timing == FaultTiming.After)
+                    {
+                        string reopened = await new MirrorPulseConflictCopyStore(paths).PreserveAsync(copyConflict,
+                            MirrorPulseConflictPreservedSide.Local, _ => throw new InvalidOperationException("A committed copy must not reopen its source."));
+                        Assert.AreEqual(copyPath, reopened);
+                        Assert.AreEqual("original side", await File.ReadAllTextAsync(reopened));
+                    }
+                    else Assert.IsTrue(File.Exists(copyPath + ".pending.json"));
+                    break;
                 case DurabilityBoundary.RemoteWrite:
                     Assert.AreEqual(expected, await File.ReadAllTextAsync(Path.Combine(root, "remote", "document.txt")));
                     Assert.HasCount(1, Directory.GetFiles(Path.Combine(root, "remote")));
