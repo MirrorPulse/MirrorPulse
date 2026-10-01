@@ -58,7 +58,7 @@ traversal paths, duplicate suites, mismatched counts, or missing required gates.
 It exports only named checks and relative artifact paths, without TRX output,
 stack traces, host user paths, credentials, or temporary certificate material.
 
-A manual workflow run additionally requires eight actual native Cloud Files
+A manual workflow run additionally requires nine actual native Cloud Files
 integrations, one official SQLite crash test, and installed ARM64 MSIX checks
 on the Windows 11 desktop runner. The x64 Server runner verifies that published
 CLI and Host processes reject the unsupported SKU without creating state.

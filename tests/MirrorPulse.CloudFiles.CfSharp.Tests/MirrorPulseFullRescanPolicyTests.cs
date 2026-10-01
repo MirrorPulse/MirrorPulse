@@ -15,6 +15,8 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 [SupportedOSPlatform("windows10.0.19041")]
 public sealed class MirrorPulseFullRescanPolicyTests
 {
+    public TestContext TestContext { get; set; } = null!;
+
     [TestMethod]
     [DoNotParallelize]
     [TestCategory("NativeCloudFiles")]
@@ -45,6 +47,7 @@ public sealed class MirrorPulseFullRescanPolicyTests
             await using var fileSystem = new MirrorPulseCloudFileSystemBuilder(paths).WithStateStore(state)
                 .WithContentProvider(MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath)).Build();
             await fileSystem.StartAsync(timeout.Token);
+            await ReportCoordinationUsnsAsync(fileSystem, paths.SyncRootPath, timeout.Token);
             await using CloudLocalChangeFeed feed = fileSystem.CreateLocalChangeFeed(new() { BufferCapacity = 1 });
             await feed.StartAsync(timeout.Token);
             // Backpressure the official store while real native notifications fill the public feed buffer.
@@ -142,6 +145,26 @@ public sealed class MirrorPulseFullRescanPolicyTests
             registry.Unregister(paths.SyncRootPath);
             Directory.Delete(root, true);
         }
+    }
+
+    private async Task ReportCoordinationUsnsAsync(CloudFileSystem fileSystem, string syncRoot, CancellationToken token)
+    {
+        // Isolate the library calls from all product scanning and Worker code. This unique
+        // disposable fixture is the only place where an unconditional in-sync call is made.
+        const string name = "coordination-probe.txt";
+        await File.WriteAllTextAsync(Path.Combine(syncRoot, name), "coordination probe", token);
+        CloudFile file = fileSystem.GetFile(name);
+        var identity = new CloudPlaceholderIdentity(Guid.NewGuid(), "probe", "probe-revision");
+        CloudPlaceholderMutationResult converted = await file.ConvertToPlaceholderAsync(identity, cancellationToken: token);
+        CloudStateChangeResult cleared = await file.SetInSyncAsync(false, cancellationToken: token);
+        CloudStateChangeResult marked = await file.SetInSyncAsync(true, cancellationToken: token);
+        CloudStateChangeResult changed = await file.SetInSyncAsync(false, cancellationToken: token);
+        CloudPlaceholderMutationResult patched = await file.UpdatePlaceholderAsync(CloudPlaceholderPatch.CreateBuilder()
+            .WithMetadata(CloudPlaceholderMetadata.CreateFileBuilder().WithLastWriteTime(DateTimeOffset.UtcNow.AddMinutes(-1)).Build())
+            .WithInSyncState(false).Build(), token);
+        TestContext.WriteLine($"CfSharp 0.1.0-preview.2 coordination USNs: convert={converted.OperationUsn}, clear={cleared.OperationUsn}, mark={marked.OperationUsn}, changed={changed.OperationUsn}, metadata={patched.OperationUsn}; OS={Environment.OSVersion.Version}.");
+        Assert.AreEqual("coordination probe", await File.ReadAllTextAsync(Path.Combine(syncRoot, name), token));
+        await file.DeleteAsync(token);
     }
 
     private sealed class DiskWorker(string root) : IMirrorPulseWorkerUploadTransport, IMirrorPulseWorkerStatTransport,

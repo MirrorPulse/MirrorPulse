@@ -116,7 +116,8 @@ public sealed class MirrorPulseFullRescanPolicy(CloudFileSystem fileSystem, Clou
                     long? observedUsn = coordinated.OperationUsn;
                     if (observedUsn is null or <= 0)
                         observedUsn = (await observation.Item.SetInSyncAsync(false, cancellationToken: token).ConfigureAwait(false)).OperationUsn;
-                    if (observedUsn is not > 0) throw new MirrorPulseMutationAmbiguousException("The filesystem did not provide a usable in-sync precondition.");
+                    if (observedUsn is not > 0) throw new MirrorPulseMutationAmbiguousException(
+                        $"The filesystem did not provide a usable in-sync precondition (coordination USN: {coordinated.OperationUsn}, observed USN: {observedUsn}).");
                     await using (var verification = new FileStream(observation.Item.FullPath, FileMode.Open, FileAccess.Read,
                         FileShare.Read, 64 * 1024, FileOptions.Asynchronous))
                     {
