@@ -327,6 +327,11 @@ public sealed class AdapterInstanceProcessSupervisor :
         _mutations[instance.InstanceId] = mutations;
         _instanceOperations[instance.InstanceId] = instanceOperations;
 
+        await using var remoteInbox = new AdapterWorkerRemoteBatchInbox((payload, token) =>
+            (_remoteBatch ?? throw new InvalidDataException("The Host has no remote batch ingress configured."))
+                (instance.InstanceId, payload, token), cancellationToken);
+        cancellationToken = remoteInbox.CancellationToken;
+
         try
         {
             while (true)
@@ -390,8 +395,7 @@ public sealed class AdapterInstanceProcessSupervisor :
                             throw new InvalidDataException("The Host has no remote batch ingress configured.");
                         }
 
-                        await _remoteBatch(instance.InstanceId, frame.Payload, cancellationToken)
-                            .ConfigureAwait(false);
+                        remoteInbox.Post(frame.Payload);
                         break;
                     case "Error":
                         string code = frame.Payload.TryGetProperty("code", out JsonElement value)

@@ -63,6 +63,10 @@ of the same Adapter require distinct first-level folder names.
   After CfSharp reports the final safe cursor, the Host commits the candidate
   snapshot and clears the intent. A crash between these writes replays the batch;
   CfSharp remains the authority for already-applied entries and checkpoints.
+- Background polling, manual refresh, and streamed remote applies share an
+  instance scheduler. Different instances progress independently. A streamed
+  batch cannot overtake a pending poll. Worker ingress uses a bounded ordered
+  inbox so waiting for the scheduler never blocks the Pipe response reader.
 - CfSharp suppresses local echoes from remote changes in the sync root.
   A local-directory Adapter separately suppresses its own source-tree watcher
   echoes because that is a different file tree.

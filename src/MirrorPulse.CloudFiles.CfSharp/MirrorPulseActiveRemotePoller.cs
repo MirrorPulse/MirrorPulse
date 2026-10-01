@@ -1,9 +1,11 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using CfSharp;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.CloudFiles.CfSharp;
 
@@ -25,7 +27,9 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
     private readonly int _maximumPages;
     private readonly IMirrorPulseRemotePollSnapshotStore? _snapshotStore;
     private readonly IMirrorPulseRemotePollPendingStore? _pendingStore;
-    private readonly Dictionary<InstanceId, IReadOnlyDictionary<string, SnapshotEntry>> _snapshots = [];
+    private readonly ConcurrentDictionary<InstanceId, IReadOnlyDictionary<string, SnapshotEntry>> _snapshots = new();
+    private readonly MirrorPulseInstanceScheduler _scheduler;
+    private readonly bool _ownsScheduler;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _loop;
 
@@ -38,7 +42,8 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         int pageSize = 128,
         int maximumPages = 2048,
         IMirrorPulseRemotePollSnapshotStore? snapshotStore = null,
-        IMirrorPulseRemotePollPendingStore? pendingStore = null)
+        IMirrorPulseRemotePollPendingStore? pendingStore = null,
+        MirrorPulseInstanceScheduler? scheduler = null)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
         ArgumentNullException.ThrowIfNull(instances);
@@ -62,6 +67,8 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         _maximumPages = maximumPages;
         _snapshotStore = snapshotStore;
         _pendingStore = pendingStore;
+        _ownsScheduler = scheduler is null;
+        _scheduler = scheduler ?? new MirrorPulseInstanceScheduler();
         if (pendingStore is not null && snapshotStore is null)
             throw new ArgumentException("Pending batches require a durable snapshot store.", nameof(snapshotStore));
     }
@@ -74,7 +81,10 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
     }
 
     /// <summary>Runs one deterministic poll for an enabled instance.</summary>
-    public async ValueTask<bool> PollOnceAsync(InstanceId instanceId, CancellationToken cancellationToken = default)
+    public ValueTask<bool> PollOnceAsync(InstanceId instanceId, CancellationToken cancellationToken = default) =>
+        _scheduler.RunAsync(instanceId, token => PollCoreAsync(instanceId, token), cancellationToken);
+
+    private async ValueTask<bool> PollCoreAsync(InstanceId instanceId, CancellationToken cancellationToken)
     {
         if (!_instances.Contains(instanceId)) return false;
         if (!_roots.TryGetValue(instanceId, out IReadOnlyList<RootRegistration>? roots) || roots.Count != 1)
@@ -376,6 +386,7 @@ public sealed class MirrorPulseActiveRemotePoller : IAsyncDisposable
         }
 
         _shutdown.Dispose();
+        if (_ownsScheduler) await _scheduler.DisposeAsync().ConfigureAwait(false);
     }
 
     private static SnapshotEntry FromSnapshotEntry(MirrorPulseRemoteSnapshotEntry entry) =>

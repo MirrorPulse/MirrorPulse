@@ -5,6 +5,7 @@ using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
 using MirrorPulse.Core.State;
+using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
@@ -12,6 +13,49 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 [TestClass]
 public sealed class MirrorPulseActiveRemotePollerTests
 {
+    [TestMethod]
+    public async Task ConcurrentRefreshSharesPollScheduleWithoutBlockingAnotherInstance()
+    {
+        InstanceId first = InstanceId.New();
+        InstanceId second = InstanceId.New();
+        AdapterId adapterId = AdapterId.Parse("example.schedule");
+        AdapterInstance CreateInstance(InstanceId id) => new(adapterId, InstallId.New(), id, "Scheduled",
+            new Dictionary<string, string>(), [], Path.GetTempPath(), Path.GetTempPath(), true,
+            AdapterLifecycleState.Enabled, null, DateTimeOffset.UtcNow);
+        RootRegistration CreateRoot(InstanceId id, string label) => AdapterRootRegistrationMapper.Map(
+            adapterId, id, new AdapterRootDefinition("files", label, label, false), RootRegistrationState.Active);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new FakeDirectorySource();
+        int firstApplies = 0;
+        await using var scheduler = new MirrorPulseInstanceScheduler();
+        await using var poller = new MirrorPulseActiveRemotePoller(source,
+            [CreateInstance(first), CreateInstance(second)], [CreateRoot(first, "First"), CreateRoot(second, "Second")],
+            async (id, batch, token) =>
+            {
+                if (id == first)
+                {
+                    Interlocked.Increment(ref firstApplies);
+                    entered.SetResult();
+                    await release.Task.WaitAsync(token);
+                }
+                return new MirrorPulseRemotePollApplyOutcome(true, batch.FinalCursor);
+            }, scheduler: scheduler);
+        source.Set(new FakeEntry("file", "v1", CloudItemKind.File, "file.bin", 1));
+        Assert.IsFalse(await poller.PollOnceAsync(first));
+        Assert.IsFalse(await poller.PollOnceAsync(second));
+        source.Set(new FakeEntry("file", "v2", CloudItemKind.File, "file.bin", 2));
+        Task<bool> background = poller.PollOnceAsync(first).AsTask();
+        await entered.Task;
+        Task<bool> refresh = poller.PollOnceAsync(first).AsTask();
+        Assert.IsTrue(await poller.PollOnceAsync(second));
+        Assert.IsFalse(refresh.IsCompleted);
+        release.SetResult();
+        Assert.IsTrue(await background);
+        Assert.IsFalse(await refresh);
+        Assert.AreEqual(1, firstApplies);
+    }
+
     [TestMethod]
     public async Task PollerTurnsRemoteSnapshotChangesIntoOrderedBatches()
     {

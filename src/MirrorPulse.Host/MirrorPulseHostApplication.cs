@@ -16,6 +16,7 @@ using MirrorPulse.Core.Host;
 using MirrorPulse.Core.Packaging;
 using MirrorPulse.Core.Security;
 using MirrorPulse.Core.State;
+using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.Host;
 
@@ -34,6 +35,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
     private readonly AdapterInstanceProcessSupervisor _workers;
     private readonly MirrorPulseCloudHostSession _session;
     private readonly MirrorPulseActiveRemotePoller _remotePoller;
+    private readonly MirrorPulseInstanceScheduler _remoteScheduler;
     private readonly MirrorPulseAdapterTopology _topology;
     private readonly CancellationTokenSource _shutdown = new();
     private MirrorPulseAppStatusPipe? _statusPipe;
@@ -55,6 +57,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         AdapterInstanceProcessSupervisor workers,
         MirrorPulseCloudHostSession session,
         MirrorPulseActiveRemotePoller remotePoller,
+        MirrorPulseInstanceScheduler remoteScheduler,
         MirrorPulseAdapterTopology topology)
     {
         _paths = paths;
@@ -67,6 +70,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         _workers = workers;
         _session = session;
         _remotePoller = remotePoller;
+        _remoteScheduler = remoteScheduler;
         _topology = topology;
     }
 
@@ -104,6 +108,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         AdapterInstanceProcessSupervisor? workers = null;
         MirrorPulseCloudHostSession? session = null;
         MirrorPulseActiveRemotePoller? remotePoller = null;
+        var remoteScheduler = new MirrorPulseInstanceScheduler();
         try
         {
             var configurationStore = new MirrorPulseConfigurationStore(
@@ -150,8 +155,13 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
                     ?? throw new InvalidDataException("The Adapter remote batch payload is empty.");
                 CloudRemoteChangeBatch batch = MirrorPulseAdapterRemoteBatchMapper.Map(
                     instanceId, topology.Roots, adapterBatch);
-                await ApplyCloudRemoteBatchAsync(instanceId, batch, batchCancellationToken)
-                    .ConfigureAwait(false);
+                await remoteScheduler.RunAsync(instanceId, async token =>
+                {
+                    // A streamed batch must not overtake the immutable polling intent.
+                    if (await catalog.ReadPendingRemoteBatchAsync(instanceId, token).ConfigureAwait(false) is not null)
+                        throw new InvalidOperationException("A remote polling batch must converge before streamed changes apply.");
+                    return await ApplyCloudRemoteBatchAsync(instanceId, batch, token).ConfigureAwait(false);
+                }, batchCancellationToken).ConfigureAwait(false);
             }
 
             workers = new AdapterInstanceProcessSupervisor(catalog, credentialStore, ApplyRemoteBatchAsync);
@@ -168,11 +178,11 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             remotePoller = new MirrorPulseActiveRemotePoller(
                 directorySource, topology.Instances, topology.Roots, ApplyCloudRemoteBatchAsync,
                 snapshotStore: remoteSnapshotStore,
-                pendingStore: new MirrorPulseCatalogRemotePollPendingStore(catalog));
+                pendingStore: new MirrorPulseCatalogRemotePollPendingStore(catalog), scheduler: remoteScheduler);
 
             var application = new MirrorPulseHostApplication(
                 paths, configurationStore, configuration, hostLease, catalog, conflictCenter, systemNotifications,
-                workers, session, remotePoller, topology);
+                workers, session, remotePoller, remoteScheduler, topology);
             application.InitializeControlPlane(credentialStore);
             return application;
         }
@@ -182,6 +192,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             {
                 await remotePoller.DisposeAsync().ConfigureAwait(false);
             }
+
+            await remoteScheduler.DisposeAsync().ConfigureAwait(false);
 
             if (session is not null)
             {
@@ -803,6 +815,7 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
         }
 
         await _remotePoller.DisposeAsync().ConfigureAwait(false);
+        await _remoteScheduler.DisposeAsync().ConfigureAwait(false);
         await _session.DisposeAsync().ConfigureAwait(false);
         await _workers.DisposeAsync().ConfigureAwait(false);
         await _catalog.DisposeAsync().ConfigureAwait(false);
