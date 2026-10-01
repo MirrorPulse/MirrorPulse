@@ -1,2 +1,12 @@
 MirrorPulse
 Copyright 2026 MirrorPulse contributors
+
+MirrorPulse includes third-party components under their respective licenses.
+See ThirdParty/third-party-notices.md and ThirdParty/dependencies/NOTICE.md
+in distributed CLI, Host, and MSIX payloads, or docs/third-party-notices.md
+and docs/dependencies/NOTICE.md in the source repository.
+
+CfSharp
+Copyright 2026 MirrorPulse Team
+Licensed under the Apache License, Version 2.0.
+Original CfSharp package NOTICE files are preserved with dependency notices.

@@ -1,0 +1,550 @@
+{
+  "schemaVersion": 1,
+  "scope": "restored production project graphs and SDK runtime downloads; reference packs are build inputs",
+  "packages": [
+    {
+      "id": "BouncyCastle.Cryptography",
+      "version": "2.7.0",
+      "kind": "restored",
+      "sha512": "Lys+dJthpD8quONaAkRV9ke8DgET0CwBW91NeJjMVHZGvRRNO8DkdReYFfCBOCcvMpzJeC3DuLrpRuntYnq9Iw==",
+      "nugetContentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "BouncyCastle.Cryptography.2.7.0.LICENSE.md"
+      ],
+      "source": "https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0"
+    },
+    {
+      "id": "CfSharp.Native",
+      "version": "0.1.0-preview.2",
+      "kind": "restored",
+      "sha512": "RgLInSWW6rqc7xMMyG09UL2rEl5RZIPc03eDGW+G0ZpID37MxEplMoRFbVOcHWxeF/DLcXBNuK0eEH54DsMzEw==",
+      "nugetContentHash": "PKBpu8/I4l/efhdjqGHPCtte4zVmyzty5EApV9em+bOjQ1MJNOCdhmzMU44QJgLCDjDJwNph2rJzaCX0lPO5tw==",
+      "licenseType": "expression",
+      "license": "Apache-2.0",
+      "licenseTextSource": "https://github.com/MirrorPulse/CfSharp/blob/32e292f921b0ac33bb0b07dc671616ef3ae990fe/LICENSE",
+      "noticeFiles": [
+        "CfSharp.Native.0.1.0-preview.2.LICENSE.txt",
+        "CfSharp.Native.0.1.0-preview.2.NOTICE"
+      ],
+      "source": "https://www.nuget.org/packages/CfSharp.Native/0.1.0-preview.2"
+    },
+    {
+      "id": "CfSharp.Storage.Sqlite",
+      "version": "0.1.0-preview.2",
+      "kind": "restored",
+      "sha512": "xw6AARq8x8GeKSZO9H8ocWPJY27UbTtmVU1OxA9b6nXpfmX8Rc2cZNzMogz7DK2cY5llLsoEofR4bcASk5Izqw==",
+      "nugetContentHash": "+Vb2m1fNoPKc4/DrN0zyFij3ERwMwPOswLWGugidkoamvTsTywPC5bdhBFkEs/+gH65XfjsnedY9DNiQwUNnUQ==",
+      "licenseType": "expression",
+      "license": "Apache-2.0",
+      "licenseTextSource": "https://github.com/MirrorPulse/CfSharp/blob/32e292f921b0ac33bb0b07dc671616ef3ae990fe/LICENSE",
+      "noticeFiles": [
+        "CfSharp.Storage.Sqlite.0.1.0-preview.2.LICENSE.txt",
+        "CfSharp.Storage.Sqlite.0.1.0-preview.2.NOTICE"
+      ],
+      "source": "https://www.nuget.org/packages/CfSharp.Storage.Sqlite/0.1.0-preview.2"
+    },
+    {
+      "id": "CfSharp",
+      "version": "0.1.0-preview.2",
+      "kind": "restored",
+      "sha512": "EQMJ3MzuPWEpbQhfSEBPB+jv6qV4G4O/95V4ttiSX+AKz5HKISZ5RJLuxh+ELZNMSX9vtFOaDFlDefg7ea3NCg==",
+      "nugetContentHash": "j6dMoG/kJy4FTKjz1W7X/mt6rsMzikKTVuBBYqU+Sf0g+cTEpSSlYzhJwvwK1JakrvG+UOeO+EmIKDIFE1V64g==",
+      "licenseType": "expression",
+      "license": "Apache-2.0",
+      "licenseTextSource": "https://github.com/MirrorPulse/CfSharp/blob/32e292f921b0ac33bb0b07dc671616ef3ae990fe/LICENSE",
+      "noticeFiles": [
+        "CfSharp.0.1.0-preview.2.LICENSE.txt",
+        "CfSharp.0.1.0-preview.2.NOTICE"
+      ],
+      "source": "https://www.nuget.org/packages/CfSharp/0.1.0-preview.2"
+    },
+    {
+      "id": "FluentFTP",
+      "version": "54.2.1",
+      "kind": "restored",
+      "sha512": "Sm6FN2IJXyH3OrKTWo6ku1ueWH2QqiFi4ExnzUZYP813k0LDybE7hZ4SMPB903DYdXaIYskYY4nCKWyFCTlkDA==",
+      "nugetContentHash": "Rv7MWPUR8orjoSHoDgH2Yp8JC7on6T4dh6+l76lvplu8p4nGmI+tl97hsiERy06HqigxCdhAccuZAv978d7aeQ==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "FluentFTP.54.2.1.LICENSE.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/FluentFTP/54.2.1"
+    },
+    {
+      "id": "Microsoft.AspNetCore.App.Runtime.win-arm64",
+      "version": "10.0.12",
+      "kind": "sdk-download",
+      "sha512": "PgvTgjE6ic5JQKmBeTmSd8h0RHQvnL89cysBqZ62tf05ZqwD0ZfVnwK2QqQ8mS+Rx2OVQ5YCuVZGdTUC46agtQ==",
+      "nugetContentHash": "QlZRVxHv5TfVNf5KbNYQaS9JICXN1srDeK1+fk9nbt4U97hqHb3G8SIT1ZJ+EKoXitDRc1+WCyt9JMwJ5DE+ww==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.AspNetCore.App.Runtime.win-arm64.10.0.12.LICENSE.txt",
+        "Microsoft.AspNetCore.App.Runtime.win-arm64.10.0.12.THIRD-PARTY-NOTICES.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.AspNetCore.App.Runtime.win-arm64/10.0.12"
+    },
+    {
+      "id": "Microsoft.AspNetCore.App.Runtime.win-x64",
+      "version": "10.0.12",
+      "kind": "sdk-download",
+      "sha512": "n8qSkT3KkkXSpu9UU748wzEbrDwLOJCkOGxY0D/tvWOwUXUbS2qRk5icYG2SukR7+i1eO8YF4sOl+ivbohhRPA==",
+      "nugetContentHash": "W017+ITNnqIsYwmtQllvLTKbEDA86hEsrHCgLVoHutuhngNEFacJHEHoHrcOUZXDS11fcpeZ+3vc09Ugg3npAQ==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.AspNetCore.App.Runtime.win-x64.10.0.12.LICENSE.txt",
+        "Microsoft.AspNetCore.App.Runtime.win-x64.10.0.12.THIRD-PARTY-NOTICES.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.AspNetCore.App.Runtime.win-x64/10.0.12"
+    },
+    {
+      "id": "Microsoft.Data.Sqlite.Core",
+      "version": "8.0.31",
+      "kind": "restored",
+      "sha512": "nqrtISLwd3FD5IocJBY3JLaEK0kzrA2PsBVYFtN0+Jk75FjyoFlheCRXWc+5z37U7erok3qranwPFEgj7pWkOg==",
+      "nugetContentHash": "o6muD6VLO/Et5Cmi5UGSvj5cwjTpc26/OP6z96+4aK4YhCmKlSHkFTEKCiR/JzDDI6E/qrkfEt9ybu9J0tiKrQ==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": "https://raw.githubusercontent.com/dotnet/efcore/4caf9eeca38ab8bbc8857b975a8f0ad29ad2ea7f/LICENSE.txt",
+      "noticeFiles": [
+        "Microsoft.Data.Sqlite.Core.8.0.31.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Data.Sqlite.Core/8.0.31"
+    },
+    {
+      "id": "Microsoft.Data.Sqlite",
+      "version": "8.0.31",
+      "kind": "restored",
+      "sha512": "e1LTdjQetPFHikX0ZXR8O2Iosu3XyUiy5TGk5nj+anH6NdfMtG2YEd4VLTUvP++yLo5JiSEBv81QJyrYrOawXQ==",
+      "nugetContentHash": "WBM+0lBcUKeItKCAdBuTariYoV2tAICxE4FSzFDxlZXx9mO1YSr9NBD7vX2tYrKCHKOhpdwVJPa7fMD6zVHDjw==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": "https://raw.githubusercontent.com/dotnet/efcore/4caf9eeca38ab8bbc8857b975a8f0ad29ad2ea7f/LICENSE.txt",
+      "noticeFiles": [
+        "Microsoft.Data.Sqlite.8.0.31.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Data.Sqlite/8.0.31"
+    },
+    {
+      "id": "Microsoft.Extensions.DependencyInjection.Abstractions",
+      "version": "8.0.2",
+      "kind": "restored",
+      "sha512": "uhlg7xEKxzh6Kgbu/ALFnOV7D+WLPgzMt5scjyFQEFxdH0tl4O2V/1DXDygUKRfGpzW4P05UBrsdj53R+WNdfQ==",
+      "nugetContentHash": "3iE7UF7MQkCv1cxzCahz+Y/guQbTqieyxyaWKhrRO91itI9cOKO76OHeQDahqG4MmW5umr3CcCvGmK92lWNlbg==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.Extensions.DependencyInjection.Abstractions.8.0.2.LICENSE.TXT",
+        "Microsoft.Extensions.DependencyInjection.Abstractions.8.0.2.THIRD-PARTY-NOTICES.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Extensions.DependencyInjection.Abstractions/8.0.2"
+    },
+    {
+      "id": "Microsoft.Extensions.Logging.Abstractions",
+      "version": "8.0.3",
+      "kind": "restored",
+      "sha512": "5onsHiy50vr6n9n2q4YaCJWqmhy8n7N+ndhWyNFwkATrFFXmRXC1EBO+iLYOmuDET4+FOTLZzeqzPdtC/OwZmw==",
+      "nugetContentHash": "dL0QGToTxggRLMYY4ZYX5AMwBb+byQBd/5dMiZE07Nv73o6I5Are3C7eQTh7K2+A4ct0PVISSr7TZANbiNb2yQ==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.Extensions.Logging.Abstractions.8.0.3.LICENSE.TXT",
+        "Microsoft.Extensions.Logging.Abstractions.8.0.3.THIRD-PARTY-NOTICES.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Extensions.Logging.Abstractions/8.0.3"
+    },
+    {
+      "id": "Microsoft.NETCore.App.Runtime.win-arm64",
+      "version": "10.0.12",
+      "kind": "sdk-download",
+      "sha512": "ucOvZlk4/l8N2NhCRAWrX0DX4/dBFC9UFgZVLAOb40WzokltLBbNYblIpn8tfz7qkWsQhTq08KYa5vwH2kAiPg==",
+      "nugetContentHash": "n5OK0qtevujcVa4LgJ032WzkugNAvAGYbNMXGIYLwrt9g6+mVpiR6pI8Nm//cCJBZH5E73xjUu3glm5ZsPgAXQ==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.NETCore.App.Runtime.win-arm64.10.0.12.LICENSE.TXT",
+        "Microsoft.NETCore.App.Runtime.win-arm64.10.0.12.THIRD-PARTY-NOTICES.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.NETCore.App.Runtime.win-arm64/10.0.12"
+    },
+    {
+      "id": "Microsoft.NETCore.App.Runtime.win-x64",
+      "version": "10.0.12",
+      "kind": "sdk-download",
+      "sha512": "Oa/LIiAy6r6+LH+lGjfEkcaw9FZ5ateIhDGXG47vT2icruVFQmA5jOD/r+SRxWWJGzXnOvxnWFo+TEvemVcQ7g==",
+      "nugetContentHash": "H3eh1w8Yevp6yO2+R3zbOPfwJ1vs2c/5PKa1ez7igGCF8EIycnzZr8gTjeVBAKjCPbyGuOdMSazLUnNqMsfTkw==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.NETCore.App.Runtime.win-x64.10.0.12.LICENSE.TXT",
+        "Microsoft.NETCore.App.Runtime.win-x64.10.0.12.THIRD-PARTY-NOTICES.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.NETCore.App.Runtime.win-x64/10.0.12"
+    },
+    {
+      "id": "Microsoft.Web.WebView2",
+      "version": "1.0.3719.77",
+      "kind": "restored",
+      "sha512": "Cpq7EGgijiCN0lg1RlTZuZcRkzyo/USU9cEJMSPh6FG4PLjmTEpJ5NKuJqQ06ONnVVARCcTLf31IjjhFJUrApw==",
+      "nugetContentHash": "t+ucyKw5NTwMjsUrDF6R9Lk40lpcKQD1/HgyGFxl49tdA4h9dKlsj6FYGEmDRpFNfnTpENuTypMcdbrlkqBdDA==",
+      "licenseType": "file",
+      "license": "LICENSE.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.Web.WebView2.1.0.3719.77.LICENSE.txt",
+        "Microsoft.Web.WebView2.1.0.3719.77.NOTICE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77"
+    },
+    {
+      "id": "Microsoft.Windows.AI.MachineLearning",
+      "version": "2.1.74",
+      "kind": "restored",
+      "sha512": "yg+FU/BOrHsYYXlsVLpHdMmkHROvlImFR3k75Ja3Brn/GHVum7ncmsp3AK19stMZih7FdWycucACL22fOxD7YQ==",
+      "nugetContentHash": "/Z1yAQ0J53eD1RrOl5anTDS0UQOgneERY//hLljwGcWeUX9ynCvOl5qUxAsfWvwsZZGcvV4WKjAvnAtA6N5i+w==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.Windows.AI.MachineLearning.2.1.74.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/2.1.74"
+    },
+    {
+      "id": "Microsoft.Windows.SDK.BuildTools.MSIX",
+      "version": "1.7.251221100",
+      "kind": "restored",
+      "sha512": "3OEJjmDvPQH649p73taTt2n4AeY9dMg/gaDdZHQZh4xOOTAjdfuzuuw2FxSedpQuP9Pbki7FNGoE1mM4kjf0Mw==",
+      "nugetContentHash": "f4aIZJ0NUth2403oxrpR+9rxVzZVI6dabqB21u8ncnk8eJAKCs9m77E4iYAnvP1YwrRe4axz3f8+yUcttNSfEA==",
+      "licenseType": "file",
+      "license": "sdk_license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.Windows.SDK.BuildTools.MSIX.1.7.251221100.LICENSE.txt",
+        "Microsoft.Windows.SDK.BuildTools.MSIX.1.7.251221100.NOTICE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Windows.SDK.BuildTools.MSIX/1.7.251221100"
+    },
+    {
+      "id": "Microsoft.Windows.SDK.BuildTools.WinApp",
+      "version": "0.7.0",
+      "kind": "restored",
+      "sha512": "dFNVAyND8G1YSizGSAvg5CxKWU0KeGtAGlSqhXRkhhlhR2juM01uz/4Vf5W/5CteYSEM/jBYddZ+8ZDuB+ZDEg==",
+      "nugetContentHash": "ZV4VfpCo+XMY4FvAZLD2aq7ZAyAuU8nqTBKjkT1oNiDRwuA82JU/6sM3wX1045frxfAun0cXU5F+nIyADvdHXQ==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": "https://raw.githubusercontent.com/microsoft/WinAppCli/2fdd020c5b7db093e8b3e317b22bdd8135a47e89/LICENSE",
+      "noticeFiles": [
+        "Microsoft.Windows.SDK.BuildTools.WinApp.0.7.0.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.Windows.SDK.BuildTools.WinApp/0.7.0"
+    },
+    {
+      "id": "Microsoft.Windows.SDK.BuildTools",
+      "version": "10.0.26100.4654",
+      "kind": "restored",
+      "sha512": "kXdAbJ9Vu1gFheVpgqdxFqbamlponIVeVEnnkIzuvLkcaGrQOoJwaZSRcrhwICgc1UZCoPUE4FWZKxHWTW4s3Q==",
+      "nugetContentHash": "2mgcOlj/t2RfSyyw+pVESfO+Tk1RkfQzto9Vrq42M1lUQIfQEwbi8QLha9GXWIOj+TFzeHIEJckIoF25mgiM8A==",
+      "licenseType": "url",
+      "license": "https://aka.ms/WinSDKLicenseURL",
+      "licenseTextSource": null,
+      "noticeFiles": [],
+      "source": "https://www.nuget.org/packages/Microsoft.Windows.SDK.BuildTools/10.0.26100.4654"
+    },
+    {
+      "id": "Microsoft.Windows.SDK.BuildTools",
+      "version": "10.0.28000.2705",
+      "kind": "restored",
+      "sha512": "47kp42eMb8rF3bjDuZHVkzGRb9Fr7wyFZDIT2sWr3StwnTCoDHIisDe0SPWGwerwVUw/eQQO/OxDb0YYHbfNvA==",
+      "nugetContentHash": "TZQ96xtu7+fyFsyJCgj6Hazru0H8G1kiE1CeZLGpsqT4xKQmkxWu9yRuxYLeHJECjqEHN7duZUTcdbt8zlQ8OQ==",
+      "licenseType": "url",
+      "license": "https://aka.ms/WinSDKLicenseURL",
+      "licenseTextSource": null,
+      "noticeFiles": [],
+      "source": "https://www.nuget.org/packages/Microsoft.Windows.SDK.BuildTools/10.0.28000.2705"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.AI",
+      "version": "2.5.5",
+      "kind": "restored",
+      "sha512": "RflkjoeGG5LZ0SDujo2CAZb0JkOpUnDf/gfLNo4xkAEr3lN+ghF6LvPvMr6QHK+K1c47z3uI2HFjcd216/gwLw==",
+      "nugetContentHash": "f6XA05BsTAmDDsWGiFQdcAujNlbET5QbqxhBo7iHPJJix+RJajXKv1XlO19M78GtEpi2AYGEv08dPxER8ESYAw==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.AI.2.5.5.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.AI/2.5.5"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Base",
+      "version": "2.0.4",
+      "kind": "restored",
+      "sha512": "Mjy6K7l9kj1+5UNPg8y/fkHx2be0TdLYaIWJsf7SlkZHEcFd6bl5L8uSjPNYK0Xz5vfaYELO5yKszHHIbaO75A==",
+      "nugetContentHash": "QXSy2llX2/Bx9dYWGUEsb10F40q94ZiDnPMzqa2/qRmTG4y9EXxGp6uHITb7c0b4FCa+6KFBlgh6D53M0QEMEg==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.Base.2.0.4.LICENSE.txt",
+        "Microsoft.WindowsAppSDK.Base.2.0.4.NOTICE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Base/2.0.4"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.DWrite",
+      "version": "2.1.0",
+      "kind": "restored",
+      "sha512": "lm1mJMhQA6HV702Oom3Yjm7e5A0ZUfU6Ji0JFDhgYSUP71AlBe3hQMMNYc1oCuqOd/b7UdHl6aJwXGzkP+20Hw==",
+      "nugetContentHash": "dgix7NSeo7Z8SZPyrsOqYm/6OUvBveHCiVyorYecmtDYoZW26dJ6/i9yveIxgWvmFpgfKXPeIuQBCvhbetHiYg==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.DWrite.2.1.0.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.DWrite/2.1.0"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Foundation",
+      "version": "2.3.12",
+      "kind": "restored",
+      "sha512": "BXx9Vu6ZTn2F6PdAx1iaPa2fdCFyPegPIZ/m4+8DMp2Ur3orvUVAA/f2Sv9mBykfyVPD9dh2NQKj0JFYS/4w1g==",
+      "nugetContentHash": "UflrNbXoZmHPt8lLGDk4gQ+yoGfQlCHd3TVTy7YwCMZ/aVGWAiLDqGCEjtWmNsI8ySy6imx3ZlenKfd2/VMPEg==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.Foundation.2.3.12.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Foundation/2.3.12"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.InteractiveExperiences",
+      "version": "2.1.9",
+      "kind": "restored",
+      "sha512": "3WQp3t0txhg+RHw1j4UENtUviBq5n+bDnCqgY0wDhoRglvoRK1O6YsvWOMXnL5e2IxwIVuwZF0CXhvD5pKUeBw==",
+      "nugetContentHash": "59nvb3pQYsBTTGrobeHkB4bkxASHtpaORJl7r6Zvg8PSIDCupEZTPKrIhnUknHDGfAtuBsnORjgvRi2WXGaRhA==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.InteractiveExperiences.2.1.9.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.InteractiveExperiences/2.1.9"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.ML",
+      "version": "2.1.94",
+      "kind": "restored",
+      "sha512": "lEwyHRUpv0aimso73mb7VflGj3+hX8AkkoJ7O+MVV1lrFcLdgqYS7vrFDx/Ss/wdo5dgKIg1GLksT3CXYZsu+Q==",
+      "nugetContentHash": "b21CWVubc3WqWNJ9+fy7n+s83LgwBpIzYrOuSUmHAqPB0pH+ttjgiknnDA/oF7wCbjiaUb4KDXVV7Mya3f18Ug==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.ML.2.1.94.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.ML/2.1.94"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Runtime",
+      "version": "2.5.1",
+      "kind": "restored",
+      "sha512": "WOuScR3S99XeYTk7A3uYaZidAvOWjgzFCLvoGbcYf+tTnsbZHqtsZaSRsCF142KstnjDIrxjktH3NpPZyu0MIA==",
+      "nugetContentHash": "EDzGf6Tq9njNfNsTfqKdiwmSzFF/caHItuDa99UTQiOvLXwOjCL1k75/PMLSoHbCo1cSlHh/sSqZVssJ/Z0NzA==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.Runtime.2.5.1.LICENSE.txt",
+        "Microsoft.WindowsAppSDK.Runtime.2.5.1.NOTICE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Runtime/2.5.1"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Search",
+      "version": "2.5.5",
+      "kind": "restored",
+      "sha512": "uv44GwUMJJy41qNPzTwlNTuSaFqftZaZ1VmmVz67rgiCwJVfh1W+Pm/EGvbJDzQmD7s5rkwzZ3A+OYjHUfJ1Nw==",
+      "nugetContentHash": "uvYkXi9TB4rk/kgWn5XHEkMNMU+xhjY+S0QWsxEs8wYT/dXAjfHvW30+JVoW/THZ/9jIMinEn4gliCSVRFV0Sw==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.Search.2.5.5.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Search/2.5.5"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Widgets",
+      "version": "2.0.5",
+      "kind": "restored",
+      "sha512": "uqMIWloLBnsdSKsCP2K523jO+FhGeIcH54BBsJg/TSKHvdQ/w8RQDi5ZRGVBjh7ovrw8bjSJdfEBA0u1+nC6dw==",
+      "nugetContentHash": "lRz+8+QU65gV8hRzLVE+GRsPKZ42lnzqkmsw96HzQd/DuFYfr4JYpUU7ZZ5YrkV2EfQe4BCmoRKAeZ3WwalMcg==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.Widgets.2.0.5.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Widgets/2.0.5"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.WinUI",
+      "version": "2.3.9",
+      "kind": "restored",
+      "sha512": "tOdVUPFfkZe5+BJxGFnJplY+1e1CFog0xqz8lEQvkic1nMEvh0BVzU/z86GBZtDvLxjCNg5UTXmDtOBq0nCgVQ==",
+      "nugetContentHash": "GiuYUQqMYD5lycT+X2AGX1rlbHU/zf8xoPeZNXZbJj4mZcSr4STsxeRUMxnTUQLAmmjjQaPrTIRjn78vbPhAvg==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.WinUI.2.3.9.LICENSE.txt",
+        "Microsoft.WindowsAppSDK.WinUI.2.3.9.NOTICE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.WinUI/2.3.9"
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK",
+      "version": "2.5.1",
+      "kind": "restored",
+      "sha512": "pXf/xeWCHOpRG4bQTmuMS9w0VlTfbTU8HSjJBVjnBx63Vn9aoNUiRFTMp3FCWoVmsyGADbw7HqVyZtJWINP3NA==",
+      "nugetContentHash": "WgKPzT1H2s17azODD1jNZje69z1hGz8VSh3bIylTtXHVg7hLyrn8Y+rswFqF41UX8ea7ELeoyqN80zZ6EHwCFA==",
+      "licenseType": "file",
+      "license": "license.txt",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsAppSDK.2.5.1.LICENSE.txt",
+        "Microsoft.WindowsAppSDK.2.5.1.NOTICE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK/2.5.1"
+    },
+    {
+      "id": "Microsoft.WindowsDesktop.App.Runtime.win-arm64",
+      "version": "10.0.12",
+      "kind": "sdk-download",
+      "sha512": "DqlRMQGA3yZbx6+glLU+mHXFvpE+TQSQjIKzub4vIfmuqJGrhiKFEoQ1i65fDNNIsDNbRhJqS9SC7IyuDhpMTw==",
+      "nugetContentHash": "FwjwSaW8ohL4kVuk6lIPjXqm+ZQ0jbcpnZFbxJj6AhR+ePMtQu2ZFhOUoTQtCQxl13vMc363WoNdiWH/A+WOrg==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsDesktop.App.Runtime.win-arm64.10.0.12.LICENSE"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsDesktop.App.Runtime.win-arm64/10.0.12"
+    },
+    {
+      "id": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+      "version": "10.0.12",
+      "kind": "sdk-download",
+      "sha512": "BeGI/KTBBca4pduu1nff61VvZAwlzVwqNmo+eVqT26ltsAJsQsF//DCPJssw+fXpARq+FQ7pVKiQed5igv8KYQ==",
+      "nugetContentHash": "VsVtDEmt6l3gyhSs1G6B2u5BJoW2a7p9S4Kllui9YZv8jEwnlfpxpcZm9U3Wuc29zvw7iQ7bwddsc36KvGtwwg==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "Microsoft.WindowsDesktop.App.Runtime.win-x64.10.0.12.LICENSE"
+      ],
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsDesktop.App.Runtime.win-x64/10.0.12"
+    },
+    {
+      "id": "SQLitePCLRaw.bundle_e_sqlite3",
+      "version": "2.1.12",
+      "kind": "restored",
+      "sha512": "KbeKXtiMrpxd7dFgsnorA1Gci/xVRDCBmkfZNdiiE1la6OdUEMtyTTJ3TBeCn9nIvZgXo5uCd9dVCji3Ay6LuA==",
+      "nugetContentHash": "mAgscpQMLw5/nfA1Q5oJVAT29yROUo1ifZGbbTpx/lwZpSxMUGoYbKfmvdm8oXER+RzxqBmmQzeBEVKfeHv2nw==",
+      "licenseType": "expression",
+      "license": "Apache-2.0",
+      "licenseTextSource": "https://raw.githubusercontent.com/ericsink/SQLitePCL.raw/v2.1.12/LICENSE.TXT",
+      "noticeFiles": [
+        "SQLitePCLRaw.bundle_e_sqlite3.2.1.12.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/SQLitePCLRaw.bundle_e_sqlite3/2.1.12"
+    },
+    {
+      "id": "SQLitePCLRaw.core",
+      "version": "2.1.12",
+      "kind": "restored",
+      "sha512": "WgmgyKwGLTR6ZfIf1+1dFNxsOyp9GmsU9YjjeUjgz+NZnw2hyjVB0U8taT1Z1vv21s5+gvhHQ3vtpZajsMKJYg==",
+      "nugetContentHash": "ETpNw9DY3ckWLgRRAeCHj+GKOuPi61aeczkXhgHexUvqoZBAYg8RYESE2J7O1M7+o6QbdSEZwrw9bfqztUVWXg==",
+      "licenseType": "expression",
+      "license": "Apache-2.0",
+      "licenseTextSource": "https://raw.githubusercontent.com/ericsink/SQLitePCL.raw/v2.1.12/LICENSE.TXT",
+      "noticeFiles": [
+        "SQLitePCLRaw.core.2.1.12.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/SQLitePCLRaw.core/2.1.12"
+    },
+    {
+      "id": "SQLitePCLRaw.lib.e_sqlite3",
+      "version": "2.1.12",
+      "kind": "restored",
+      "sha512": "Dli+ELKNuRX0g72Uq2I2OZa5zgi4fwSXV4Je3wyF7jH9oz6AKRA9wXIzMwuVeW7RfAZdSVgIcEeZZON59LdtiA==",
+      "nugetContentHash": "fWi8Dbknuhgg72fWinIdjXVaqO1hHL4YBBwVLnr7e1c9TAZwJ0QE38j9syW1hwx6HaqEVTwI+O07WPdZn8Rp0w==",
+      "licenseType": "expression",
+      "license": "Apache-2.0",
+      "licenseTextSource": "https://raw.githubusercontent.com/ericsink/SQLitePCL.raw/v2.1.12/LICENSE.TXT",
+      "noticeFiles": [
+        "SQLitePCLRaw.lib.e_sqlite3.2.1.12.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/SQLitePCLRaw.lib.e_sqlite3/2.1.12"
+    },
+    {
+      "id": "SQLitePCLRaw.provider.e_sqlite3",
+      "version": "2.1.12",
+      "kind": "restored",
+      "sha512": "k4RCblP+Hc1JAc77crV+fFZLiZeJPaY8VjMA8kvki00Z0dohG6xxXw4qkuVyCUC2+HChbhwW+ydhmjmlUZAXUQ==",
+      "nugetContentHash": "W3oH4XIfCzFrgUSDKHhN6N+dgzA5YHOR2VxX8GB6Qy7CyrJJgxPEG8NirgYWlPQC5P2jz2knSsexWu4tDUL33g==",
+      "licenseType": "expression",
+      "license": "Apache-2.0",
+      "licenseTextSource": "https://raw.githubusercontent.com/ericsink/SQLitePCL.raw/v2.1.12/LICENSE.TXT",
+      "noticeFiles": [
+        "SQLitePCLRaw.provider.e_sqlite3.2.1.12.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/SQLitePCLRaw.provider.e_sqlite3/2.1.12"
+    },
+    {
+      "id": "SSH.NET",
+      "version": "2026.0.0",
+      "kind": "restored",
+      "sha512": "xXfgKxQmdN3uBo8mP89cVEOvRmFkj5ovBMExrZFDRz5ZaclAcrgSx0Hx1U4Ov1mJPQRz5X2lGk0hwXickyhwAg==",
+      "nugetContentHash": "Yu9dirPq8l3oaat0+OQ7K0nUf5MmYltpia5UGqsApTG4zTPvBC1cxbNnC3NERij26dUST0A3Ef1QdHSn5ArbWQ==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": "https://raw.githubusercontent.com/sshnet/SSH.NET/7b2fd3dbf2c86a80a7b06cea020aa5f821c9902e/LICENSE",
+      "noticeFiles": [
+        "SSH.NET.2026.0.0.LICENSE.txt"
+      ],
+      "source": "https://www.nuget.org/packages/SSH.NET/2026.0.0"
+    },
+    {
+      "id": "System.Numerics.Tensors",
+      "version": "9.0.0",
+      "kind": "restored",
+      "sha512": "razlju7UgILQ/Vb7BoW1RR/xIEBDc8Ynq0sRk74KpLBHay3QMZJfgK8ly4IEzlJlbFYlCOxpdPa7DNBUYaYtIw==",
+      "nugetContentHash": "hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A==",
+      "licenseType": "expression",
+      "license": "MIT",
+      "licenseTextSource": null,
+      "noticeFiles": [
+        "System.Numerics.Tensors.9.0.0.LICENSE.TXT",
+        "System.Numerics.Tensors.9.0.0.THIRD-PARTY-NOTICES.TXT"
+      ],
+      "source": "https://www.nuget.org/packages/System.Numerics.Tensors/9.0.0"
+    }
+  ]
+}
