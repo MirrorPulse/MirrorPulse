@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
@@ -57,5 +58,78 @@ public sealed class MirrorPulseMutationExecutorTests
             Assert.AreEqual("accepted", record.AcceptedRevision);
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ReadbackAfterRestartConvergesMatchingBytesOrRetainsConflict(bool changed)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "MirrorPulse-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(root, "sync"), Path.Combine(root, "data"));
+        byte[] accepted = [1, 2, 3, 4];
+        MirrorPulseMutationIntent intent = Intent() with { ContentSha256 = Convert.ToHexString(SHA256.HashData(accepted)) };
+        int mutations = 0;
+        int acknowledgements = 0;
+        try
+        {
+            await using (var catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+                await Assert.ThrowsExactlyAsync<IOException>(() => new MirrorPulseMutationExecutor(catalog).ExecuteAsync(intent,
+                    _ => { mutations++; File.WriteAllBytes(Path.Combine(root, "remote"), accepted); throw new IOException("Lost reply."); },
+                    (_, _) => throw new AssertFailedException(), default).AsTask());
+            if (changed) File.WriteAllBytes(Path.Combine(root, "remote"), [4, 3, 2, 1]);
+            await using var reopened = await MirrorPulseProductCatalog.OpenAsync(paths);
+            var transport = new ReadbackFixture(Path.Combine(root, "remote"));
+            var readback = new MirrorPulseMutationReadback(transport, transport, transport);
+            var executor = new MirrorPulseMutationExecutor(reopened);
+            MirrorPulseMutationRecord record = (await reopened.ReadMutationAsync(intent.OperationId))!;
+            ValueTask Acknowledge(string? revision, CancellationToken _)
+            {
+                Assert.AreEqual("different-revision", revision);
+                acknowledgements++;
+                return ValueTask.CompletedTask;
+            }
+            if (changed)
+                await Assert.ThrowsExactlyAsync<MirrorPulseWorkerMutationConflictException>(() => executor.ReconcileAsync(record,
+                    readback.VerifyAsync, Acknowledge, default).AsTask());
+            else await executor.ReconcileAsync(record, readback.VerifyAsync, Acknowledge, default);
+            Assert.AreEqual(changed ? MirrorPulseMutationState.Conflict : MirrorPulseMutationState.Acknowledged,
+                (await reopened.ReadMutationAsync(intent.OperationId))!.State);
+            Assert.AreEqual(changed ? 0 : 1, acknowledgements);
+            Assert.AreEqual(1, mutations);
+            CollectionAssert.AreEqual(changed ? new byte[] { 4, 3, 2, 1 } : accepted, File.ReadAllBytes(Path.Combine(root, "remote")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public async Task UnknownMoveCannotBeAcknowledgedAndChangedReadbackCannotProveUpload()
+    {
+        var fixture = new ReadbackFixture(null);
+        MirrorPulseMutationIntent intent = Intent() with { Kind = MirrorPulseWorkerChangeKind.Move, PreviousRelativePath = "before.txt" };
+        var record = new MirrorPulseMutationRecord(intent, MirrorPulseMutationState.Ambiguous, null, DateTimeOffset.UtcNow);
+        Assert.AreEqual(MirrorPulseMutationProofKind.Conflict, (await new MirrorPulseMutationReadback(fixture).VerifyAsync(record, default)).Kind);
+        fixture.RevisionChanges = true;
+        record = record with { Intent = Intent() with { ContentLength = 0, ContentSha256 = Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())) } };
+        Assert.AreEqual(MirrorPulseMutationProofKind.Unknown,
+            (await new MirrorPulseMutationReadback(fixture, fixture, fixture).VerifyAsync(record, default)).Kind);
+    }
+
+    private sealed class ReadbackFixture(string? path) : IMirrorPulseWorkerStatTransport,
+        IMirrorPulseWorkerRangeTransport, IMirrorPulseWorkerDirectoryPageSource
+    {
+        private int _stats;
+        public bool RevisionChanges { get; set; }
+        public ValueTask<string?> StatAsync(MirrorPulseWorkerStatRequest request, CancellationToken cancellationToken) =>
+            ValueTask.FromResult<string?>(RevisionChanges && ++_stats > 1 ? "concurrent-change" : "different-revision");
+        public ValueTask<Stream> ReadRangeAsync(MirrorPulseWorkerReadRangeRequest request, CancellationToken cancellationToken)
+        {
+            byte[] bytes = File.ReadAllBytes(path!);
+            return ValueTask.FromResult<Stream>(new MemoryStream(bytes.AsSpan((int)request.Offset, (int)request.Length).ToArray()));
+        }
+        public ValueTask<MirrorPulseWorkerDirectoryPage> ReadDirectoryPageAsync(MirrorPulseWorkerDirectoryPageRequest request,
+            CancellationToken cancellationToken) => ValueTask.FromResult(new MirrorPulseWorkerDirectoryPage(
+                [new("remote-id", "different-revision", "file", "file.txt", path is null ? 0 : new FileInfo(path).Length, null, null, false)],
+                ReadOnlyMemory<byte>.Empty, true));
     }
 }

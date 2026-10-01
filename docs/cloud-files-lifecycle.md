@@ -34,6 +34,15 @@ of the same Adapter require distinct first-level folder names.
 
 ## Integrated data paths
 
+Remote mutations persist intent before dispatch. On restart, an uncertain upload
+uses bounded remote reads and verifies its exact length and SHA-256 between two
+revision checks. Matching bytes can converge even when the revision differs.
+Different remote content becomes a retained conflict. A missing delete target
+proves the delete postcondition. Moves without a confirmed revision remain
+unresolved unless their postcondition can be verified; uncertainty does not
+authorize another destructive request. Weak revision sources require additional
+consistency policy and remain a documented limitation.
+
 - First-level Adapter labels are routed within the same root. One instance may
   own multiple labels, and multiple instances of one Adapter have distinct
   identities. Duplicate active labels are rejected before population.

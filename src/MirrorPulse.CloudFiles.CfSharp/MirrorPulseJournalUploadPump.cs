@@ -35,6 +35,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
     private Task? _loop;
     private readonly MirrorPulseJournalPumpRunner _runner = new();
     private readonly MirrorPulseMutationExecutor _mutationExecutor;
+    private readonly MirrorPulseMutationReadback _readback;
 
     public MirrorPulseJournalPumpHealth Health => _runner.Health;
 
@@ -51,7 +52,9 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         MirrorPulseJournalUploadCompletion completion,
         MirrorPulseConflictCenter? conflicts = null,
         MirrorPulseConflictNotificationBridge? notifications = null,
-        IMirrorPulseWorkerMutationTransport? mutations = null)
+        IMirrorPulseWorkerMutationTransport? mutations = null,
+        IMirrorPulseWorkerRangeTransport? ranges = null,
+        IMirrorPulseWorkerDirectoryPageSource? directories = null)
     {
         _feed = feed ?? throw new ArgumentNullException(nameof(feed));
         _router = router ?? throw new ArgumentNullException(nameof(router));
@@ -61,6 +64,7 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _mutationExecutor = new MirrorPulseMutationExecutor(catalog);
+        _readback = new MirrorPulseMutationReadback(stats, ranges, directories);
         _conflicts = conflicts;
         _notifications = notifications;
         ArgumentException.ThrowIfNullOrWhiteSpace(syncRootPath);
@@ -126,14 +130,10 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         {
             string localPath = _router.ResolveUploadPath(command.InstanceId,
                 command.RootKey, command.RelativePath);
-            if (!File.Exists(localPath))
-            {
-                return false;
-            }
-
             syncRootRelativePath = Path.GetRelativePath(_syncRootPath, localPath)
                 .Replace(Path.DirectorySeparatorChar, '/');
             if (await CheckPreviousMutationAsync(command, cancellationToken).ConfigureAwait(false)) return true;
+            if (!File.Exists(localPath)) return false;
             string? revision = await MirrorPulseJournalUploadRevisionGuard.ResolveAsync(
                 _state.OpenStore, _stats, command, syncRootRelativePath,
                 cancellationToken: cancellationToken)
@@ -274,7 +274,9 @@ public sealed class MirrorPulseJournalUploadPump : IAsyncDisposable
         MirrorPulseMutationRecord? record = await _catalog.ReadMutationAsync(command.OperationId, cancellationToken).ConfigureAwait(false);
         if (record is null || record.State == MirrorPulseMutationState.Prepared) return false;
         if (record.State == MirrorPulseMutationState.Acknowledged) return true;
-        throw new MirrorPulseMutationAmbiguousException();
+        await _mutationExecutor.ReconcileAsync(record, _readback.VerifyAsync,
+            (revision, token) => AcknowledgeAsync(command.OperationId, revision, token), cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     private static MirrorPulseMutationIntent Intent(MirrorPulseWorkerChangeCommand command, string? revision,

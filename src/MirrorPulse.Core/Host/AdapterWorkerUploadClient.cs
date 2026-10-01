@@ -163,7 +163,9 @@ public sealed class AdapterWorkerUploadClient
         {
             string code = frame.Payload.GetProperty("code").GetString() ?? "Unknown";
             Exception exception = code == "RemoteConflict"
-                ? new IOException("The Adapter Worker rejected the upload because the remote file changed.")
+                ? new MirrorPulseWorkerMutationConflictException(
+                    frame.Payload.TryGetProperty("expectedRevision", out JsonElement expected) ? expected.GetString() : null,
+                    frame.Payload.TryGetProperty("actualRevision", out JsonElement actual) ? actual.GetString() : null)
                 : new IOException($"The Adapter Worker upload failed: {code}.");
             ready!.TrySetException(exception);
             completion!.TrySetException(exception);

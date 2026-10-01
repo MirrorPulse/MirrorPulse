@@ -8,6 +8,32 @@ public sealed class MirrorPulseMutationExecutor(MirrorPulseProductCatalog catalo
 {
     private readonly MirrorPulseProductCatalog _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
 
+    public async ValueTask ReconcileAsync(MirrorPulseMutationRecord record,
+        Func<MirrorPulseMutationRecord, CancellationToken, ValueTask<MirrorPulseMutationProof>> verify,
+        Func<string?, CancellationToken, ValueTask> acknowledge, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(verify);
+        ArgumentNullException.ThrowIfNull(acknowledge);
+        if (record.State == MirrorPulseMutationState.Acknowledged) return;
+        if (record.State == MirrorPulseMutationState.Conflict)
+            throw new MirrorPulseWorkerMutationConflictException(record.Intent.ExpectedRevision, record.AcceptedRevision);
+        if (record.State == MirrorPulseMutationState.Prepared) throw new MirrorPulseMutationAmbiguousException();
+        MirrorPulseMutationProof proof = await verify(record, cancellationToken).ConfigureAwait(false);
+        if (proof.Kind == MirrorPulseMutationProofKind.Unknown) throw new MirrorPulseMutationAmbiguousException();
+        if (proof.Kind == MirrorPulseMutationProofKind.Conflict)
+        {
+            await _catalog.TransitionMutationAsync(record.Intent.OperationId, record.State,
+                MirrorPulseMutationState.Conflict, proof.Revision, cancellationToken).ConfigureAwait(false);
+            throw new MirrorPulseWorkerMutationConflictException(record.Intent.ExpectedRevision, proof.Revision);
+        }
+        await _catalog.TransitionMutationAsync(record.Intent.OperationId, record.State,
+            MirrorPulseMutationState.RemoteAccepted, proof.Revision, cancellationToken).ConfigureAwait(false);
+        await acknowledge(proof.Revision, cancellationToken).ConfigureAwait(false);
+        await _catalog.TransitionMutationAsync(record.Intent.OperationId, MirrorPulseMutationState.RemoteAccepted,
+            MirrorPulseMutationState.Acknowledged, proof.Revision, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask ExecuteAsync(MirrorPulseMutationIntent intent,
         Func<CancellationToken, ValueTask<string?>> mutate,
         Func<string?, CancellationToken, ValueTask> acknowledge, CancellationToken cancellationToken)
