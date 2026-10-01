@@ -72,6 +72,12 @@ of the same Adapter require distinct first-level folder names.
   have a distinct error code; source or catalog failures remain visible in the
   pump's in-memory health even when persistence is unavailable. Host status is
   degraded while that health reports a fault.
+- Routing produces a decision for each journal observation. Root reconciliation,
+  unknown paths, cross-root moves, and unsupported mutations are retained as
+  blocked operations in the product catalog and exposed by sync status. They are
+  never acknowledged as successful Worker mutations. Valid commands in the same
+  feed batch continue. The later bounded journal paging work must also address
+  batches filled entirely with unresolved blocked operations.
 - CfSharp suppresses local echoes from remote changes in the sync root.
   A local-directory Adapter separately suppresses its own source-tree watcher
   echoes because that is a different file tree.

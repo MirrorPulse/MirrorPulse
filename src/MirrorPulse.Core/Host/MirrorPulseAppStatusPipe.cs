@@ -35,7 +35,8 @@ public sealed record MirrorPulseAppStatusResponse(
     string? Error = null,
     string? InstalledAdapterId = null,
     string? CreatedInstanceId = null,
-    int PendingUploadConflicts = 0);
+    int PendingUploadConflicts = 0,
+    IReadOnlyList<MirrorPulseBlockedLocalOperation>? BlockedLocalOperations = null);
 
 public sealed record MirrorPulseCreateInstanceRequest(
     string InstallId,

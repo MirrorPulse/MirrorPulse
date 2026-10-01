@@ -62,15 +62,28 @@ public sealed class MirrorPulseJournalUploadSource
         }
 
         var ready = new List<MirrorPulseWorkerChangeCommand>(plan.Commands.Count);
-        int deferred = 0;
+        int deferred = plan.BlockedOperations?.Count ?? 0;
+        foreach (MirrorPulseBlockedLocalOperation blocked in plan.BlockedOperations ?? [])
+            await _catalog.SaveBlockedLocalOperationAsync(blocked, cancellationToken).ConfigureAwait(false);
         foreach (MirrorPulseWorkerChangeCommand command in plan.Commands)
         {
             byte[] fingerprint = SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(command));
-            await _catalog.TryRecordWorkerRequestAsync(
+            try
+            {
+                await _catalog.TryRecordWorkerRequestAsync(
                 command.OperationId,
                 command.InstanceId,
                 fingerprint,
-                cancellationToken).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidDataException)
+            {
+                await _catalog.SaveBlockedLocalOperationAsync(new(command.OperationId, command.InstanceId,
+                    command.RelativePath, MirrorPulseLocalOperationBlockReason.RequestIdentityMismatch, command.ObservedAt), cancellationToken).ConfigureAwait(false);
+                deferred++;
+                continue;
+            }
+            await _catalog.ClearBlockedLocalOperationAsync(command.OperationId, cancellationToken).ConfigureAwait(false);
             DateTimeOffset? retryAfter = _completion is null
                 ? null
                 : await _completion.GetRetryAfterAsync(command.OperationId, cancellationToken)

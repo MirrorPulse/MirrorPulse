@@ -4,6 +4,8 @@ using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.CloudFiles;
 using MirrorPulse.Core.Configuration;
 using MirrorPulse.Core.Contracts;
+using MirrorPulse.Core.Host;
+using MirrorPulse.Core.State;
 using MirrorPulse.Core.Sync;
 
 namespace MirrorPulse.CloudFiles.CfSharp.Tests;
@@ -12,6 +14,53 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 [TestClass]
 public sealed class MirrorPulseLocalBatchMapperTests
 {
+    [TestMethod]
+    public async Task BlockedRootsAndUnknownPathsDoNotPoisonValidCommandsAndRemainQueryableAfterRestart()
+    {
+        string fixture = Path.Combine(Path.GetTempPath(), "MirrorPulse-mapper-tests", Guid.NewGuid().ToString("N"));
+        var paths = new MirrorPulseStoragePaths(Path.Combine(fixture, "sync"), Path.Combine(fixture, "data"));
+        InstanceId instance = InstanceId.New();
+        AdapterId adapter = AdapterId.Parse("example.routing");
+        RootRegistration Root(string key, string label) => AdapterRootRegistrationMapper.Map(adapter, instance,
+            new AdapterRootDefinition(key, label, label, false), RootRegistrationState.Active);
+        var router = new MirrorPulseRootRouter(paths.SyncRootPath, [Root("docs", "Documents"), Root("other", "Other")]);
+        MirrorPulseLocalChangeObservation Change(string path, CloudLocalChangeKind kind, bool directory = false, string? previous = null) =>
+            new(Guid.NewGuid(), 1, kind, null, path, previous, directory, DateTimeOffset.UtcNow);
+        MirrorPulseLocalChangeObservation valid = Change("Documents/report.txt", CloudLocalChangeKind.ContentUpdate);
+        MirrorPulseLocalBatchPlan plan = MirrorPulseLocalBatchMapper.MapObservations([
+            Change("Documents", CloudLocalChangeKind.Delete, true),
+            Change("Unknown/file.txt", CloudLocalChangeKind.Create),
+            Change("Documents/moved.txt", CloudLocalChangeKind.Move, previous: "Other/file.txt"),
+            Change("Documents/new-folder", CloudLocalChangeKind.Create, true), valid], router);
+        Assert.HasCount(1, plan.Commands);
+        Assert.AreEqual(valid.OperationId, plan.Commands[0].OperationId);
+        Assert.HasCount(4, plan.BlockedOperations!);
+        Assert.IsEmpty(plan.DirectoryMetadataOperationIds);
+        CollectionAssert.AreEqual(new[] { MirrorPulseLocalOperationBlockReason.RootReconciliationRequired,
+            MirrorPulseLocalOperationBlockReason.UnregisteredPath, MirrorPulseLocalOperationBlockReason.CrossRootMove,
+            MirrorPulseLocalOperationBlockReason.UnsupportedDirectoryCreate }, plan.BlockedOperations!.Select(item => item.Reason).ToArray());
+        try
+        {
+            await using (MirrorPulseProductCatalog catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+                foreach (MirrorPulseBlockedLocalOperation operation in plan.BlockedOperations!)
+                {
+                    await catalog.SaveBlockedLocalOperationAsync(operation);
+                    await catalog.SaveBlockedLocalOperationAsync(operation);
+                }
+            await using (MirrorPulseProductCatalog catalog = await MirrorPulseProductCatalog.OpenAsync(paths))
+            {
+                IReadOnlyList<MirrorPulseBlockedLocalOperation> blocked = await catalog.ReadBlockedLocalOperationsAsync();
+                Assert.HasCount(4, blocked);
+                CollectionAssert.AreEquivalent(plan.BlockedOperations!.Select(item => item.OperationId).ToArray(), blocked.Select(item => item.OperationId).ToArray());
+                var status = new MirrorPulseAppStatusResponse(5, 0, [], [], BlockedLocalOperations: blocked);
+                Assert.HasCount(4, status.BlockedLocalOperations!);
+                await catalog.ClearBlockedLocalOperationAsync(blocked[0].OperationId);
+                Assert.HasCount(3, await catalog.ReadBlockedLocalOperationsAsync());
+            }
+        }
+        finally { Directory.Delete(fixture, true); }
+    }
+
     [TestMethod]
     [DoNotParallelize]
     [TestCategory("NativeCloudFiles")]

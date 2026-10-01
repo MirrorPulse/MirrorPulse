@@ -309,7 +309,8 @@ public sealed class MirrorPulseHostApplication : IAsyncDisposable
             .ToArray();
         return new MirrorPulseAppStatusResponse(cloud.PendingUploadCount,
             cloud.PendingRemoteConflictCount, entries, notifications,
-            PendingUploadConflicts: uploadConflicts.Count);
+            PendingUploadConflicts: uploadConflicts.Count,
+            BlockedLocalOperations: await _catalog.ReadBlockedLocalOperationsAsync(cancellationToken).ConfigureAwait(false));
     }
 
     public async Task<MirrorPulseControlTopology> ReadTopologyAsync(
