@@ -26,7 +26,7 @@ Use the ARM64 package on ARM64 Windows. The CLI and Host must come from the same
     --developer-mode
                  Allow the configured development Host executable.
     --timeout SEC
-                 Set the Control request timeout.
+                 Parse a requested timeout; propagation is not implemented yet.
 ```
 
 The default output is concise human-readable text. Automation should use `--json`. Successful data commands emit `{"schemaVersion":"1","kind":"result","data":...}` to standard output; failed commands emit `{"schemaVersion":"1","kind":"error","exitCode":N,"code":"...","message":"..."}` to standard error. Help and version use the same schema with `kind` values `help` and `version`. Error details never include credentials or access tokens.
@@ -39,7 +39,7 @@ The default output is concise human-readable text. Automation should use `--json
 | `mp host status\|start\|stop\|restart` | Inspect or control the current-user Host. | `mp --json host status` |
 | `mp sync status\|refresh` | Read status or request a synchronization pass. | `mp --timeout 120 sync refresh` |
 | `mp adapter list` | List installed Adapter packages, versions, and instances. | `--json` |
-| `mp adapter install <package>` | Install a signed `.mpadapter` package. | `mp --developer-mode adapter install <package>` selects a development Host; the Host setting governs unsigned packages |
+| `mp adapter install <package>` | Install an official signed `.mpadapter` package. | `--developer-mode` selects a development Host; unsigned packages are not currently accepted |
 | `mp adapter update <package>` | Install a newer package while retaining eligible versions. | package path |
 | `mp adapter remove --adapter-id ID [--install-id ID] [--purge]` | Remove an installation after Host reference checks. `uninstall` is an alias. | `--purge` removes retained package data when safe |
 | `mp instance list` | List Adapter instances and mapped roots. | `--json` |
@@ -54,7 +54,9 @@ The default output is concise human-readable text. Automation should use `--json
 | `mp startup [--start-with-windows true\|false]` | Read or change optional startup. | `--start-with-windows true` |
 | `mp diagnostics [--include-logs] [--output PATH]` | Create a local diagnostic archive. | logs stay local unless the user shares them |
 
-Global options must precede the command. Scalar command options accept `--name value` or `--name=value`; repeatable `--config`, `--root`, and `--enable-installation` options use separate values. Adapter configuration keys are opaque to MirrorPulse and are passed to the selected Adapter. Secrets are accepted as command arguments for compatibility with scripts; callers should prefer a protected process invocation and avoid shell history and log capture.
+Global options must precede the command. Scalar command options accept `--name value` or `--name=value`; repeatable `--config`, `--root`, and `--enable-installation` options use separate values. Adapter-defined keys are validated during creation; configure validation still needs completion. Secrets are accepted through `--secret`; do not put them in ordinary `--config` values. Avoid shell history and log capture. Other credential-input helpers are not fully wired into these commands.
+
+See the [capability baseline](cli-capabilities.md) for limitations. Operation watch currently reads one snapshot, and cancel does not stop the underlying work. Startup and developer-mode commands persist settings but do not yet register Windows startup or allow unsigned packages. A conflict response does not prove the queued action completed.
 
 ## Automation examples
 

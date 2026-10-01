@@ -8,7 +8,7 @@ This repository contains the MirrorPulse application and its runtime code.
 
 ## Development status
 
-The no-UI `mp` CLI and current-user Host control path are implemented for x64 and ARM64. The CLI is also packaged as an MSIX app execution alias; see [docs/cli.md](docs/cli.md) for the command reference and automation examples.
+The no-UI `mp` CLI and current-user Host control path run on x64 and ARM64. The CLI is also packaged as an MSIX app execution alias. Synchronization recovery, multi-root Worker routing, live instance changes, and parts of the control surface remain incomplete. See the [capability baseline](docs/cli-capabilities.md) for implemented, partial, and unsupported behavior, and the [CLI reference](docs/cli.md) for commands.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ dotnet test MirrorPulse.sln --configuration Release
 
 ## Privacy
 
-MirrorPulse is designed to keep configuration, credentials, logs, and synchronization state on the user's device. It does not upload telemetry or user files by default.
+MirrorPulse keeps configuration, credentials, logs, and synchronization state on the user's device. It does not upload telemetry or diagnostics. Synchronization transfers files only to sources the user configures and authorizes.
 
 ## License
 
