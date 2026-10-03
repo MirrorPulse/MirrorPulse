@@ -3,6 +3,11 @@ using MirrorPulse.CfSharp.CrashProbe;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.Configuration;
 
+if (args.Length == 3 && args[0] == "--protected-writer")
+{
+    return await ProtectedConfirmationWriter.RunAsync(args[1], args[2]);
+}
+
 if (args.Length == 4)
 {
     return await DurabilityFaultProbe.RunAsync(args);

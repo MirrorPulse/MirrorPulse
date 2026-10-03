@@ -1,6 +1,11 @@
 {
   "schemaVersion": 1,
   "allowSkipped": [
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseProtectedConfirmationTests.ExclusiveReferenceConfirmsCompleteContentOnTheSameHandle",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseProtectedConfirmationTests.ExclusiveReferenceSerializesACompetingProcessUntilConfirmationFinishes",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseProtectedConfirmationTests.RejectedVerificationAndInterruptedConfirmationLeaveContentPendingAndReleaseTheHandle",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseProtectedConfirmationTests.ExistingWritableHandleOrMappingPreventsAnExclusiveConfirmation",
+    "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseProtectedConfirmationTests.BrokenOplockBetweenReadSegmentsPreventsFinalConfirmation",
     "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseConditionalInSyncTests.IndependentFileUsnAcceptsCurrentRejectsStaleAndAcceptsRefreshedToken",
     "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseFullRescanPolicyTests.NativeOverflowReconcilesFilesAndKeepsDisabledRootsOffline",
     "MirrorPulse.CloudFiles.CfSharp.Tests.MirrorPulseCloudHostSessionTests.PackagedSessionReopensOfficialSqliteDatabase",

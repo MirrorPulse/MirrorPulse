@@ -1,0 +1,76 @@
+name: Protected content confirmation probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            runtime: win-x64
+          - runner: windows-11-arm
+            runtime: win-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore locked test dependencies
+        run: dotnet restore tests/MirrorPulse.CloudFiles.CfSharp.Tests --locked-mode
+
+      - name: Build native test boundary
+        run: dotnet build tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release --no-restore
+
+      - name: Prepare disposable native volume
+        run: pwsh ./eng/prepare-native-ci-volume.ps1
+
+      - name: Verify protected confirmation
+        shell: pwsh
+        env:
+          MIRRORPULSE_NATIVE_TEST: '1'
+        run: |
+          dotnet test tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release --no-build --filter FullyQualifiedName~MirrorPulseProtectedConfirmationTests --logger trx --results-directory artifacts/protected-confirmation
+          if ($LASTEXITCODE -ne 0) { throw 'Protected content confirmation failed.' }
+
+      - name: Collect safe probe evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem -LiteralPath artifacts/protected-confirmation -Filter '*.trx' -File)
+          if ($files.Count -ne 1) { throw 'Expected exactly one protected confirmation result file.' }
+          [xml]$trx = Get-Content -LiteralPath $files[0].FullName -Raw
+          $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
+          $observations = @($results | ForEach-Object { $_.SelectNodes(".//*[local-name()='StdOut']") } | ForEach-Object { $_.InnerText -split "`r?`n" } | Where-Object { $_ -match '^Protected confirmation ' })
+          $report = [ordered]@{
+            schemaVersion = 1
+            sourceSha = '${{ github.sha }}'
+            runtime = '${{ matrix.runtime }}'
+            expected = 15
+            executed = @($results | Where-Object outcome -eq 'Passed').Count
+            results = @($results | ForEach-Object { [ordered]@{name = [string]$_.testName; outcome = [string]$_.outcome} })
+            observations = $observations
+          }
+          $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath artifacts/protected-confirmation/report.json -Encoding utf8
+          $observations | ForEach-Object { Write-Output $_ }
+          if ($results.Count -ne 15 -or $report.executed -ne 15) { throw 'Every protected confirmation case must execute and pass.' }
+
+      - name: Upload safe probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-protected-${{ matrix.runtime }}
+          path: artifacts/protected-confirmation/report.json
+          if-no-files-found: error
