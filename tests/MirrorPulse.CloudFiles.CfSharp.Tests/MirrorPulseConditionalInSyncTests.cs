@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using CfSharp;
+using CfSharp.Native;
 using Microsoft.Win32.SafeHandles;
 using MirrorPulse.CloudFiles.CfSharp;
 using MirrorPulse.Core.Configuration;
@@ -46,14 +47,22 @@ public sealed partial class MirrorPulseConditionalInSyncTests
             bool currentAccepted = await TryMarkAsync(file, "current", current, timeout.Token);
             CloudSynchronizationState currentState = (await file.InspectAsync(timeout.Token)).SynchronizationState;
             TestContext.WriteLine($"Conditional USN current state: {currentState}.");
+            TestContext.WriteLine($"Conditional USN after public mark: before=0x{current:X16}; after=0x{ReadFileUsn(path):X16}.");
+            ReportSameHandleMark(path);
 
             await file.SetInSyncAsync(false, cancellationToken: timeout.Token);
             long stale = ReadFileUsn(path);
             // A same-length write closes its handle before the query: length alone cannot
             // detect this edit, and no pending writable handle can coalesce a later write.
-            await File.WriteAllTextAsync(path, "after!", timeout.Token);
+            await using (var writer = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.Read))
+            {
+                await writer.WriteAsync("after!"u8.ToArray(), timeout.Token);
+                await writer.FlushAsync(timeout.Token);
+            }
             long changed = ReadFileUsn(path);
+            CloudSynchronizationState editedState = (await file.InspectAsync(timeout.Token)).SynchronizationState;
             TestContext.WriteLine($"Conditional USN edit: before=0x{stale:X16}; after=0x{changed:X16}.");
+            TestContext.WriteLine($"Conditional USN edited state: {editedState}.");
             bool staleAccepted = await TryMarkAsync(file, "stale", stale, timeout.Token);
             CloudSynchronizationState rejectedState = (await file.InspectAsync(timeout.Token)).SynchronizationState;
             string preserved = await File.ReadAllTextAsync(path, timeout.Token);
@@ -68,6 +77,7 @@ public sealed partial class MirrorPulseConditionalInSyncTests
             Assert.IsTrue(currentAccepted, "A separately queried current USN must be accepted.");
             Assert.AreEqual(CloudSynchronizationState.InSync, currentState);
             Assert.AreNotEqual(stale, changed, "The closed same-length write must advance the file USN.");
+            Assert.AreEqual(CloudSynchronizationState.NotInSync, editedState, "The in-place edit must preserve placeholder identity.");
             Assert.IsFalse(staleAccepted, "The old USN must not confirm edited content.");
             Assert.AreEqual(CloudSynchronizationState.NotInSync, rejectedState);
             Assert.AreEqual("after!", preserved, "A rejected conditional mark must preserve edited bytes.");
@@ -103,6 +113,27 @@ public sealed partial class MirrorPulseConditionalInSyncTests
         // Test-only Windows query, independent of CfSharp mutation outputs. Request the
         // documented default V2 record on this NTFS fixture; never read a volume journal.
         using SafeFileHandle handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return ReadFileUsn(handle);
+    }
+
+    private void ReportSameHandleMark(string path)
+    {
+        var result = MarkSameHandle(path);
+        TestContext.WriteLine($"Conditional USN same-handle native: input=0x{result.Input:X16}; HRESULT=0x{result.HResult:X8}; output={result.Output}; after=0x{result.After:X16}.");
+    }
+
+    private static unsafe (long Input, int HResult, long Output, long After) MarkSameHandle(string path)
+    {
+        // Diagnostic only: remove the public method's second path open from the comparison.
+        using SafeFileHandle handle = File.OpenHandle(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+        long input = ReadFileUsn(handle);
+        long output = input;
+        int hresult = CfApi.CfSetInSyncState(handle.DangerousGetHandle(), CfInSyncState.InSync, CfSetInSyncFlags.None, &output);
+        return (input, hresult, output, ReadFileUsn(handle));
+    }
+
+    private static unsafe long ReadFileUsn(SafeFileHandle handle)
+    {
         Span<byte> buffer = stackalloc byte[1024];
         uint returned;
         fixed (byte* output = buffer)
