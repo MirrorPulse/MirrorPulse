@@ -9,7 +9,7 @@ MirrorPulse contracts to Adapters and the product UI.
 | Area | Implemented behavior and evidence |
 |---|---|
 | Operating system | Windows 11 desktop 24H2 (build 26100) or later, while Microsoft-supported, x64/ARM64. Windows 10 and Server are excluded; see the [product support matrix](windows-support.md). CfSharp's broader API minimum does not lower the product minimum. |
-| Architectures | The Host publishes for `win-x64` and `win-arm64`. Native integration has been exercised locally on Windows x64; ARM64 runtime behavior remains unverified. |
+| Architectures | The Host and CLI publish for `win-x64` and `win-arm64`. Windows 11 ARM64 CI exercises the signed Local Worker, CLI offline upload, remote apply and restart path. Protected confirmation has separate native evidence on ARM64 desktop and x64 Server; full native rescan and native x64 desktop release acceptance remain open. |
 | State | One official CfSharp SQLite database lives outside the single sync root. MirrorPulse keeps product catalog data separately and does not duplicate CfSharp's local journal, remote batches, conflicts, checkpoints, or echo records. |
 | Registration | The Host starts a real CfSharp session with a current-user Shell and Cloud Files registration. Ordinary shutdown preserves registration and database state. |
 | Demand | The integration provider maps bounded Adapter directory pages and range reads to CfSharp callbacks. A separate consumer process has enumerated an online-only placeholder, hydrated it, compared bytes, and read it after provider session restart. |
@@ -21,7 +21,9 @@ directory pages, range reads, and supported local journal uploads through their
 current-user Named Pipes. A signed Local Adapter release has been installed and
 exercised with two simultaneous instances, separate first-level directories,
 the CfSharp demand-provider boundary, range reads, and an upload. Shell registration in an
-interactive installed MSIX session and full bidirectional polling remain open.
+interactive installed MSIX session remains open. Active polling, durable pending
+batch replay and the upload journal are integrated; full-rescan confirmation and
+the complete protocol/file-operation release matrix remain open.
 
 ## Validation
 
@@ -46,3 +48,11 @@ preview.2. MirrorPulse uses the public CfSharp batch and conflict contracts and
 does not read or mutate CfSharp's private SQLite tables or conflict payload
 format. Preview.2 remains a prerelease dependency until its final package is
 published and validated.
+
+Preview.2 also exposes a confirmation limitation: coordination USNs can be zero,
+and independently queried current/refreshed USNs were rejected in the isolated
+conditional experiment. A protected same-handle alternative passed 15/15 native
+cases per architecture. It remains test-only while a managed CfSharp operation,
+ordinary-file binding, cancellation and official-store recovery are specified
+for preview.3. See [protected content confirmation](protected-content-confirmation.md).
+MirrorPulse has not upgraded its packages or adopted a production native fallback.

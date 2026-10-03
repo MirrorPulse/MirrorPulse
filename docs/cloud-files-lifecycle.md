@@ -58,8 +58,19 @@ avoid repeated remote writes. Permissions, cancellation and incomplete discovery
 leave the scan pending without authorizing deletion. A projection failure after
 official acknowledgement also retains the generation until recovery succeeds.
 Rescan shares the per-instance scheduler with remote polling and streamed apply.
-Native conversion and update use CfSharp coordination; content is rechecked and
-marked in sync only with the returned operation USN as a precondition.
+Native conversion and update use CfSharp coordination. The current preview.2
+path requires a positive operation USN before final content verification and
+conditional in-sync confirmation. A missing or rejected precondition leaves
+`RemoteAccepted` and the scan generation pending. This boundary currently blocks
+complete native full-rescan acceptance.
+
+A disposable experiment validated exclusive protected references, complete
+content/identity verification and same-handle confirmation. The planned managed
+CfSharp operation will own that native boundary and official state recovery;
+MirrorPulse retains its anti-corruption layer and remote acceptance ledger.
+Production integration awaits that public API. See
+[protected content confirmation](protected-content-confirmation.md) for evidence,
+ordinary-file identity requirements, and remaining cancellation/recovery gates.
 
 Remote mutations persist intent before dispatch. On restart, an uncertain upload
 uses bounded remote reads and verifies its exact length and SHA-256 between two

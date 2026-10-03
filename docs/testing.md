@@ -43,11 +43,13 @@ against a user's configured application or storage sources.
 
 The disposable GitHub-hosted native fixture enables a bounded NTFS USN journal
 when the image has none. The preparation script rejects other environments.
-Conditional in-sync verification requires a positive native USN. A missing token
-keeps product reconciliation pending instead of using an unconditional mark.
-The native rescan test exercises real feed overflow, offline root deferral,
+The preview.2 product path requires a positive native USN for conditional
+in-sync verification. Missing or rejected tokens keep reconciliation pending.
+The native rescan test includes real feed overflow, offline root deferral,
 directory ACL denial without remote deletion, and a full runtime/store restart
-after acknowledgement but before the product projection completes.
+after acknowledgement but before product projection. Its current confirmation
+failure occurs before the final ACL/restart checks, so those checks do not yet
+have complete native execution evidence.
 
 ## CI evidence
 
@@ -81,6 +83,25 @@ full-rescan recovery gate by itself. Its native execution is selected by the
 dedicated opt-in workflow, outside the existing required native suite. Reports
 contain numeric coordination observations and test outcomes, without fixture
 paths or file contents.
+
+The completed conditional experiment rejected current and refreshed tokens on
+both architectures; its strict expected-success assertions failed. Do not treat
+that workflow's failure as evidence that a USN reader alone repairs confirmation.
+
+The separate manual `Protected content confirmation probe` workflow selects all
+15 cases in `MirrorPulseProtectedConfirmationTests`. They exercise exclusive
+references, same-handle content verification and commit, competing processes,
+existing writable mappings, mismatches, pre-commit cancellation/failure, and an
+oplock break between segments. Both architectures executed and passed all cases
+in [run 37132837677](https://github.com/mirrorpulse/MirrorPulse/actions/runs/37132837677).
+The report counts selected, executed and passed results separately and rejects
+any skip or missing case. Ordinary managed runs declare these cases skipped;
+the existing ten required native tests are unchanged.
+
+This probe is a test-only mechanism experiment. It does not prove pending-I/O
+cancellation, large-file fairness, official SQLite projection recovery or full
+rescan acceptance. See [protected content confirmation](protected-content-confirmation.md)
+for the planned managed boundary and remaining production gates.
 
 Download the three `evidence-*` artifacts from one workflow run, then verify:
 
