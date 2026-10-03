@@ -19,7 +19,7 @@ public sealed partial class MirrorPulseConditionalInSyncTests
     [TestMethod]
     [DoNotParallelize]
     [TestCategory("NativeCloudFiles")]
-    public async Task NativeIndependentFileUsnAcceptsCurrentRejectsStaleAndAcceptsRefreshedToken()
+    public async Task IndependentFileUsnAcceptsCurrentRejectsStaleAndAcceptsRefreshedToken()
     {
         if (Environment.GetEnvironmentVariable("MIRRORPULSE_NATIVE_TEST") != "1")
             Assert.Inconclusive("Requires the disposable NativeCloudFiles verification environment.");
@@ -119,17 +119,18 @@ public sealed partial class MirrorPulseConditionalInSyncTests
     private void ReportSameHandleMark(string path)
     {
         var result = MarkSameHandle(path);
-        TestContext.WriteLine($"Conditional USN same-handle native: input=0x{result.Input:X16}; HRESULT=0x{result.HResult:X8}; output={result.Output}; after=0x{result.After:X16}.");
+        TestContext.WriteLine($"Conditional USN same-handle native: firstRead=0x{result.FirstRead:X16}; input=0x{result.Input:X16}; HRESULT=0x{result.HResult:X8}; output={result.Output}; after=0x{result.After:X16}.");
     }
 
-    private static unsafe (long Input, int HResult, long Output, long After) MarkSameHandle(string path)
+    private static unsafe (long FirstRead, long Input, int HResult, long Output, long After) MarkSameHandle(string path)
     {
         // Diagnostic only: remove the public method's second path open from the comparison.
         using SafeFileHandle handle = File.OpenHandle(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+        long firstRead = ReadFileUsn(handle);
         long input = ReadFileUsn(handle);
         long output = input;
         int hresult = CfApi.CfSetInSyncState(handle.DangerousGetHandle(), CfInSyncState.InSync, CfSetInSyncFlags.None, &output);
-        return (input, hresult, output, ReadFileUsn(handle));
+        return (firstRead, input, hresult, output, ReadFileUsn(handle));
     }
 
     private static unsafe long ReadFileUsn(SafeFileHandle handle)

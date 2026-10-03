@@ -41,7 +41,7 @@ jobs:
         env:
           MIRRORPULSE_NATIVE_TEST: '1'
         run: |
-          dotnet test tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release --no-build --filter FullyQualifiedName~NativeIndependentFileUsn --logger trx --results-directory artifacts/conditional-usn
+          dotnet test tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release --no-build --filter FullyQualifiedName~IndependentFileUsn --logger trx --results-directory artifacts/conditional-usn
           if ($LASTEXITCODE -ne 0) { throw 'The conditional file USN experiment failed.' }
 
       - name: Collect isolated probe observations
