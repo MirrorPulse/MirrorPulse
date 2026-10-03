@@ -1,0 +1,75 @@
+name: Conditional in-sync probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            runtime: win-x64
+          - runner: windows-11-arm
+            runtime: win-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore locked test dependencies
+        run: dotnet restore tests/MirrorPulse.CloudFiles.CfSharp.Tests --locked-mode
+
+      - name: Build native test boundary
+        run: dotnet build tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release --no-restore
+
+      - name: Prepare disposable native volume
+        run: pwsh ./eng/prepare-native-ci-volume.ps1
+
+      - name: Verify conditional tokens
+        shell: pwsh
+        env:
+          MIRRORPULSE_NATIVE_TEST: '1'
+        run: |
+          dotnet test tests/MirrorPulse.CloudFiles.CfSharp.Tests --configuration Release --no-build --filter FullyQualifiedName~NativeIndependentFileUsn --logger trx --results-directory artifacts/conditional-usn
+          if ($LASTEXITCODE -ne 0) { throw 'The conditional file USN experiment failed.' }
+
+      - name: Collect isolated probe observations
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem -LiteralPath artifacts/conditional-usn -Filter '*.trx' -File)
+          if ($files.Count -ne 1) { throw 'Expected exactly one conditional probe result file.' }
+          [xml]$trx = Get-Content -LiteralPath $files[0].FullName -Raw
+          $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
+          if ($results.Count -ne 1) { throw 'Expected exactly one conditional probe test.' }
+          $observations = @($results[0].SelectNodes(".//*[local-name()='StdOut']") | ForEach-Object { $_.InnerText -split "`r?`n" } | Where-Object { $_ -match '^Conditional USN ' })
+          $report = [ordered]@{
+            schemaVersion = 1
+            sourceSha = '${{ github.sha }}'
+            runtime = '${{ matrix.runtime }}'
+            outcome = [string]$results[0].outcome
+            observations = $observations
+          }
+          $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath artifacts/conditional-usn/report.json -Encoding utf8
+          $observations | ForEach-Object { Write-Output $_ }
+          if ($results[0].outcome -ne 'Passed') { throw 'The native probe did not pass; inspect its observations.' }
+
+      - name: Upload safe probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-conditional-${{ matrix.runtime }}
+          path: artifacts/conditional-usn/report.json
+          if-no-files-found: error

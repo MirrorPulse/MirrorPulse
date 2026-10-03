@@ -81,7 +81,9 @@ public sealed class CiEvidenceGateTests
             }
             if (scenario.StartsWith("native-", StringComparison.Ordinal))
             {
-                int executed = scenario == "native-valid" ? 10 : 9;
+                using JsonDocument catalog = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(repository, "eng", "test-suites.json")));
+                int required = catalog.RootElement.GetProperty("required").GetProperty("native").GetArrayLength();
+                int executed = scenario == "native-valid" ? required : required - 1;
                 string native = Path.Combine(root, "native.json");
                 await File.WriteAllTextAsync(native, JsonSerializer.Serialize(new
                 {

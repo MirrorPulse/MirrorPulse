@@ -58,7 +58,7 @@ traversal paths, duplicate suites, mismatched counts, or missing required gates.
 It exports only named checks and relative artifact paths, without TRX output,
 stack traces, host user paths, credentials, or temporary certificate material.
 
-A manual workflow run additionally requires nine actual native Cloud Files
+A manual workflow run additionally requires ten actual native Cloud Files
 integrations, one official SQLite crash test, and installed ARM64 MSIX checks
 on the Windows 11 desktop runner. The x64 Server runner verifies that published
 CLI and Host processes reject the unsupported SKU without creating state.
@@ -70,6 +70,15 @@ Installed evidence includes the OS build and product type; a Server installation
 cannot satisfy the [supported desktop matrix](windows-support.md).
 The ARM64 report requires signed Local CLI regression evidence as well as the
 two signed Worker tests; the official aggregate requires all seven named tests.
+
+The manual `Conditional in-sync probe` workflow independently tests a file USN
+queried with `FSCTL_READ_FILE_USN_DATA` against the public CfSharp conditional
+in-sync operation on x64 Server and ARM64 Windows 11 runners. It requires current
+and refreshed tokens to succeed, a stale token after a closed same-length write
+to fail, and the edited bytes and out-of-sync state to survive that rejection.
+The query is test-only; it does not introduce a product fallback or satisfy the
+full-rescan recovery gate by itself. Reports contain numeric coordination
+observations and test outcomes, without fixture paths or file contents.
 
 Download the three `evidence-*` artifacts from one workflow run, then verify:
 
