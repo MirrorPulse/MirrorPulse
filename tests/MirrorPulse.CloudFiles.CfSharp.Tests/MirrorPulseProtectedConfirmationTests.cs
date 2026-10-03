@@ -80,6 +80,7 @@ public sealed partial class MirrorPulseProtectedConfirmationTests
             }
             else if (mode == "rename")
             {
+                Assert.AreEqual(1, fixture.Provider.RenameApprovals);
                 Assert.IsFalse(File.Exists(fixture.Path));
                 Assert.AreEqual("before", await File.ReadAllTextAsync(fixture.Path + ".moved", timeout.Token));
             }
@@ -376,6 +377,24 @@ public sealed partial class MirrorPulseProtectedConfirmationTests
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static unsafe partial int GetOverlappedResult(SafeFileHandle file, NativeOverlapped* overlapped, uint* transferred, int wait);
 
+    private sealed class ConfirmationDemandProvider(byte[] identity) : ICloudDemandProvider
+    {
+        private int _renameApprovals;
+        public int RenameApprovals => Volatile.Read(ref _renameApprovals);
+
+        public ValueTask<Stream> OpenReadAsync(CloudFileFetchRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The confirmation fixture contains only complete local content.");
+
+        public ValueTask<CloudProviderPolicyDecision> ApproveRenameAsync(CloudProviderRenameRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!request.FileIdentity.Span.SequenceEqual(identity)) return ValueTask.FromResult(CloudProviderPolicyDecision.Deny);
+            Interlocked.Increment(ref _renameApprovals);
+            return ValueTask.FromResult(CloudProviderPolicyDecision.Allow);
+        }
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly CfSharpMirrorPulseCloudRootRegistry _registry = new();
@@ -383,6 +402,7 @@ public sealed partial class MirrorPulseProtectedConfirmationTests
         public string Root { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "MirrorPulse-native-tests", Guid.NewGuid().ToString("N"));
         public string Path => System.IO.Path.Combine(Root, "sync", "confirmed.bin");
         public CloudPlaceholderIdentity Identity { get; } = new(Guid.NewGuid(), "probe", "probe-revision");
+        public ConfirmationDemandProvider Provider { get; private set; } = null!;
         public CloudFile File => _fileSystem.GetFile("confirmed.bin");
 
         public static async Task<Fixture> CreateAsync(byte[] bytes)
@@ -395,8 +415,9 @@ public sealed partial class MirrorPulseProtectedConfirmationTests
                 await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(fixture.Root, ".mp-protected-fixture"), "owned fixture");
                 fixture._registry.Register(new(paths.SyncRootPath, "0.1.0", Guid.NewGuid(), [1, 2, 3]));
                 var state = new MirrorPulseCfSharpStateSession(paths);
+                fixture.Provider = new(fixture.Identity.Encode());
                 fixture._fileSystem = new MirrorPulseCloudFileSystemBuilder(paths).WithStateStore(state)
-                    .WithContentProvider(MirrorPulseDemandProvider.CreateWithoutAdapters(paths.SyncRootPath)).Build();
+                    .WithContentProvider(fixture.Provider).Build();
                 await fixture._fileSystem.StartAsync();
                 await System.IO.File.WriteAllBytesAsync(fixture.Path, bytes);
                 await fixture.File.ConvertToPlaceholderAsync(fixture.Identity);
