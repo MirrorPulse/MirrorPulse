@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
@@ -14,7 +15,7 @@ namespace MirrorPulse.CloudFiles.CfSharp.Tests;
 
 [TestClass]
 [SupportedOSPlatform("windows10.0.19041")]
-public sealed class MirrorPulseProtectedConfirmationTests
+public sealed partial class MirrorPulseProtectedConfirmationTests
 {
     public TestContext TestContext { get; set; } = null!;
 
@@ -124,13 +125,13 @@ public sealed class MirrorPulseProtectedConfirmationTests
             Action? beforeConfirm = mode switch
             {
                 "cancel" => cancellation.Cancel,
-                "fault" => () => throw new IOException("Injected failure after verification, before confirmation."),
+                "fault" => () => throw new InjectedConfirmationException(),
                 _ => null,
             };
             if (mode == "cancel")
                 Assert.ThrowsExactly<OperationCanceledException>(() => lease.VerifyAndConfirm(fileId, identity, length, hash, beforeConfirm, cancellation.Token));
             else if (mode == "fault")
-                Assert.ThrowsExactly<IOException>(() => lease.VerifyAndConfirm(fileId, identity, length, hash, beforeConfirm, cancellation.Token));
+                Assert.ThrowsExactly<InjectedConfirmationException>(() => lease.VerifyAndConfirm(fileId, identity, length, hash, beforeConfirm, cancellation.Token));
             else Assert.IsFalse(lease.VerifyAndConfirm(fileId, identity, length, hash));
             Assert.AreEqual(CfInSyncState.NotInSync, lease.Inspect().State);
         }
@@ -175,6 +176,7 @@ public sealed class MirrorPulseProtectedConfirmationTests
         await using Fixture fixture = await Fixture.CreateAsync("before"u8.ToArray());
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var lease = ProtectedReference.Open(fixture.Path);
+        CollectionAssert.AreEqual("bef"u8.ToArray(), lease.ReadPrefix(3));
         using Process writer = StartWriter(fixture.Root, "write");
         Task<string> error = writer.StandardError.ReadToEndAsync(timeout.Token);
         try
@@ -215,6 +217,8 @@ public sealed class MirrorPulseProtectedConfirmationTests
     }
 
     private sealed record Observation(long FileId, CfInSyncState State, byte[] Identity);
+
+    private sealed class InjectedConfirmationException : IOException;
 
     private sealed class NativeProbeException : IOException
     {
@@ -286,7 +290,7 @@ public sealed class MirrorPulseProtectedConfirmationTests
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                int count = RandomAccess.Read(Handle, buffer, offset);
+                int count = ReadBorrowedHandle(Handle, buffer, offset);
                 if (count == 0) break;
                 hash.AppendData(buffer, 0, count);
                 offset += count;
@@ -298,6 +302,13 @@ public sealed class MirrorPulseProtectedConfirmationTests
             if (final.FileId != fileId || !final.Identity.AsSpan().SequenceEqual(identity)) return false;
             MarkSameHandle();
             return true;
+        }
+
+        public byte[] ReadPrefix(int count)
+        {
+            byte[] bytes = new byte[count];
+            Assert.AreEqual(count, ReadBorrowedHandle(Handle, bytes, 0));
+            return bytes;
         }
 
         private unsafe void MarkSameHandle() => ThrowNative(CfApi.CfSetInSyncState(Handle.DangerousGetHandle(),
@@ -325,6 +336,45 @@ public sealed class MirrorPulseProtectedConfirmationTests
             _closed = true;
         }
     }
+
+    private static unsafe int ReadBorrowedHandle(SafeFileHandle handle, byte[] buffer, long offset)
+    {
+        // CfOpenFileWithOplock owns this asynchronous handle's completion-port binding.
+        // A private event with its low bit set suppresses completion-port delivery for
+        // our OVERLAPPED; drain it before freeing its buffer or releasing the reference.
+        using var signal = new EventWaitHandle(false, EventResetMode.ManualReset);
+        var overlapped = new NativeOverlapped
+        {
+            OffsetLow = unchecked((int)offset),
+            OffsetHigh = unchecked((int)(offset >> 32)),
+            EventHandle = signal.SafeWaitHandle.DangerousGetHandle() | 1,
+        };
+        fixed (byte* pointer = buffer)
+        {
+            if (ReadFile(handle, pointer, (uint)buffer.Length, null, &overlapped) == 0)
+            {
+                int error = Marshal.GetLastPInvokeError();
+                if (error == 38) return 0;
+                if (error != 997) throw new Win32Exception(error);
+            }
+            uint transferred;
+            if (GetOverlappedResult(handle, &overlapped, &transferred, 1) == 0)
+            {
+                int error = Marshal.GetLastPInvokeError();
+                if (error == 38) return 0;
+                throw new Win32Exception(error);
+            }
+            return checked((int)transferred);
+        }
+    }
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static unsafe partial int ReadFile(SafeFileHandle file, void* buffer, uint length, uint* read, NativeOverlapped* overlapped);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static unsafe partial int GetOverlappedResult(SafeFileHandle file, NativeOverlapped* overlapped, uint* transferred, int wait);
 
     private sealed class Fixture : IAsyncDisposable
     {

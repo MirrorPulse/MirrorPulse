@@ -59,13 +59,15 @@ jobs:
             sourceSha = '${{ github.sha }}'
             runtime = '${{ matrix.runtime }}'
             expected = 15
-            executed = @($results | Where-Object outcome -eq 'Passed').Count
+            selected = $results.Count
+            executed = @($results | Where-Object outcome -notin @('NotExecuted', 'Inconclusive')).Count
+            passed = @($results | Where-Object outcome -eq 'Passed').Count
             results = @($results | ForEach-Object { [ordered]@{name = [string]$_.testName; outcome = [string]$_.outcome} })
             observations = $observations
           }
           $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath artifacts/protected-confirmation/report.json -Encoding utf8
           $observations | ForEach-Object { Write-Output $_ }
-          if ($results.Count -ne 15 -or $report.executed -ne 15) { throw 'Every protected confirmation case must execute and pass.' }
+          if ($report.selected -ne 15 -or $report.executed -ne 15 -or $report.passed -ne 15) { throw 'Every protected confirmation case must execute and pass.' }
 
       - name: Upload safe probe report
         if: always()
